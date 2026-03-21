@@ -53,6 +53,22 @@ body.dark .col-panel { background: #1e293b; border-color: #334155; }
 body.dark .col-panel label { color: #cbd5e1; }
 body.dark .filter-bar { background: #1e293b; border-color: #334155; }
 body.dark .push-result { background: #1e293b; }
+body.dark .btn-secondary { background: #1e293b; color: #f1f5f9; border-color: #334155; }
+body.dark .btn-secondary:hover { background: #334155; }
+body.dark .btn-save { background: #1e293b; color: #f1f5f9; border-color: #334155; }
+body.dark .btn-save:hover { background: #334155; }
+body.dark .month-picker-wrap { background: #1e293b; border-color: #334155; }
+body.dark .month-picker-wrap select { background: #1e293b; color: #f1f5f9; }
+body.dark .dashboard-toolbar .btn-secondary { background: #1e293b; color: #f1f5f9; border-color: #334155; }
+body.dark .loading-card { background: #1e293b; border-color: #334155; }
+body.dark .error-card { background: #2d1515; border-color: #7f1d1d; }
+body.dark #txTable th, body.dark #savedTxTable th { background: #0f172a; color: #94a3b8; }
+body.dark #txTable td, body.dark #savedTxTable td { border-color: #1e293b; }
+body.dark #txTable input, body.dark #txTable select { background: #0f172a; color: #f1f5f9; border-color: #334155; }
+body.dark .kpi-label { color: #94a3b8; }
+body.dark .section-title { color: #94a3b8; }
+body.dark .table-header-row { border-color: #334155; }
+body.dark .tx-count { background: #1e3a5f; color: #93c5fd; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
