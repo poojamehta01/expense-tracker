@@ -89,11 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+let currentUserName = 'Pooja'; // default, overwritten after login check
+
 async function loadUser() {
   try {
     const res = await fetch('/api/me');
     if (!res.ok) return;
     const user = await res.json();
+    // Extract first name and match to known paid_by values
+    const firstName = (user.name || '').split(' ')[0];
+    if (firstName === 'Kunal') currentUserName = 'Kunal';
+    else currentUserName = 'Pooja';
     const el = document.getElementById('userInfo');
     el.innerHTML = `
       ${user.photo ? `<img src="${esc(user.photo)}" alt="${esc(user.name)}" referrerpolicy="no-referrer" />` : ''}
@@ -276,8 +282,8 @@ function addEmptyRow() {
     amount: '',
     description: '',
     payment_method: 'HDFC_Credit_Card',
-    paid_by: 'Pooja',
-    expense_type: 'Pooja_Personal',
+    paid_by: currentUserName,
+    expense_type: currentUserName + '_Personal',
     category: 'Others',
     mood: '',
     impulse: '',
@@ -1074,8 +1080,8 @@ async function addTxRow() {
 
   const newTx = {
     date: defaultDate, amount: 0, description: '',
-    payment_method: 'HDFC_Debit_Card', paid_by: 'Pooja',
-    expense_type: 'Pooja_Personal', category: 'Others',
+    payment_method: 'HDFC_Debit_Card', paid_by: currentUserName,
+    expense_type: currentUserName + '_Personal', category: 'Others',
     mood: '', impulse: '', remarks: '',
     month: clientMonthFromDate(defaultDate)
   };
