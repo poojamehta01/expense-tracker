@@ -80,6 +80,9 @@ let chartPersonFilter = 'all';
 let globalPersonFilter = 'all';
 let _lastDashData = null;
 let trendsLoaded = false;
+let _catBreakdownData = null;
+let _catSortCol = 'total';
+let _catSortDir = 'desc';
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
@@ -2268,43 +2271,81 @@ async function loadTrends() {
 }
 
 function renderCategoryBreakdownTable(data) {
-  const { categories, byMonth, totals } = data.categoryBreakdown;
-  const months = data.months;
-  if (!categories.length) return;
+  _catBreakdownData = { ...data.categoryBreakdown, months: data.months };
+  if (!_catBreakdownData.categories.length) return;
+  _renderCatHead();
+  _renderCatBody();
+  document.getElementById('trendsCategoryFoot').innerHTML = '';
+  document.getElementById('trendsCategorySection').style.display = '';
+  requestAnimationFrame(_fixCatTotalSticky);
+}
 
-  // Header
-  const head = document.getElementById('trendsCategoryHead');
-  head.innerHTML = `<tr>
-    <th>Category</th>
-    ${months.map(m => `<th>${esc(formatMonthLabel(m))}</th>`).join('')}
-    <th><strong>Total</strong></th>
-  </tr>`;
+function _renderCatHead() {
+  const { months, categories, byMonth } = _catBreakdownData;
+  const si = col => `<span class="cat-sort-icon">${_catSortCol === col ? (_catSortDir === 'asc' ? '▲' : '▼') : '↕'}</span>`;
+  const thClass = col => `class="sortable${_catSortCol === col ? ' cat-col-sorted' : ''}"`;
 
-  // Body
-  const body = document.getElementById('trendsCategoryBody');
-  body.innerHTML = categories.map(cat => {
-    const cells = months.map(m => `<td>${formatCurrency((byMonth[m] && byMonth[m][cat]) || 0)}</td>`).join('');
-    return `<tr>
-      <td>${esc(cat)}</td>
-      ${cells}
-      <td><strong>${formatCurrency(totals[cat] || 0)}</strong></td>
-    </tr>`;
-  }).join('');
-
-  // Footer totals row
-  const foot = document.getElementById('trendsCategoryFoot');
+  // Compute month totals for frozen total row
   const monthSums = months.map(m => {
-    const monthData = byMonth[m] || {};
-    return categories.reduce((s, c) => s + (monthData[c] || 0), 0);
+    const md = byMonth[m] || {};
+    return categories.reduce((s, c) => s + (md[c] || 0), 0);
   });
   const grandTotal = monthSums.reduce((s, v) => s + v, 0);
-  foot.innerHTML = `<tr>
-    <td><strong>Total</strong></td>
-    ${monthSums.map(s => `<td><strong>${formatCurrency(s)}</strong></td>`).join('')}
-    <td><strong>${formatCurrency(grandTotal)}</strong></td>
-  </tr>`;
 
-  document.getElementById('trendsCategorySection').style.display = '';
+  document.getElementById('trendsCategoryHead').innerHTML = `
+    <tr>
+      <th ${thClass('name')} onclick="catSortBy('name')">Category ${si('name')}</th>
+      ${months.map(m => `<th ${thClass(m)} onclick="catSortBy('${m}')">${esc(formatMonthLabel(m))} ${si(m)}</th>`).join('')}
+      <th ${thClass('total')} onclick="catSortBy('total')">Total ${si('total')}</th>
+    </tr>
+    <tr class="cat-total-row">
+      <td><strong>Total</strong></td>
+      ${monthSums.map(s => `<td><strong>${formatCurrency(s)}</strong></td>`).join('')}
+      <td><strong>${formatCurrency(grandTotal)}</strong></td>
+    </tr>`;
+}
+
+function _renderCatBody() {
+  const { categories, byMonth, totals, months } = _catBreakdownData;
+  const q = (document.getElementById('catSearch')?.value || '').toLowerCase().trim();
+  let list = q ? categories.filter(c => c.toLowerCase().includes(q)) : [...categories];
+
+  list.sort((a, b) => {
+    if (_catSortCol === 'name') {
+      const r = a.toLowerCase().localeCompare(b.toLowerCase());
+      return _catSortDir === 'asc' ? r : -r;
+    }
+    const va = _catSortCol === 'total' ? (totals[a] || 0) : ((byMonth[_catSortCol] && byMonth[_catSortCol][a]) || 0);
+    const vb = _catSortCol === 'total' ? (totals[b] || 0) : ((byMonth[_catSortCol] && byMonth[_catSortCol][b]) || 0);
+    return _catSortDir === 'asc' ? va - vb : vb - va;
+  });
+
+  document.getElementById('trendsCategoryBody').innerHTML = list.map(cat => `<tr>
+    <td>${esc(cat)}</td>
+    ${months.map(m => `<td>${formatCurrency((byMonth[m] && byMonth[m][cat]) || 0)}</td>`).join('')}
+    <td><strong>${formatCurrency(totals[cat] || 0)}</strong></td>
+  </tr>`).join('');
+}
+
+function catSortBy(col) {
+  if (!_catBreakdownData) return;
+  if (_catSortCol === col) { _catSortDir = _catSortDir === 'asc' ? 'desc' : 'asc'; }
+  else { _catSortCol = col; _catSortDir = col === 'name' ? 'asc' : 'desc'; }
+  _renderCatHead();
+  _renderCatBody();
+  requestAnimationFrame(_fixCatTotalSticky);
+}
+
+function filterCategoryTable() {
+  if (!_catBreakdownData) return;
+  _renderCatBody();
+}
+
+function _fixCatTotalSticky() {
+  const table = document.getElementById('trendsCategoryTable');
+  if (!table || !table.tHead || table.tHead.rows.length < 2) return;
+  const h = table.tHead.rows[0].getBoundingClientRect().height;
+  Array.from(table.tHead.rows[1].cells).forEach(td => { td.style.top = h + 'px'; });
 }
 
 function renderCreditCardPaymentsTable(data) {

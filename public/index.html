@@ -56,8 +56,10 @@
             <label for="monthPicker">Month</label>
             <select id="monthPicker" onchange="loadDashboard(this.value)"></select>
           </div>
-          <button class="btn-secondary" onclick="openAuditModal()" title="View recent edits &amp; deletions">🕐 History</button>
-          <button class="btn-secondary" onclick="exportToSheets()">Export to Google Sheets</button>
+          <div class="toolbar-right">
+            <button class="btn-secondary" onclick="openAuditModal()">Edit History</button>
+            <button class="btn-secondary" onclick="exportToSheets()">Export to Google Sheets</button>
+          </div>
         </div>
 
         <!-- KPI cards -->
@@ -110,9 +112,9 @@
 
         <!-- Top merchants -->
         <div class="table-section" id="merchantsSection" style="display:none">
-          <div class="table-header-row" style="cursor:pointer" onclick="toggleMerchants()">
-            <h2>Top Merchants</h2>
-            <span id="merchantsToggleIcon" class="section-toggle-icon" style="font-size:12px">▲</span>
+          <div class="section-header" onclick="toggleMerchants()">
+            <span class="section-title">Top Merchants</span>
+            <span id="merchantsToggleIcon" class="section-toggle-icon">▲</span>
           </div>
           <div id="merchantsBody_wrap">
           <div class="table-wrapper">
@@ -290,7 +292,10 @@
           </div>
 
           <div class="table-section" id="trendsCategorySection" style="display:none">
-            <div class="table-header-row"><h2>Spend by Category</h2></div>
+            <div class="table-header-row">
+              <h2>Spend by Category</h2>
+              <input type="text" id="catSearch" class="cat-search-input" placeholder="Search category…" oninput="filterCategoryTable()">
+            </div>
             <div class="table-wrapper">
               <table id="trendsCategoryTable">
                 <thead id="trendsCategoryHead"></thead>
