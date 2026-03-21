@@ -249,7 +249,7 @@ function buildRow(tx, index) {
   tr.dataset.index = index;
 
   tr.innerHTML = `
-    <td><input type="text" value="${esc(tx.date || '')}" onchange="updateTx(${index},'date',this.value)" /></td>
+    <td><input type="date" value="${appDateToISO(tx.date || '')}" onchange="updateTx(${index},'date',isoToAppDate(this.value))" /></td>
     <td><input type="number" value="${tx.amount || ''}" step="0.01" onchange="updateTx(${index},'amount',parseFloat(this.value))" /></td>
     <td><input type="text" value="${esc(tx.description || '')}" onchange="updateTx(${index},'description',this.value)" /></td>
     <td class="rv-td"></td>
@@ -771,6 +771,24 @@ let txFilters = { search: '', category: '', paid_by: '', expense_type: '', payme
 const MONTH_NUM = {January:1,February:2,March:3,April:4,May:5,June:6,
                    July:7,August:8,September:9,October:10,November:11,December:12};
 
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+
+// "20 March 2026" → "2026-03-20"
+function appDateToISO(str) {
+  const p = String(str || '').trim().split(' ');
+  if (p.length < 3) return '';
+  const day = String(parseInt(p[0]) || 1).padStart(2, '0');
+  const mon = String(MONTH_NUM[p[1]] || 1).padStart(2, '0');
+  return `${p[2]}-${mon}-${day}`;
+}
+
+// "2026-03-20" → "20 March 2026"
+function isoToAppDate(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${parseInt(d)} ${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+}
+
 function parseDateNum(str) {
   // "21 March 2026" → 20260321 for numeric comparison
   const p = String(str || '').trim().split(' ');
@@ -1172,6 +1190,30 @@ function startEdit(cell) {
     cell.appendChild(panel);
     searchInput.focus();
     setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
+
+  } else if (field === 'date') {
+    // ── Date picker ──────────────────────────────────────────────────────────
+    const input = document.createElement('input');
+    input.type = 'date';
+    input.className = 'cell-input';
+    input.value = appDateToISO(origVal);
+
+    let done = false;
+    const commit = () => {
+      if (done) return; done = true;
+      saveVal(input.value ? isoToAppDate(input.value) : origVal);
+    };
+    const abort = () => { if (done) return; done = true; cancelEdit(); };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('change', () => { input.blur(); });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { abort(); }
+      if (e.key === 'Tab')    { e.preventDefault(); commit(); moveToNext(e.shiftKey); }
+    });
+
+    cell.appendChild(input);
+    input.focus();
 
   } else {
     // ── Text / number input ──────────────────────────────────────────────────
