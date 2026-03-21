@@ -75,10 +75,9 @@ let chartDaily = null;
 let chartExpenseType = null;
 let chartPaymentMethod = null;
 let chartAllCategories = null;
-let chartMonthlySpend = null;
-let chartMonthlySplit = null;
 let chartTopCategories = null;
 let chartPersonFilter = 'all';
+let globalPersonFilter = 'all';
 let _lastDashData = null;
 let trendsLoaded = false;
 
@@ -181,6 +180,82 @@ async function loadLists() {
     EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...data.expense_types.map(x => x.value)];
     PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...data.payment_methods.map(x => x.value)];
   } catch (e) { console.error('loadLists error:', e); }
+}
+
+// ─── Audit / History Modal ────────────────────────────────────────────────────
+
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso + 'Z').getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h ago` : `${Math.floor(h/24)}d ago`;
+}
+
+async function openAuditModal() {
+  document.getElementById('auditModal').classList.remove('hidden');
+  const body = document.getElementById('auditModalBody');
+  body.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Loading…</p>';
+  try {
+    const res = await fetch('/api/audit');
+    const data = await res.json();
+    renderAuditModal(data.entries || []);
+  } catch (e) {
+    body.innerHTML = '<p style="color:var(--error)">Failed to load history.</p>';
+  }
+}
+
+function closeAuditModal() {
+  document.getElementById('auditModal').classList.add('hidden');
+}
+
+function renderAuditModal(entries) {
+  const body = document.getElementById('auditModalBody');
+  if (!entries.length) {
+    body.innerHTML = '<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:24px 0">No changes in the last 24 hours.</p>';
+    return;
+  }
+  body.innerHTML = `
+    <table class="audit-table">
+      <thead><tr>
+        <th>When</th><th>Action</th><th>Description</th><th>Amount</th><th>Date</th><th>Category</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${entries.map(e => {
+          const s = e.snapshot;
+          const actionLabel = e.action === 'delete'
+            ? '<span class="audit-badge audit-del">Deleted</span>'
+            : '<span class="audit-badge audit-edit">Edited</span>';
+          return `<tr>
+            <td class="audit-when">${timeAgo(e.changed_at)}</td>
+            <td>${actionLabel}</td>
+            <td>${esc(s.description || '—')}</td>
+            <td>${formatCurrency(s.amount)}</td>
+            <td>${esc(s.date || '—')}</td>
+            <td>${esc((s.category || '—').replace(/_/g,' '))}</td>
+            <td><button class="btn-primary small" onclick="restoreAudit(${e.id})">Restore</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function restoreAudit(auditId) {
+  try {
+    const res = await fetch(`/api/audit/${auditId}/restore`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Restore failed');
+      return;
+    }
+    // Refresh audit list then reload dashboard
+    const data = await fetch('/api/audit').then(r => r.json());
+    renderAuditModal(data.entries || []);
+    loadMonths(); // reload dashboard data
+  } catch (e) {
+    alert('Restore failed: ' + e.message);
+  }
 }
 
 // ─── Manage Lists Modal ───────────────────────────────────────────────────────
@@ -326,6 +401,79 @@ async function handleFiles(files) {
 
   transactions.push(...newTx);
   renderTable();
+}
+
+// ─── SMS / text paste ─────────────────────────────────────────────────────────
+
+let pasteCardOpen = false;
+function togglePasteCard() {
+  pasteCardOpen = !pasteCardOpen;
+  document.getElementById('pasteCardBody').classList.toggle('hidden', !pasteCardOpen);
+  document.getElementById('pasteCardToggleIcon').textContent = pasteCardOpen ? '▾' : '▸';
+}
+
+function clearSmsText() {
+  document.getElementById('smsTextarea').value = '';
+  document.getElementById('smsTextarea').focus();
+}
+
+async function extractFromTextArea() {
+  const text = (document.getElementById('smsTextarea').value || '').trim();
+  if (!text) return;
+
+  const btn = document.getElementById('smsExtractBtn');
+  btn.disabled = true;
+  showLoading(true);
+  setLoadingText('Extracting from messages…');
+  showError('');
+  hideResult();
+
+  try {
+    const extracted = await extractFromText(text);
+    const uploadMonth = getUploadMonth();
+    const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
+    extracted.forEach(tx => {
+      tx.paid_by = currentUserName;
+      if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
+        tx.expense_type = currentUserName + '_Personal';
+      }
+      if (uMon && uYr && tx.date) {
+        const parts = tx.date.trim().split(' ');
+        if (parts.length < 3) tx.date = `1 ${uMon} ${uYr}`;
+      } else if (uMon && uYr && !tx.date) {
+        tx.date = `1 ${uMon} ${uYr}`;
+      }
+    });
+
+    showLoading(false);
+
+    if (extracted.length === 0 && transactions.length === 0) {
+      showError('No transactions found in the pasted text.');
+    } else {
+      transactions.push(...extracted);
+      renderTable();
+      document.getElementById('smsTextarea').value = '';
+    }
+  } catch (err) {
+    showLoading(false);
+    showError('Text extraction failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function extractFromText(text) {
+  const res = await fetch('/api/extract-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Server error');
+  }
+  const data = await res.json();
+  return data.transactions || [];
 }
 
 async function extractFromFile(file) {
@@ -697,13 +845,10 @@ async function loadDashboard(month) {
     if (dashRes.ok && dash.transactionCount > 0) {
       document.getElementById('dashboardEmpty').classList.add('hidden');
       _lastDashData = dash;
-      // reset person filter on month change
+      // reset per-chart filter on month change
       chartPersonFilter = 'all';
       document.querySelectorAll('.chart-filter-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.person === 'all'));
-      renderKPIs(dash);
-      renderChartsFromData(dash);
-      renderTopMerchants(dash);
       // apply collapsed state for charts
       document.getElementById('chartsGrid').style.display = chartsVisible ? '' : 'none';
       document.getElementById('chartsToggleIcon').textContent = chartsVisible ? '▲' : '▼';
@@ -714,6 +859,7 @@ async function loadDashboard(month) {
     }
 
     renderTransactionsList(txData.transactions || []);
+    if (dashRes.ok && dash.transactionCount > 0) applyGlobalFilter();
   } catch (err) {
     console.error('loadDashboard error:', err);
   }
@@ -753,11 +899,17 @@ function renderKPIs(data) {
   document.getElementById('kpiTotal').textContent = formatCurrency(data.totalSpend);
   document.getElementById('kpiCount').textContent = data.transactionCount;
 
-  const pooja = data.byPaidBy['Pooja'] || 0;
-  const kunal = data.byPaidBy['Kunal'] || 0;
+  const pooja = (data.byPaidBy && data.byPaidBy['Pooja']) || 0;
+  const kunal = (data.byPaidBy && data.byPaidBy['Kunal']) || 0;
   document.getElementById('kpiSplit').innerHTML =
     `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
     `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
+
+  if (data.settlement === null) {
+    document.getElementById('kpiSettlement').innerHTML =
+      '<span style="color:var(--text-muted);font-size:12px">N/A for filtered view</span>';
+    return;
+  }
 
   const s = data.settlement || { net: 0, kunalOwesPooja: 0, poojaOwesKunal: 0, commonSpend: 0, poojaForKunal: 0, kunalForPooja: 0 };
   const net = s.net;
@@ -889,10 +1041,15 @@ function setChartPersonFilter(person) {
   chartPersonFilter = person;
   document.querySelectorAll('.chart-filter-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.person === person));
+  const base = getGlobalFiltered(savedTxList);
   if (person === 'all') {
-    if (_lastDashData) renderChartsFromData(_lastDashData);
+    if (globalPersonFilter === 'all' && _lastDashData) {
+      renderChartsFromData(_lastDashData);
+    } else {
+      renderChartsFromData(aggregateFromTxList(base, _lastDashData));
+    }
   } else {
-    const filtered = savedTxList.filter(t => t.paid_by === person);
+    const filtered = base.filter(t => t.paid_by === person);
     renderChartsFromData(aggregateFromTxList(filtered, _lastDashData));
   }
 }
@@ -977,6 +1134,74 @@ function renderTopMerchants(data) {
   // respect collapsed state
   document.getElementById('merchantsBody_wrap').style.display = merchantsVisible ? '' : 'none';
   document.getElementById('merchantsToggleIcon').textContent = merchantsVisible ? '▲' : '▼';
+}
+
+function renderTopMerchantsFromList(txList) {
+  const section = document.getElementById('merchantsSection');
+  const body = document.getElementById('merchantsBody');
+  const map = {};
+  for (const t of txList) {
+    const desc = t.description || '';
+    if (!map[desc]) map[desc] = { total: 0, cnt: 0 };
+    map[desc].total += parseFloat(t.amount) || 0;
+    map[desc].cnt++;
+  }
+  const merchants = Object.entries(map)
+    .map(([description, v]) => ({ description, ...v }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+  if (!merchants.length) { section.style.display = 'none'; return; }
+  body.innerHTML = merchants.map((m, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${esc(m.description || '—')}</td>
+      <td>${formatCurrency(m.total)}</td>
+      <td>${m.cnt}</td>
+    </tr>
+  `).join('');
+  section.style.display = '';
+  document.getElementById('merchantsBody_wrap').style.display = merchantsVisible ? '' : 'none';
+  document.getElementById('merchantsToggleIcon').textContent = merchantsVisible ? '▲' : '▼';
+}
+
+// ─── Global person filter ─────────────────────────────────────────────────────
+
+function setGlobalFilter(person) {
+  globalPersonFilter = person;
+  document.querySelectorAll('.global-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.person === person));
+  // reset per-chart filter so it doesn't confuse composition
+  chartPersonFilter = 'all';
+  document.querySelectorAll('.chart-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.person === 'all'));
+  applyGlobalFilter();
+  // mark trends as stale; reload immediately if tab is visible
+  trendsLoaded = false;
+  const trendsTab = document.getElementById('tab-trends');
+  if (trendsTab && !trendsTab.classList.contains('hidden')) {
+    loadTrends();
+  }
+}
+
+function applyGlobalFilter() {
+  if (!_lastDashData) return;
+  const gList = getGlobalFiltered(savedTxList);
+
+  if (globalPersonFilter === 'all') {
+    renderKPIs(_lastDashData);
+    renderChartsFromData(_lastDashData);
+    renderTopMerchants(_lastDashData);
+  } else {
+    const totalSpend = gList.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    const byPaidBy = {};
+    for (const t of gList) byPaidBy[t.paid_by] = (byPaidBy[t.paid_by] || 0) + (parseFloat(t.amount) || 0);
+    renderKPIs({ totalSpend, transactionCount: gList.length, byPaidBy, settlement: null });
+    renderChartsFromData(aggregateFromTxList(gList, _lastDashData));
+    renderTopMerchantsFromList(gList);
+  }
+
+  // re-render grid rows (head stays, no filter reset)
+  renderGridBody();
 }
 
 // ─── Transactions Grid ────────────────────────────────────────────────────────
@@ -1086,8 +1311,14 @@ function updateFilterBtn() {
   btn.classList.toggle('btn-secondary', active === 0 && !filtersVisible);
 }
 
+function getGlobalFiltered(list) {
+  if (globalPersonFilter === 'all') return list;
+  if (globalPersonFilter === 'Common') return list.filter(t => t.expense_type === 'Common_50_50');
+  return list.filter(t => t.paid_by === globalPersonFilter);
+}
+
 function getFilteredList() {
-  return savedTxList.filter(tx => {
+  return getGlobalFiltered(savedTxList).filter(tx => {
     return TX_COLS.every(col => {
       const f = (txFilters[col.key] || '').toLowerCase().trim();
       if (!f) return true;
@@ -1285,16 +1516,25 @@ function renderGridBody() {
   // Sort
   const sorted = [...filtered].sort((a, b) => {
     let va = a[txSort.col] ?? '', vb = b[txSort.col] ?? '';
+    // Blanks/zeros always sort last regardless of direction
+    const aEmpty = va === '' || va === null || va === undefined;
+    const bEmpty = vb === '' || vb === null || vb === undefined;
+    if (aEmpty && bEmpty) return a.id - b.id;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+
     let cmp;
     if (txSort.col === 'amount') {
       cmp = (parseFloat(va) || 0) - (parseFloat(vb) || 0);
     } else if (txSort.col === 'date') {
-      cmp = parseDateNum(va) - parseDateNum(vb);
+      cmp = parseDateNum(String(va)) - parseDateNum(String(vb));
     } else {
-      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      va = String(va).replace(/_/g, ' ').toLowerCase();
+      vb = String(vb).replace(/_/g, ' ').toLowerCase();
       cmp = va < vb ? -1 : va > vb ? 1 : 0;
     }
-    return txSort.dir === 'asc' ? cmp : -cmp;
+    // Stable secondary sort by id when values are equal
+    return (txSort.dir === 'asc' ? cmp : -cmp) || (a.id - b.id);
   });
 
   document.getElementById('savedTxBody').innerHTML = sorted.map(tx => {
@@ -1773,8 +2013,9 @@ function closeConfirmModal() {
 }
 
 function runConfirmAction() {
+  const action = _confirmAction;
   closeConfirmModal();
-  if (_confirmAction) _confirmAction();
+  if (action) action();
 }
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
@@ -1936,13 +2177,14 @@ async function submitBulkEdit() {
   btn.textContent = 'Saving…';
 
   try {
-    await Promise.all(ids.map(id =>
-      fetch(`/api/transactions/${id}`, {
+    await Promise.all(ids.map(id => {
+      const existing = savedTxList.find(t => t.id === id) || {};
+      return fetch(`/api/transactions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value })
-      })
-    ));
+        body: JSON.stringify({ ...existing, [field]: value })
+      });
+    }));
     ids.forEach(id => {
       const tx = savedTxList.find(t => t.id === id);
       if (tx) tx[field] = value;
@@ -2001,7 +2243,10 @@ function formatMonthLabel(m) {
 
 async function loadTrends() {
   try {
-    const res = await fetch('/api/trends');
+    const personParam = globalPersonFilter !== 'all'
+      ? `?person=${encodeURIComponent(globalPersonFilter)}`
+      : '';
+    const res = await fetch(`/api/trends${personParam}`);
     if (!res.ok) throw new Error('Failed');
     const data = await res.json();
 
@@ -2011,65 +2256,55 @@ async function loadTrends() {
     }
     document.getElementById('trendsEmpty').classList.add('hidden');
 
-    renderMonthlySpendChart(data);
-    renderMonthlySplitChart(data);
-    renderTopCategoriesChart(data);
     renderTrendsSummaryTable(data);
+    renderCategoryBreakdownTable(data);
+    renderTopCategoriesChart(data);
     trendsLoaded = true;
   } catch (err) {
     console.error('loadTrends error:', err);
   }
 }
 
-function renderMonthlySpendChart(data) {
-  if (chartMonthlySpend) chartMonthlySpend.destroy();
-  chartMonthlySpend = new Chart(document.getElementById('chartMonthlySpend'), {
-    type: 'bar',
-    data: {
-      labels: data.months.map(formatMonthLabel),
-      datasets: [{
-        label: 'Total Spend',
-        data: data.monthlyTotals.map(r => r.total),
-        backgroundColor: '#2563eb',
-        borderRadius: 5,
-        borderSkipped: false
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => formatCurrency(ctx.parsed.y) } }
-      },
-      scales: { y: { ticks: { callback: v => '₹' + (v >= 1000 ? Math.round(v/1000) + 'k' : v) } } }
-    }
+function renderCategoryBreakdownTable(data) {
+  const { categories, byMonth, totals } = data.categoryBreakdown;
+  const months = data.months;
+  if (!categories.length) return;
+
+  // Header
+  const head = document.getElementById('trendsCategoryHead');
+  head.innerHTML = `<tr>
+    <th>Category</th>
+    ${months.map(m => `<th>${esc(formatMonthLabel(m))}</th>`).join('')}
+    <th><strong>Total</strong></th>
+  </tr>`;
+
+  // Body
+  const body = document.getElementById('trendsCategoryBody');
+  body.innerHTML = categories.map(cat => {
+    const cells = months.map(m => `<td>${formatCurrency((byMonth[m] && byMonth[m][cat]) || 0)}</td>`).join('');
+    return `<tr>
+      <td>${esc(cat)}</td>
+      ${cells}
+      <td><strong>${formatCurrency(totals[cat] || 0)}</strong></td>
+    </tr>`;
+  }).join('');
+
+  // Footer totals row
+  const foot = document.getElementById('trendsCategoryFoot');
+  const monthSums = months.map(m => {
+    const monthData = byMonth[m] || {};
+    return categories.reduce((s, c) => s + (monthData[c] || 0), 0);
   });
+  const grandTotal = monthSums.reduce((s, v) => s + v, 0);
+  foot.innerHTML = `<tr>
+    <td><strong>Total</strong></td>
+    ${monthSums.map(s => `<td><strong>${formatCurrency(s)}</strong></td>`).join('')}
+    <td><strong>${formatCurrency(grandTotal)}</strong></td>
+  </tr>`;
+
+  document.getElementById('trendsCategorySection').style.display = '';
 }
 
-function renderMonthlySplitChart(data) {
-  if (chartMonthlySplit) chartMonthlySplit.destroy();
-  chartMonthlySplit = new Chart(document.getElementById('chartMonthlySplit'), {
-    type: 'bar',
-    data: {
-      labels: data.months.map(formatMonthLabel),
-      datasets: [
-        { label: 'Pooja', data: data.monthlySplit.map(r => r.Pooja), backgroundColor: '#7c3aed', borderRadius: 3, stack: 'split' },
-        { label: 'Kunal', data: data.monthlySplit.map(r => r.Kunal), backgroundColor: '#2563eb', borderRadius: 3, stack: 'split' }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } },
-        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { stacked: true },
-        y: { stacked: true, ticks: { callback: v => '₹' + (v >= 1000 ? Math.round(v/1000) + 'k' : v) } }
-      }
-    }
-  });
-}
 
 function renderTopCategoriesChart(data) {
   if (chartTopCategories) chartTopCategories.destroy();
@@ -2116,4 +2351,11 @@ function renderTrendsSummaryTable(data) {
     </tr>`;
   }).reverse().join(''); // most recent first
   document.getElementById('trendsSummarySection').style.display = '';
+}
+
+// ── PWA Service Worker Registration ──────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
 }

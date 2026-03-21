@@ -208,10 +208,26 @@ app.get('/api/transactions', (req, res) => {
   res.json({ transactions: rows });
 });
 
+// ── Audit helpers ─────────────────────────────────────────────────────────────
+const auditWrite = db.prepare(
+  'INSERT INTO transaction_audit (tx_id, action, snapshot) VALUES (?, ?, ?)'
+);
+const auditCleanup = db.prepare(
+  "DELETE FROM transaction_audit WHERE changed_at < datetime('now', '-1 day')"
+);
+function saveAudit(txId, action, snapshot) {
+  auditWrite.run(txId, action, JSON.stringify(snapshot));
+  auditCleanup.run(); // lazy TTL cleanup
+}
+
 // PUT /api/transactions/:id
 app.put('/api/transactions/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const tx = req.body;
+  // Merge incoming fields over the existing row — never blank out omitted fields
+  const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  saveAudit(id, 'update', existing);
+  const tx = { ...existing, ...req.body };
   const info = db.prepare(`
     UPDATE transactions SET
       date=@date, amount=@amount, description=@description,
@@ -240,9 +256,53 @@ app.put('/api/transactions/:id', (req, res) => {
 // DELETE /api/transactions/:id
 app.delete('/api/transactions/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const info = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
+  const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  saveAudit(id, 'delete', existing);
+  db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
   res.json({ deleted: true });
+});
+
+// GET /api/audit — recent changes (last 24h)
+app.get('/api/audit', (req, res) => {
+  auditCleanup.run();
+  const rows = db.prepare(
+    'SELECT * FROM transaction_audit ORDER BY changed_at DESC LIMIT 100'
+  ).all();
+  res.json({ entries: rows.map(r => ({ ...r, snapshot: JSON.parse(r.snapshot) })) });
+});
+
+// POST /api/audit/:id/restore — restore a snapshot
+app.post('/api/audit/:id/restore', (req, res) => {
+  const auditRow = db.prepare('SELECT * FROM transaction_audit WHERE id = ?').get(parseInt(req.params.id));
+  if (!auditRow) return res.status(404).json({ error: 'Audit entry not found or expired' });
+  const snap = JSON.parse(auditRow.snapshot);
+
+  const txExists = db.prepare('SELECT id FROM transactions WHERE id = ?').get(snap.id);
+  if (txExists) {
+    // Restore by overwriting current values
+    db.prepare(`
+      UPDATE transactions SET
+        date=@date, amount=@amount, description=@description,
+        payment_method=@payment_method, paid_by=@paid_by, expense_type=@expense_type,
+        category=@category, mood=@mood, impulse=@impulse, remarks=@remarks, month=@month
+      WHERE id=@id
+    `).run({ ...snap });
+  } else {
+    // Re-insert deleted row (preserve original id)
+    db.prepare(`
+      INSERT INTO transactions
+        (id, date, amount, description, payment_method, paid_by, expense_type,
+         category, mood, impulse, remarks, month, created_at)
+      VALUES
+        (@id, @date, @amount, @description, @payment_method, @paid_by, @expense_type,
+         @category, @mood, @impulse, @remarks, @month, @created_at)
+    `).run({ ...snap });
+  }
+
+  // Remove audit entry — it's been consumed
+  db.prepare('DELETE FROM transaction_audit WHERE id = ?').run(auditRow.id);
+  res.json({ restored: true, transaction: snap });
 });
 
 // GET /api/trends — multi-month aggregated data
@@ -256,11 +316,17 @@ const MONTH_SORT = `
   END`;
 
 app.get('/api/trends', (req, res) => {
+  const { person } = req.query;
+  let pf = '';
+  let pfParams = [];
+  if (person === 'Pooja' || person === 'Kunal') { pf = ' AND paid_by = ?'; pfParams = [person]; }
+  else if (person === 'Common') { pf = " AND expense_type = 'Common_50_50'"; pfParams = []; }
+
   // Monthly totals
   const monthlyTotals = db.prepare(
     `SELECT month, COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
-     FROM transactions GROUP BY month ORDER BY ${MONTH_SORT}`
-  ).all();
+     FROM transactions WHERE 1=1${pf} GROUP BY month ORDER BY ${MONTH_SORT}`
+  ).all(...pfParams);
 
   const months = monthlyTotals.map(r => r.month);
   if (months.length === 0) return res.json({ months: [], monthlyTotals: [], monthlySplit: [], topCategories: { categories: [], byMonth: [] } });
@@ -268,9 +334,9 @@ app.get('/api/trends', (req, res) => {
   // Pooja vs Kunal split — pivot in JS
   const splitRows = db.prepare(
     `SELECT month, paid_by, COALESCE(SUM(amount),0) AS total
-     FROM transactions WHERE paid_by IN ('Pooja','Kunal')
+     FROM transactions WHERE paid_by IN ('Pooja','Kunal')${pf}
      GROUP BY month, paid_by ORDER BY ${MONTH_SORT}`
-  ).all();
+  ).all(...pfParams);
   const splitMap = {};
   for (const r of splitRows) {
     if (!splitMap[r.month]) splitMap[r.month] = { Pooja: 0, Kunal: 0 };
@@ -278,19 +344,19 @@ app.get('/api/trends', (req, res) => {
   }
   const monthlySplit = months.map(m => ({ month: m, Pooja: splitMap[m]?.Pooja || 0, Kunal: splitMap[m]?.Kunal || 0 }));
 
-  // Top 5 categories globally
+  // Top 5 categories
   const top5 = db.prepare(
-    `SELECT category FROM transactions WHERE category != '' AND category IS NOT NULL
+    `SELECT category FROM transactions WHERE category != '' AND category IS NOT NULL${pf}
      GROUP BY category ORDER BY SUM(amount) DESC LIMIT 5`
-  ).all().map(r => r.category);
+  ).all(...pfParams).map(r => r.category);
 
   // Per-month breakdown for those 5
   const placeholders = top5.map(() => '?').join(',');
   const catRows = top5.length ? db.prepare(
     `SELECT month, category, COALESCE(SUM(amount),0) AS total
-     FROM transactions WHERE category IN (${placeholders})
+     FROM transactions WHERE category IN (${placeholders})${pf}
      GROUP BY month, category ORDER BY ${MONTH_SORT}`
-  ).all(...top5) : [];
+  ).all(...top5, ...pfParams) : [];
 
   const catMap = {};
   for (const r of catRows) {
@@ -303,7 +369,26 @@ app.get('/api/trends', (req, res) => {
     return obj;
   });
 
-  res.json({ months, monthlyTotals, monthlySplit, topCategories: { categories: top5, byMonth } });
+  // All categories breakdown
+  const allCatRows = db.prepare(
+    `SELECT month, category, COALESCE(SUM(amount),0) AS total
+     FROM transactions WHERE category != '' AND category IS NOT NULL${pf}
+     GROUP BY month, category ORDER BY ${MONTH_SORT}`
+  ).all(...pfParams);
+
+  const allCatTotals = {};
+  const allCatByMonth = {};
+  for (const r of allCatRows) {
+    if (!allCatByMonth[r.month]) allCatByMonth[r.month] = {};
+    allCatByMonth[r.month][r.category] = r.total;
+    allCatTotals[r.category] = (allCatTotals[r.category] || 0) + r.total;
+  }
+  const allCategories = Object.keys(allCatTotals).sort((a, b) => allCatTotals[b] - allCatTotals[a]);
+
+  res.json({
+    months, monthlyTotals, monthlySplit, topCategories: { categories: top5, byMonth },
+    categoryBreakdown: { categories: allCategories, byMonth: allCatByMonth, totals: allCatTotals }
+  });
 });
 
 // GET /api/months
@@ -494,6 +579,28 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     res.json({ transactions });
   } catch (err) {
     console.error('Extraction error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/extract-text', express.json(), async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
+
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+    const result = await model.generateContent([
+      `The following is one or more SMS / bank notification messages pasted by the user. Extract all transactions from them.\n\n${text.trim()}\n\n${buildExtractionPrompt()}`
+    ]);
+
+    const raw = result.response.text().trim();
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return res.json({ transactions: [] });
+
+    const transactions = JSON.parse(jsonMatch[0]);
+    res.json({ transactions });
+  } catch (err) {
+    console.error('Text extraction error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -224,6 +224,54 @@ body.dark .upload-month-bar select { background: #0f172a; color: #f1f5f9; border
 }
 .btn-upload:hover { background: var(--primary-hover); }
 
+/* Paste SMS card */
+.paste-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.paste-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.paste-card-header:hover { background: #f8fafc; }
+.paste-card-icon { font-size: 18px; }
+.paste-card-title { font-size: 14px; font-weight: 600; flex: 1; color: var(--text); }
+.paste-card-toggle { font-size: 13px; color: var(--text-muted); }
+.paste-card-body { padding: 0 16px 14px; }
+.paste-textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+.paste-textarea:focus { outline: none; border-color: var(--primary); }
+.paste-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+body.dark .paste-card { background: #1e293b; border-color: #334155; }
+body.dark .paste-card-header:hover { background: #253347; }
+body.dark .paste-textarea { background: #0f172a; color: #f1f5f9; border-color: #334155; }
+
 /* Loading */
 .loading-card {
   background: var(--white);
@@ -580,6 +628,37 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
   transition: color 0.15s;
 }
 .section-header:hover .section-toggle-icon { color: var(--primary); }
+
+/* ─── Global person filter (tab nav) ───────────────────────────────────────── */
+.tab-nav-spacer { flex: 1; }
+.global-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 0;
+}
+.global-filter-btn {
+  padding: 4px 14px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: #94a3b8;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.global-filter-btn:hover:not(.active) {
+  background: rgba(255,255,255,0.08);
+  color: #cbd5e1;
+}
+.global-filter-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+body.dark .global-filter-btn { border-color: #334155; }
+body.dark .global-filter-btn.active { background: var(--primary); border-color: var(--primary); }
 
 /* ─── Chart person filter ───────────────────────────────────────────────────── */
 .chart-filter-group {
@@ -999,6 +1078,23 @@ body.dark .arm-input { background: #0f172a; color: #f1f5f9; border-color: #33415
 body.dark .arm-field .rv-combo-trigger { background: #0f172a; border-color: #334155; }
 body.dark .arm-field .rv-combo-trigger:hover { background: #1e293b; }
 
+/* ─── Audit / History Modal ─────────────────────────────────────────────────── */
+.audit-ttl { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.audit-table th { background: var(--bg); color: var(--text-muted); font-weight: 600;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+.audit-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.audit-table tr:last-child td { border-bottom: none; }
+.audit-when { color: var(--text-muted); white-space: nowrap; font-size: 12px; }
+.audit-badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; white-space: nowrap; }
+.audit-del { background: #fee2e2; color: #991b1b; }
+.audit-edit { background: #dbeafe; color: #1e40af; }
+body.dark .audit-table th { background: #0f172a; }
+body.dark .audit-del { background: #450a0a; color: #fca5a5; }
+body.dark .audit-edit { background: #1e3a5f; color: #93c5fd; }
+
 /* ─── Manage Lists Modal ────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
@@ -1086,8 +1182,11 @@ body.dark .ml-input { background: #0f172a; color: #f1f5f9; border-color: #334155
   .user-info span { display: none; }
 
   /* Tab nav */
-  .tab-nav { padding: 0 12px; }
+  .tab-nav { padding: 0 12px; flex-wrap: wrap; }
   .tab-btn { padding: 10px 14px; font-size: 13px; }
+  .tab-nav-spacer { display: none; }
+  .global-filter-group { width: 100%; padding: 6px 0 8px; gap: 4px; }
+  .global-filter-btn { padding: 3px 10px; font-size: 11px; }
 
   /* Main padding */
   .main { padding: 14px 12px; gap: 14px; }

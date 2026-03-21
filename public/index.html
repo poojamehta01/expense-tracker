@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Kharcha" />
+  <meta name="theme-color" content="#6c63ff" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <title>Expense Tracker</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
@@ -29,6 +36,13 @@
       <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
       <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
       <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
+      <div class="tab-nav-spacer"></div>
+      <div class="global-filter-group">
+        <button class="global-filter-btn active" data-person="all"    onclick="setGlobalFilter('all')">All</button>
+        <button class="global-filter-btn"         data-person="Pooja"  onclick="setGlobalFilter('Pooja')">Pooja</button>
+        <button class="global-filter-btn"         data-person="Kunal"  onclick="setGlobalFilter('Kunal')">Kunal</button>
+        <button class="global-filter-btn"         data-person="Common" onclick="setGlobalFilter('Common')">Common</button>
+      </div>
     </nav>
 
     <main class="main">
@@ -42,6 +56,7 @@
             <label for="monthPicker">Month</label>
             <select id="monthPicker" onchange="loadDashboard(this.value)"></select>
           </div>
+          <button class="btn-secondary" onclick="openAuditModal()" title="View recent edits &amp; deletions">🕐 History</button>
           <button class="btn-secondary" onclick="exportToSheets()">Export to Google Sheets</button>
         </div>
 
@@ -183,6 +198,22 @@
           <p class="upload-hint">PNG, JPG, HEIC, PDF — up to 20MB per file</p>
         </div>
 
+        <!-- Paste messages card -->
+        <div class="paste-card">
+          <div class="paste-card-header" onclick="togglePasteCard()">
+            <span class="paste-card-icon">💬</span>
+            <span class="paste-card-title">Paste SMS / bank messages</span>
+            <span id="pasteCardToggleIcon" class="paste-card-toggle">▸</span>
+          </div>
+          <div id="pasteCardBody" class="paste-card-body hidden">
+            <textarea id="smsTextarea" class="paste-textarea" placeholder="Paste one or more messages here…&#10;&#10;INR 1,391.67 spent using ICICI Bank Card XX1000 on 21-Mar-26 on AMAZON PAY IN E.&#10;INR 2,400 debited from SBI A/c …" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();extractFromTextArea();}"></textarea>
+            <div class="paste-card-footer">
+              <button class="btn-secondary small" onclick="clearSmsText()">Clear</button>
+              <button class="btn-primary" onclick="extractFromTextArea()" id="smsExtractBtn">Extract transactions</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Loading -->
         <div id="loadingSection" class="loading-card hidden">
           <div class="spinner"></div>
@@ -243,22 +274,7 @@
       <div id="tab-trends" class="hidden">
         <div class="trends-grid">
 
-          <div class="chart-card">
-            <h3>Monthly Total Spend</h3>
-            <div class="chart-container"><canvas id="chartMonthlySpend"></canvas></div>
-          </div>
-
-          <div class="chart-card">
-            <h3>Pooja vs Kunal — Monthly Split</h3>
-            <div class="chart-container"><canvas id="chartMonthlySplit"></canvas></div>
-          </div>
-
-          <div class="chart-card">
-            <h3>Top 5 Categories Over Time</h3>
-            <div class="chart-container chart-container--lg"><canvas id="chartTopCategories"></canvas></div>
-          </div>
-
-          <div class="table-section" id="trendsSummarySection">
+          <div class="table-section" id="trendsSummarySection" style="display:none">
             <div class="table-header-row">
               <h2>Monthly Summary</h2>
             </div>
@@ -276,6 +292,22 @@
                 <tbody id="trendsSummaryBody"></tbody>
               </table>
             </div>
+          </div>
+
+          <div class="table-section" id="trendsCategorySection" style="display:none">
+            <div class="table-header-row"><h2>Spend by Category</h2></div>
+            <div class="table-wrapper">
+              <table id="trendsCategoryTable">
+                <thead id="trendsCategoryHead"></thead>
+                <tbody id="trendsCategoryBody"></tbody>
+                <tfoot id="trendsCategoryFoot"></tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="chart-card">
+            <h3>Top 5 Categories Over Time</h3>
+            <div class="chart-container chart-container--lg"><canvas id="chartTopCategories"></canvas></div>
           </div>
 
           <div id="trendsEmpty" class="empty-state hidden">
@@ -383,6 +415,19 @@
           <button class="btn-secondary" onclick="closeAddRowModal()">Cancel</button>
           <button class="btn-primary" id="arm-save-btn" onclick="submitAddRowModal()">Save</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit / History Modal -->
+  <div id="auditModal" class="modal-overlay hidden" onclick="if(event.target===this)closeAuditModal()">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Edit &amp; Delete History <span class="audit-ttl">(last 24 h)</span></h2>
+        <button class="modal-close" onclick="closeAuditModal()">×</button>
+      </div>
+      <div class="modal-body" id="auditModalBody">
+        <p style="color:var(--text-muted);font-size:13px">Loading…</p>
       </div>
     </div>
   </div>

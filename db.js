@@ -27,6 +27,14 @@ db.exec(`
     value     TEXT NOT NULL,
     UNIQUE(list_name, value)
   );
+
+  CREATE TABLE IF NOT EXISTS transaction_audit (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    tx_id      INTEGER NOT NULL,
+    action     TEXT NOT NULL,
+    snapshot   TEXT NOT NULL,
+    changed_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 module.exports = db;
