@@ -80,7 +80,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   loadSettings();
   setupUpload();
-  setDefaultSheetName();
   initUploadMonthPicker();
   loadUser();
   switchTab('dashboard');
@@ -119,12 +118,7 @@ function getUploadMonth() {
   return document.getElementById('uploadMonthPicker').value;
 }
 
-function onUploadMonthChange() {
-  // update sheet name to match selected month (for optional Sheets export)
-  const m = getUploadMonth();
-  const el = document.getElementById('sheetName');
-  if (el && m) el.value = m;
-}
+function onUploadMonthChange() {}
 
 function initUploadMonthPicker() {
   const picker = document.getElementById('uploadMonthPicker');
@@ -147,14 +141,6 @@ function initUploadMonthPicker() {
   onUploadMonthChange();
 }
 
-function setDefaultSheetName() {
-  const months = ['January','February','March','April','May','June',
-                  'July','August','September','October','November','December'];
-  const now = new Date();
-  const defaultName = `${months[now.getMonth()]}_${now.getFullYear()}`;
-  const input = document.getElementById('sheetName');
-  if (!input.value) input.value = defaultName;
-}
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
@@ -168,20 +154,7 @@ function switchTab(name) {
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 function loadSettings() {
-  const url = localStorage.getItem('sheetsUrl') || '';
-  const name = localStorage.getItem('sheetName') || '';
-  document.getElementById('sheetsUrl').value = url;
-  if (name) document.getElementById('sheetName').value = name;
-}
-
-function saveSettings() {
-  const url = document.getElementById('sheetsUrl').value.trim();
-  const name = document.getElementById('sheetName').value.trim();
-  localStorage.setItem('sheetsUrl', url);
-  localStorage.setItem('sheetName', name);
-  const saved = document.getElementById('settingsSaved');
-  saved.classList.remove('hidden');
-  setTimeout(() => saved.classList.add('hidden'), 2000);
+  // sheetsUrl preserved in localStorage for optional export
 }
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
@@ -513,10 +486,14 @@ async function saveToTracker() {
 async function exportToSheets() {
   const url = localStorage.getItem('sheetsUrl') || '';
   const month = document.getElementById('monthPicker').value;
-  const sheetName = month || document.getElementById('sheetName').value.trim();
+  const sheetName = month;
 
   if (!url) {
-    alert('Set your Google Apps Script URL in the Add Expenses tab settings first.');
+    const entered = prompt('Enter your Google Apps Script URL for Sheets export:');
+    if (!entered) return;
+    localStorage.setItem('sheetsUrl', entered.trim());
+  }
+  if (!url) {
     return;
   }
 
