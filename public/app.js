@@ -1,0 +1,1178 @@
+// ─── Data ───────────────────────────────────────────────────────────────────
+
+const CATEGORIES = [
+  'Zepto/Blinkit','Credit Card Payment','Doctor','Donation','Entertainment',
+  'Fitness','Fruits & Veggies','Furlenco','Gifts','Home stuff','House Help',
+  'Investment','Laundry','Loan EMI','Medicines','Monthly Home bills','Ola/Uber',
+  'Others','Outside Food','Parking','Petrol','Porter/Rapido','Refunded','Rent',
+  'Salon','Settlement','Shopping - bag','Shopping - clothes','Shopping - electronics',
+  'Shopping - gold','Shopping - home','Shopping - jwellery','Shopping - shoes',
+  'Shopping - silver','Shopping - skin/hair care','Subscriptions','Unexpected',
+  'Wifi/ Phone bills','Shopping - hobby','Insurance','Travel - flights',
+  'Car downpayment/ emi','Therapy','Birthday gift','Stays','Nutritionist',
+  'Books','Flowers','ESOPS','Movies','DryClear'
+];
+
+const EXPENSE_TYPES = [
+  'Pooja_Personal','Kunal_Personal','Common_50_50',
+  'Pooja_for_Kunal','Kunal_for_Pooja','Kunal_CreditCard_Bill','Pooja_CreditCard_Bill'
+];
+
+const PAYMENT_METHODS = [
+  'Cash','ICICI_Credit_Card','Amazon_Credit_Card','SBI_Credit_Card',
+  'HDFC_Credit_Card','ABFL_Credit_Card','HDFC_Debit_Card','Zaggle'
+];
+
+const MOODS = ['', 'Neutral', 'Happy', 'Sad', 'Angry', 'Anxious', 'Bored'];
+const IMPULSE_OPTIONS = ['', 'Impulse', 'Intentional'];
+
+// ─── Chip color map ──────────────────────────────────────────────────────────
+const CHIP_MAP = {
+  // expense_type
+  'Pooja_Personal':        { bg: '#ede9fe', color: '#5b21b6' },
+  'Kunal_Personal':        { bg: '#dbeafe', color: '#1e40af' },
+  'Common_50_50':          { bg: '#fee2e2', color: '#991b1b' },
+  'Pooja_for_Kunal':       { bg: '#fef3c7', color: '#92400e' },
+  'Kunal_for_Pooja':       { bg: '#dcfce7', color: '#166534' },
+  'Kunal_CreditCard_Bill': { bg: '#f1f5f9', color: '#475569' },
+  'Pooja_CreditCard_Bill': { bg: '#fce7f3', color: '#9d174d' },
+  // payment_method
+  'Cash':                  { bg: '#d1fae5', color: '#065f46' },
+  'ICICI_Credit_Card':     { bg: '#e0f2fe', color: '#0369a1' },
+  'Amazon_Credit_Card':    { bg: '#ffedd5', color: '#9a3412' },
+  'SBI_Credit_Card':       { bg: '#ccfbf1', color: '#0f766e' },
+  'HDFC_Credit_Card':      { bg: '#e0e7ff', color: '#3730a3' },
+  'ABFL_Credit_Card':      { bg: '#f5f3ff', color: '#6d28d9' },
+  'HDFC_Debit_Card':       { bg: '#ffe4e6', color: '#be123c' },
+  'Zaggle':                { bg: '#fdf4ff', color: '#86198f' },
+  // paid_by
+  'Pooja':                 { bg: '#ede9fe', color: '#5b21b6' },
+  'Kunal':                 { bg: '#dbeafe', color: '#1e40af' },
+  // impulse
+  'Impulse':               { bg: '#fee2e2', color: '#991b1b' },
+  'Intentional':           { bg: '#dcfce7', color: '#166534' },
+};
+
+function chipHtml(val) {
+  if (!val) return '<span class="cell-empty">—</span>';
+  const c = CHIP_MAP[val];
+  const label = String(val).replace(/_/g, ' ');
+  if (c) return `<span class="chip" style="background:${c.bg};color:${c.color}">${esc(label)}</span>`;
+  // neutral chip for categories and other select values
+  return `<span class="chip chip-neutral">${esc(label)}</span>`;
+}
+
+// ─── State ──────────────────────────────────────────────────────────────────
+
+let transactions = [];
+let chartCategory = null;
+let chartDaily = null;
+let chartExpenseType = null;
+let chartPaymentMethod = null;
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadSettings();
+  setupUpload();
+  setDefaultSheetName();
+  loadUser();
+  switchTab('dashboard');
+  loadMonths();
+
+  // Close column panel when clicking outside
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('colPanel')?.closest('.col-toggle-wrap');
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById('colPanel')?.classList.add('hidden');
+    }
+  });
+});
+
+async function loadUser() {
+  try {
+    const res = await fetch('/api/me');
+    if (!res.ok) return;
+    const user = await res.json();
+    const el = document.getElementById('userInfo');
+    el.innerHTML = `
+      ${user.photo ? `<img src="${esc(user.photo)}" alt="${esc(user.name)}" referrerpolicy="no-referrer" />` : ''}
+      <span>${esc(user.name)}</span>
+      <a href="/auth/logout">Sign out</a>
+    `;
+  } catch {}
+}
+
+function setDefaultSheetName() {
+  const months = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const now = new Date();
+  const defaultName = `${months[now.getMonth()]}_${now.getFullYear()}`;
+  const input = document.getElementById('sheetName');
+  if (!input.value) input.value = defaultName;
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+
+function switchTab(name) {
+  document.getElementById('tab-dashboard').classList.toggle('hidden', name !== 'dashboard');
+  document.getElementById('tab-add').classList.toggle('hidden', name !== 'add');
+  document.getElementById('tab-btn-dashboard').classList.toggle('active', name === 'dashboard');
+  document.getElementById('tab-btn-add').classList.toggle('active', name === 'add');
+}
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+function loadSettings() {
+  const url = localStorage.getItem('sheetsUrl') || '';
+  const name = localStorage.getItem('sheetName') || '';
+  document.getElementById('sheetsUrl').value = url;
+  if (name) document.getElementById('sheetName').value = name;
+}
+
+function saveSettings() {
+  const url = document.getElementById('sheetsUrl').value.trim();
+  const name = document.getElementById('sheetName').value.trim();
+  localStorage.setItem('sheetsUrl', url);
+  localStorage.setItem('sheetName', name);
+  const saved = document.getElementById('settingsSaved');
+  saved.classList.remove('hidden');
+  setTimeout(() => saved.classList.add('hidden'), 2000);
+}
+
+// ─── Upload ──────────────────────────────────────────────────────────────────
+
+function setupUpload() {
+  const area = document.getElementById('uploadArea');
+  const input = document.getElementById('fileInput');
+
+  area.addEventListener('click', (e) => {
+    if (e.target.tagName !== 'LABEL') input.click();
+  });
+
+  input.addEventListener('change', () => {
+    if (input.files.length) handleFiles(Array.from(input.files));
+    input.value = '';
+  });
+
+  area.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    area.classList.add('dragover');
+  });
+  area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+  area.addEventListener('drop', (e) => {
+    e.preventDefault();
+    area.classList.remove('dragover');
+    const files = Array.from(e.dataTransfer.files).filter(f =>
+      f.type.startsWith('image/') || f.type === 'application/pdf'
+    );
+    if (files.length) handleFiles(files);
+  });
+}
+
+async function handleFiles(files) {
+  showLoading(true);
+  showError('');
+  hideResult();
+
+  const newTx = [];
+  for (let i = 0; i < files.length; i++) {
+    setLoadingText(`Processing file ${i + 1} of ${files.length}: ${files[i].name}…`);
+    try {
+      const extracted = await extractFromFile(files[i]);
+      newTx.push(...extracted);
+    } catch (err) {
+      showError(`Failed to process "${files[i].name}": ${err.message}`);
+    }
+  }
+
+  showLoading(false);
+
+  if (newTx.length === 0 && transactions.length === 0) {
+    showError('No transactions found. Try a clearer screenshot.');
+    return;
+  }
+
+  transactions.push(...newTx);
+  renderTable();
+}
+
+async function extractFromFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch('/api/extract', { method: 'POST', body: formData });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Server error');
+  }
+  const data = await res.json();
+  return data.transactions || [];
+}
+
+// ─── Review Table ─────────────────────────────────────────────────────────────
+
+function renderTable() {
+  const section = document.getElementById('tableSection');
+  const body = document.getElementById('txBody');
+  const count = document.getElementById('txCount');
+
+  body.innerHTML = '';
+  transactions.forEach((tx, i) => {
+    body.appendChild(buildRow(tx, i));
+  });
+
+  count.textContent = `${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}`;
+  section.classList.remove('hidden');
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function buildRow(tx, index) {
+  const tr = document.createElement('tr');
+  tr.dataset.index = index;
+
+  tr.innerHTML = `
+    <td><input type="text" value="${esc(tx.date || '')}" onchange="updateTx(${index},'date',this.value)" /></td>
+    <td><input type="number" value="${tx.amount || ''}" step="0.01" onchange="updateTx(${index},'amount',parseFloat(this.value))" /></td>
+    <td><input type="text" value="${esc(tx.description || '')}" onchange="updateTx(${index},'description',this.value)" /></td>
+    <td>${makeSelect(PAYMENT_METHODS, tx.payment_method, index, 'payment_method')}</td>
+    <td>${makeSelect(['Pooja','Kunal'], tx.paid_by, index, 'paid_by')}</td>
+    <td>${makeSelect(EXPENSE_TYPES, tx.expense_type, index, 'expense_type')}</td>
+    <td>${makeSelect(CATEGORIES, tx.category, index, 'category')}</td>
+    <td>${makeSelect(MOODS, tx.mood || '', index, 'mood')}</td>
+    <td>${makeSelect(IMPULSE_OPTIONS, tx.impulse || '', index, 'impulse')}</td>
+    <td><input type="text" value="${esc(tx.remarks || '')}" onchange="updateTx(${index},'remarks',this.value)" /></td>
+    <td><button class="btn-delete" onclick="deleteRow(${index})" title="Delete">×</button></td>
+  `;
+  return tr;
+}
+
+function makeSelect(options, current, index, field) {
+  const opts = options.map(o =>
+    `<option value="${esc(o)}" ${o === current ? 'selected' : ''}>${esc(o) || '—'}</option>`
+  ).join('');
+  return `<select onchange="updateTx(${index},'${field}',this.value)">${opts}</select>`;
+}
+
+function updateTx(index, field, value) {
+  transactions[index][field] = value;
+}
+
+function deleteRow(index) {
+  transactions.splice(index, 1);
+  if (transactions.length === 0) {
+    document.getElementById('tableSection').classList.add('hidden');
+  } else {
+    renderTable();
+  }
+}
+
+function addEmptyRow() {
+  const months = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const now = new Date();
+  transactions.push({
+    date: `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`,
+    amount: '',
+    description: '',
+    payment_method: 'HDFC_Credit_Card',
+    paid_by: 'Pooja',
+    expense_type: 'Pooja_Personal',
+    category: 'Others',
+    mood: '',
+    impulse: '',
+    remarks: ''
+  });
+  renderTable();
+  const rows = document.querySelectorAll('#txBody tr');
+  if (rows.length) rows[rows.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function clearAll() {
+  if (!confirm('Clear all transactions?')) return;
+  transactions = [];
+  document.getElementById('tableSection').classList.add('hidden');
+  hideResult();
+}
+
+// ─── Save to Tracker ──────────────────────────────────────────────────────────
+
+async function saveToTracker() {
+  if (transactions.length === 0) {
+    alert('No transactions to save.');
+    return;
+  }
+
+  const saveBtn = document.getElementById('saveBtn');
+  const saveBtn2 = document.getElementById('saveBtn2');
+  saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+  saveBtn2.disabled = true; saveBtn2.textContent = 'Saving…';
+
+  try {
+    const res = await fetch('/api/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactions })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Server error');
+    }
+    const data = await res.json();
+    showResult(`✓ ${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!`, 'success');
+    transactions = [];
+    document.getElementById('tableSection').classList.add('hidden');
+    // Refresh months list in dashboard
+    loadMonths();
+  } catch (err) {
+    showResult(`Failed to save: ${err.message}`, 'error');
+  }
+
+  saveBtn.disabled = false; saveBtn.textContent = 'Save to Tracker';
+  saveBtn2.disabled = false; saveBtn2.textContent = 'Save to Tracker →';
+}
+
+// ─── Export to Sheets (optional) ─────────────────────────────────────────────
+
+async function exportToSheets() {
+  const url = localStorage.getItem('sheetsUrl') || '';
+  const month = document.getElementById('monthPicker').value;
+  const sheetName = month || document.getElementById('sheetName').value.trim();
+
+  if (!url) {
+    alert('Set your Google Apps Script URL in the Add Expenses tab settings first.');
+    return;
+  }
+
+  const res = await fetch(`/api/transactions?month=${encodeURIComponent(month)}`);
+  const data = await res.json();
+  if (!data.transactions || data.transactions.length === 0) {
+    alert('No transactions to export for this month.');
+    return;
+  }
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactions: data.transactions, sheetName })
+    });
+    alert(`✓ ${data.transactions.length} transactions exported to "${sheetName}".`);
+  } catch (err) {
+    alert(`Export failed: ${err.message}`);
+  }
+}
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+
+async function loadMonths() {
+  try {
+    const res = await fetch('/api/months');
+    const data = await res.json();
+    const picker = document.getElementById('monthPicker');
+    const prev = picker.value;
+
+    picker.innerHTML = '';
+    if (!data.months || data.months.length === 0) {
+      picker.innerHTML = '<option value="">No data yet</option>';
+      return;
+    }
+
+    // Sort months chronologically
+    const sorted = data.months.slice().sort((a, b) => {
+      const monthOrder = ['January','February','March','April','May','June',
+                          'July','August','September','October','November','December'];
+      const [am, ay] = a.split('_');
+      const [bm, by] = b.split('_');
+      if (ay !== by) return parseInt(ay) - parseInt(by);
+      return monthOrder.indexOf(am) - monthOrder.indexOf(bm);
+    });
+
+    sorted.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m.replace('_', ' ');
+      picker.appendChild(opt);
+    });
+
+    // Pick current month or latest
+    const months = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    const now = new Date();
+    const currentMonth = `${months[now.getMonth()]}_${now.getFullYear()}`;
+    if (prev && sorted.includes(prev)) {
+      picker.value = prev;
+    } else if (sorted.includes(currentMonth)) {
+      picker.value = currentMonth;
+    } else {
+      picker.value = sorted[sorted.length - 1];
+    }
+
+    loadDashboard(picker.value);
+  } catch (err) {
+    console.error('loadMonths error:', err);
+  }
+}
+
+async function loadDashboard(month) {
+  if (!month) return;
+
+  try {
+    const [dashRes, txRes] = await Promise.all([
+      fetch(`/api/dashboard?month=${encodeURIComponent(month)}`),
+      fetch(`/api/transactions?month=${encodeURIComponent(month)}`)
+    ]);
+
+    const dash = await dashRes.json();
+    const txData = await txRes.json();
+
+    if (dashRes.ok && dash.transactionCount > 0) {
+      document.getElementById('dashboardEmpty').classList.add('hidden');
+      renderKPIs(dash);
+      renderCategoryChart(dash);
+      renderDailyChart(dash);
+      renderExpenseTypeChart(dash);
+      renderPaymentMethodChart(dash);
+      renderTopMerchants(dash);
+    } else {
+      document.getElementById('dashboardEmpty').classList.remove('hidden');
+      document.getElementById('merchantsSection').style.display = 'none';
+      document.getElementById('savedTxSection').style.display = 'none';
+    }
+
+    renderTransactionsList(txData.transactions || []);
+  } catch (err) {
+    console.error('loadDashboard error:', err);
+  }
+}
+
+let chartsVisible = true;
+let merchantsVisible = true;
+let txTableVisible = true;
+
+function toggleCharts() {
+  chartsVisible = !chartsVisible;
+  const grid = document.getElementById('chartsGrid');
+  const icon = document.getElementById('chartsToggleIcon');
+  grid.style.display = chartsVisible ? '' : 'none';
+  icon.textContent = chartsVisible ? '▲' : '▼';
+}
+
+function toggleMerchants() {
+  merchantsVisible = !merchantsVisible;
+  document.getElementById('merchantsBody_wrap').style.display = merchantsVisible ? '' : 'none';
+  document.getElementById('merchantsToggleIcon').textContent = merchantsVisible ? '▲' : '▼';
+}
+
+function toggleTxTable() {
+  txTableVisible = !txTableVisible;
+  document.getElementById('txTableBody_wrap').style.display = txTableVisible ? '' : 'none';
+  document.getElementById('txTableToggleIcon').textContent = txTableVisible ? '▲' : '▼';
+}
+
+function renderKPIs(data) {
+  document.getElementById('kpiTotal').textContent = formatCurrency(data.totalSpend);
+  document.getElementById('kpiCount').textContent = data.transactionCount;
+
+  const pooja = data.byPaidBy['Pooja'] || 0;
+  const kunal = data.byPaidBy['Kunal'] || 0;
+  document.getElementById('kpiSplit').innerHTML =
+    `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
+    `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
+
+  const impulse = data.impulseVsIntentional['Impulse'] || 0;
+  const pct = data.totalSpend > 0 ? Math.round((impulse / data.totalSpend) * 100) : 0;
+  document.getElementById('kpiImpulse').textContent = `${pct}%`;
+}
+
+const CHART_COLORS = [
+  '#2563eb','#7c3aed','#db2777','#ea580c','#16a34a',
+  '#0891b2','#9333ea','#e11d48','#f59e0b','#10b981'
+];
+
+function renderCategoryChart(data) {
+  if (chartCategory) chartCategory.destroy();
+  const labels = data.byCategory.map(d => d.category);
+  const values = data.byCategory.map(d => d.total);
+  chartCategory = new Chart(document.getElementById('chartCategory'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: CHART_COLORS,
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) } }
+      }
+    }
+  });
+}
+
+function renderDailyChart(data) {
+  if (chartDaily) chartDaily.destroy();
+  const labels = data.dailySpend.map(d => {
+    const parts = d.date.split(' ');
+    return parts[0]; // just the day number
+  });
+  const values = data.dailySpend.map(d => d.total);
+  chartDaily = new Chart(document.getElementById('chartDaily'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) } }
+      }
+    }
+  });
+}
+
+function renderExpenseTypeChart(data) {
+  if (chartExpenseType) chartExpenseType.destroy();
+  const labels = data.byExpenseType.map(d => d.expense_type.replace(/_/g, ' '));
+  const values = data.byExpenseType.map(d => d.total);
+  chartExpenseType = new Chart(document.getElementById('chartExpenseType'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: CHART_COLORS, borderWidth: 2 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } }
+      }
+    }
+  });
+}
+
+function renderPaymentMethodChart(data) {
+  if (chartPaymentMethod) chartPaymentMethod.destroy();
+  const labels = data.byPaymentMethod.map(d => d.payment_method.replace(/_/g, ' '));
+  const values = data.byPaymentMethod.map(d => d.total);
+  chartPaymentMethod = new Chart(document.getElementById('chartPaymentMethod'), {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: CHART_COLORS, borderWidth: 2 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } }
+      }
+    }
+  });
+}
+
+function renderTopMerchants(data) {
+  const section = document.getElementById('merchantsSection');
+  const body = document.getElementById('merchantsBody');
+  if (!data.topMerchants || data.topMerchants.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  body.innerHTML = data.topMerchants.map((m, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${esc(m.description || '—')}</td>
+      <td>${formatCurrency(m.total)}</td>
+      <td>${m.cnt}</td>
+    </tr>
+  `).join('');
+  section.style.display = '';
+}
+
+// ─── Transactions Grid ────────────────────────────────────────────────────────
+
+const TX_COLS = [
+  { key: 'date',           label: 'Date',           type: 'text'   },
+  { key: 'amount',         label: 'Amount',         type: 'number' },
+  { key: 'description',    label: 'Description',    type: 'text'   },
+  { key: 'category',       label: 'Category',       type: 'select', opts: CATEGORIES },
+  { key: 'paid_by',        label: 'Paid By',        type: 'select', opts: ['Pooja','Kunal'] },
+  { key: 'expense_type',   label: 'Expense Type',   type: 'select', opts: EXPENSE_TYPES },
+  { key: 'payment_method', label: 'Payment Method', type: 'select', opts: PAYMENT_METHODS },
+  { key: 'impulse',        label: 'Impulse',        type: 'select', opts: IMPULSE_OPTIONS },
+  { key: 'mood',           label: 'Mood',           type: 'select', opts: MOODS },
+  { key: 'remarks',        label: 'Remarks',        type: 'text'   },
+];
+
+let savedTxList = [];
+let txSort = { col: 'date', dir: 'asc' };
+let txVisibleCols = ['date', 'amount', 'description', 'category', 'paid_by', 'expense_type', 'payment_method', 'impulse'];
+let txFilters = { search: '', category: '', paid_by: '', expense_type: '', payment_method: '', impulse: '' };
+
+const MONTH_NUM = {January:1,February:2,March:3,April:4,May:5,June:6,
+                   July:7,August:8,September:9,October:10,November:11,December:12};
+
+function parseDateNum(str) {
+  // "21 March 2026" → 20260321 for numeric comparison
+  const p = String(str || '').trim().split(' ');
+  if (p.length < 3) return 0;
+  return (parseInt(p[2]) || 0) * 10000 + (MONTH_NUM[p[1]] || 0) * 100 + (parseInt(p[0]) || 0);
+}
+
+function clientMonthFromDate(dateStr) {
+  const parts = (dateStr || '').trim().split(' ');
+  if (parts.length >= 3) return `${parts[1]}_${parts[2]}`;
+  const months = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const now = new Date();
+  return `${months[now.getMonth()]}_${now.getFullYear()}`;
+}
+
+let filtersVisible = false;
+
+function resetTxFilters() {
+  txFilters = {};
+  TX_COLS.forEach(c => { txFilters[c.key] = ''; });
+}
+
+function renderTransactionsList(txList) {
+  savedTxList = txList || [];
+  resetTxFilters();
+  filtersVisible = false;
+  updateFilterBtn();
+  const section = document.getElementById('savedTxSection');
+  if (!savedTxList.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  renderColPanel();
+  renderGrid();
+}
+
+// ─── Per-column filter row ────────────────────────────────────────────────────
+
+function toggleFilterBar() {
+  filtersVisible = !filtersVisible;
+  if (!filtersVisible) { resetTxFilters(); updateFilterBtn(); }
+  renderGrid();
+}
+
+function setColFilter(key, value) {
+  txFilters[key] = value;
+  updateFilterBtn();
+  renderGridBody(); // only re-render body — keeps filter inputs focused
+}
+
+function clearTxFilters() {
+  resetTxFilters();
+  updateFilterBtn();
+  renderGrid();
+}
+
+function updateFilterBtn() {
+  const active = Object.values(txFilters).filter(Boolean).length;
+  const btn = document.getElementById('filterBtn');
+  if (!btn) return;
+  btn.textContent = active > 0 ? `Filter (${active}) ▾` : filtersVisible ? 'Filter ▲' : 'Filter ▾';
+  btn.classList.toggle('btn-primary', active > 0 || filtersVisible);
+  btn.classList.toggle('btn-secondary', active === 0 && !filtersVisible);
+}
+
+function getFilteredList() {
+  return savedTxList.filter(tx => {
+    return TX_COLS.every(col => {
+      const f = (txFilters[col.key] || '').toLowerCase().trim();
+      if (!f) return true;
+      const raw = String(tx[col.key] ?? '');
+      // Match against display value (with spaces instead of underscores)
+      const display = raw.replace(/_/g, ' ').toLowerCase();
+      return display.includes(f) || raw.toLowerCase().includes(f);
+    });
+  });
+}
+
+function renderGrid() {
+  renderGridHead();
+  renderGridBody();
+}
+
+// ─── Portal list cleanup ──────────────────────────────────────────────────────
+// cf-dd-list elements are appended to document.body (portal) so overflow:hidden
+// ancestors never clip them. Track them here and remove before each head rebuild.
+let _cfPortals = [];
+function cleanupCfPortals() {
+  _cfPortals.forEach(el => el.remove());
+  _cfPortals = [];
+}
+
+function renderGridHead() {
+  cleanupCfPortals();
+  const cols = TX_COLS.filter(c => txVisibleCols.includes(c.key));
+  const thead = document.getElementById('savedTxHead');
+  thead.innerHTML = ''; // clear
+
+  // ── Sort header row (plain innerHTML) ──────────────────────────────────────
+  const sortHtml = cols.map(col => {
+    const active = txSort.col === col.key;
+    const icon = active
+      ? `<span class="sort-icon active">${txSort.dir === 'asc' ? '▲' : '▼'}</span>`
+      : `<span class="sort-icon idle">↕</span>`;
+    return `<th class="sortable${active ? ' sorted' : ''}" onclick="txSortBy('${col.key}')">${col.label}${icon}</th>`;
+  }).join('') + '<th class="th-actions"></th>';
+  const sortTr = document.createElement('tr');
+  sortTr.innerHTML = sortHtml;
+  thead.appendChild(sortTr);
+
+  if (!filtersVisible) return;
+
+  // ── Filter row (DOM-built for interactive dropdowns) ───────────────────────
+  const filterTr = document.createElement('tr');
+  filterTr.className = 'filter-row';
+
+  cols.forEach(col => {
+    const th = document.createElement('th');
+    th.className = 'filter-th';
+
+    const isDropdown = col.type === 'select' || col.key === 'date';
+    if (isDropdown) {
+      const opts = col.key === 'date'
+        // unique dates from current data, sorted chronologically
+        ? [...new Set(savedTxList.map(t => t.date).filter(Boolean))].sort((a, b) => parseDateNum(a) - parseDateNum(b))
+        : (col.opts || []);
+      th.appendChild(makeCfDropdown(col.key, opts, col.type === 'select'));
+    } else {
+      // Plain text input for amount, description, remarks
+      const input = document.createElement('input');
+      input.className = 'cf-input' + (txFilters[col.key] ? ' cf-active' : '');
+      input.type = 'text';
+      input.placeholder = 'Search…';
+      input.value = txFilters[col.key] || '';
+      input.addEventListener('input', () => setColFilter(col.key, input.value));
+      input.addEventListener('click', e => e.stopPropagation());
+      th.appendChild(input);
+    }
+
+    filterTr.appendChild(th);
+  });
+
+  // Clear all button
+  const clearTh = document.createElement('th');
+  clearTh.className = 'filter-th';
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'cf-clear-btn';
+  clearBtn.title = 'Clear all filters';
+  clearBtn.textContent = '✕';
+  clearBtn.addEventListener('click', clearTxFilters);
+  clearTh.appendChild(clearBtn);
+  filterTr.appendChild(clearTh);
+
+  thead.appendChild(filterTr);
+}
+
+// Searchable dropdown for column filters
+// The list is portalled to document.body (position:fixed) so it's never clipped
+// by overflow:hidden/auto ancestors (table-wrapper, table-section, etc.)
+function makeCfDropdown(key, opts, useChips = false) {
+  const curVal = txFilters[key] || '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cf-dd-wrap';
+
+  const input = document.createElement('input');
+  input.className = 'cf-input' + (curVal ? ' cf-active' : '');
+  input.type = 'text';
+  input.placeholder = 'Search…';
+  input.value = curVal.replace(/_/g, ' ');
+
+  // Portal: list lives in document.body, positioned via getBoundingClientRect
+  const list = document.createElement('div');
+  list.className = 'cf-dd-list hidden';
+  list.style.position = 'fixed';
+  list.style.zIndex = '9999';
+  document.body.appendChild(list);
+  _cfPortals.push(list);
+
+  wrap.appendChild(input);
+
+  const positionList = () => {
+    const r = input.getBoundingClientRect();
+    list.style.top  = (r.bottom + 4) + 'px';
+    list.style.left = r.left + 'px';
+    list.style.minWidth = Math.max(r.width, 200) + 'px';
+  };
+
+  let selected = curVal;
+
+  const buildList = (q) => {
+    const qlo = q.toLowerCase();
+    const allOpts = ['', ...opts];
+    const filtered = allOpts.filter(o => !qlo || String(o).replace(/_/g, ' ').toLowerCase().includes(qlo));
+    list.innerHTML = filtered.map(o => {
+      let inner;
+      if (!o) inner = '<span style="color:#9ca3af;font-style:italic">All</span>';
+      else if (useChips) inner = chipHtml(o);
+      else inner = esc(String(o).replace(/_/g, ' '));
+      return `<div class="cf-sel-opt${o === selected ? ' cf-sel-cur' : ''}" data-val="${esc(o)}">${inner}</div>`;
+    }).join('');
+    list.classList.toggle('hidden', filtered.length === 0);
+  };
+
+  input.addEventListener('focus', () => { positionList(); buildList(''); list.classList.remove('hidden'); });
+  input.addEventListener('input', () => buildList(input.value));
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { list.classList.add('hidden'); input.value = selected.replace(/_/g, ' '); }
+    if (e.key === 'Enter') {
+      const first = list.querySelector('.cf-sel-opt');
+      if (first) pickOpt(first.dataset.val);
+    }
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      list.classList.add('hidden');
+      input.value = selected.replace(/_/g, ' ');
+    }, 160);
+  });
+
+  const pickOpt = (val) => {
+    selected = val;
+    input.value = val.replace(/_/g, ' ');
+    input.classList.toggle('cf-active', !!val);
+    list.classList.add('hidden');
+    setColFilter(key, val);
+  };
+
+  list.addEventListener('mousedown', e => {
+    e.preventDefault(); // prevent input blur before click fires
+    const opt = e.target.closest('.cf-sel-opt');
+    if (opt) pickOpt(opt.dataset.val);
+  });
+
+  return wrap;
+}
+
+function renderGridBody() {
+  const cols = TX_COLS.filter(c => txVisibleCols.includes(c.key));
+  const filtered = getFilteredList();
+
+  // Update count badge
+  const total = savedTxList.length;
+  const shown = filtered.length;
+  document.getElementById('savedTxCount').textContent = shown < total
+    ? `${shown} of ${total} transactions`
+    : `${total} transaction${total !== 1 ? 's' : ''}`;
+
+  // Sort
+  const sorted = [...filtered].sort((a, b) => {
+    let va = a[txSort.col] ?? '', vb = b[txSort.col] ?? '';
+    let cmp;
+    if (txSort.col === 'amount') {
+      cmp = (parseFloat(va) || 0) - (parseFloat(vb) || 0);
+    } else if (txSort.col === 'date') {
+      cmp = parseDateNum(va) - parseDateNum(vb);
+    } else {
+      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    }
+    return txSort.dir === 'asc' ? cmp : -cmp;
+  });
+
+  document.getElementById('savedTxBody').innerHTML = sorted.map(tx => {
+    const cells = cols.map(col => {
+      const raw = tx[col.key] ?? '';
+      let display;
+      if (col.key === 'amount') {
+        display = formatCurrency(raw);
+      } else if (col.type === 'select') {
+        display = chipHtml(raw);
+      } else {
+        display = esc(String(raw).replace(/_/g, ' ')) || '<span class="cell-empty">—</span>';
+      }
+      return `<td class="gc" data-id="${tx.id}" data-field="${col.key}" onclick="startEdit(this)">${display}</td>`;
+    }).join('');
+    return `<tr data-id="${tx.id}">${cells}<td class="td-actions"><button class="btn-delete" onclick="deleteSavedTx(${tx.id})" title="Delete">×</button></td></tr>`;
+  }).join('');
+}
+
+function txSortBy(col) {
+  if (txSort.col === col) txSort.dir = txSort.dir === 'asc' ? 'desc' : 'asc';
+  else { txSort.col = col; txSort.dir = 'asc'; }
+  renderGrid();
+}
+
+function startEdit(cell) {
+  if (cell.classList.contains('editing')) return;
+  const id    = parseInt(cell.dataset.id);
+  const field = cell.dataset.field;
+  const col   = TX_COLS.find(c => c.key === field);
+  const tx    = savedTxList.find(t => t.id === id);
+  if (!tx || !col) return;
+
+  cell.classList.add('editing');
+  cell.innerHTML = '';
+  const origVal = tx[field] ?? '';
+
+  const restoreCell = (val) => {
+    cell.classList.remove('editing');
+    if (field === 'amount') {
+      cell.textContent = formatCurrency(val);
+    } else if (col.type === 'select') {
+      cell.innerHTML = chipHtml(String(val));
+    } else {
+      cell.textContent = String(val || '').replace(/_/g, ' ') || '—';
+    }
+  };
+
+  const saveVal = (newVal) => {
+    tx[field] = newVal;
+    if (field === 'date') tx.month = clientMonthFromDate(String(newVal));
+    restoreCell(newVal);
+    fetch(`/api/transactions/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tx)
+    }).catch(e => console.error('Save failed', e));
+  };
+
+  const cancelEdit = () => restoreCell(origVal);
+
+  const moveToNext = (shiftKey) => {
+    const allCells = [...document.querySelectorAll('#savedTxBody .gc')];
+    const next = allCells[allCells.indexOf(cell) + (shiftKey ? -1 : 1)];
+    if (next) setTimeout(() => startEdit(next), 0);
+  };
+
+  if (col.type === 'select') {
+    // ── Searchable dropdown ──────────────────────────────────────────────────
+    const wrap = document.createElement('div');
+    wrap.className = 'ss-wrap';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'ss-input';
+    input.value = origVal;
+    input.placeholder = 'Search…';
+
+    const list = document.createElement('div');
+    list.className = 'ss-list';
+
+    let highlighted = 0;
+
+    const renderOpts = (q) => {
+      const qlo = q.toLowerCase();
+      const opts = (col.opts || []).filter(o => !qlo || String(o).toLowerCase().includes(qlo));
+      highlighted = 0;
+      list.innerHTML = opts.map((o, i) =>
+        `<div class="ss-opt${i === 0 ? ' hi' : ''}${o === origVal ? ' cur' : ''}" data-val="${esc(o)}">${o ? chipHtml(o) : '<span class="cell-empty">—</span>'}</div>`
+      ).join('');
+      list.style.display = opts.length ? '' : 'none';
+    };
+
+    const getOpts = () => [...list.querySelectorAll('.ss-opt')];
+
+    const highlight = (delta) => {
+      const opts = getOpts();
+      if (!opts.length) return;
+      opts[highlighted]?.classList.remove('hi');
+      highlighted = Math.max(0, Math.min(opts.length - 1, highlighted + delta));
+      opts[highlighted]?.classList.add('hi');
+      opts[highlighted]?.scrollIntoView({ block: 'nearest' });
+    };
+
+    // mousedown prevents input blur, then click commits
+    list.addEventListener('mousedown', e => e.preventDefault());
+    list.addEventListener('click', e => {
+      const opt = e.target.closest('.ss-opt');
+      if (opt) saveVal(opt.dataset.val);
+    });
+
+    input.addEventListener('input', () => renderOpts(input.value));
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { cancelEdit(); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const hi = list.querySelector('.ss-opt.hi');
+        if (hi) saveVal(hi.dataset.val);
+        else {
+          const exact = (col.opts || []).find(o => String(o).toLowerCase() === input.value.toLowerCase().trim());
+          if (exact) saveVal(exact); else cancelEdit();
+        }
+        if (e.key === 'Tab') moveToNext(e.shiftKey);
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      // Short delay so click on list item fires first
+      setTimeout(() => {
+        if (cell.classList.contains('editing')) {
+          const exact = (col.opts || []).find(o => String(o).toLowerCase() === input.value.toLowerCase().trim());
+          if (exact) saveVal(exact); else cancelEdit();
+        }
+      }, 150);
+    });
+
+    renderOpts('');
+    wrap.appendChild(input);
+    wrap.appendChild(list);
+    cell.appendChild(wrap);
+    input.focus();
+    input.select();
+
+  } else {
+    // ── Text / number input ──────────────────────────────────────────────────
+    const input = document.createElement('input');
+    input.type = col.type === 'number' ? 'number' : 'text';
+    input.className = 'cell-input';
+    input.value = origVal;
+    if (col.type === 'number') input.step = '0.01';
+
+    let done = false;
+    const commit = () => {
+      if (done) return; done = true;
+      saveVal(col.type === 'number' ? (parseFloat(input.value) || 0) : input.value.trim());
+    };
+    const abort = () => {
+      if (done) return; done = true;
+      cancelEdit();
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { input.blur(); }
+      if (e.key === 'Escape') { abort(); }
+      if (e.key === 'Tab')    { e.preventDefault(); commit(); moveToNext(e.shiftKey); }
+    });
+
+    cell.appendChild(input);
+    input.focus();
+    if (col.type !== 'number') input.select();
+  }
+}
+
+async function addTxRow() {
+  const month = document.getElementById('monthPicker').value;
+  let defaultDate = '1 ' + (month ? month.replace('_', ' ') : 'March 2026');
+
+  const newTx = {
+    date: defaultDate, amount: 0, description: '',
+    payment_method: 'HDFC_Debit_Card', paid_by: 'Pooja',
+    expense_type: 'Pooja_Personal', category: 'Others',
+    mood: '', impulse: '', remarks: '',
+    month: clientMonthFromDate(defaultDate)
+  };
+
+  try {
+    const res = await fetch('/api/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactions: [newTx] })
+    });
+    const data = await res.json();
+    newTx.id = data.ids[0];
+    savedTxList.push(newTx);
+    document.getElementById('savedTxCount').textContent =
+      `${savedTxList.length} transaction${savedTxList.length !== 1 ? 's' : ''}`;
+    renderGrid();
+    const lastRow = document.querySelector('#savedTxBody tr:last-child');
+    if (lastRow) {
+      lastRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const firstCell = lastRow.querySelector('.gc');
+      if (firstCell) setTimeout(() => startEdit(firstCell), 80);
+    }
+  } catch (e) { alert('Failed to add row: ' + e.message); }
+}
+
+// Column visibility toggle
+function toggleColPanel() {
+  document.getElementById('colPanel').classList.toggle('hidden');
+}
+
+function renderColPanel() {
+  const panel = document.getElementById('colPanel');
+  panel.innerHTML = TX_COLS.map(col => `
+    <label class="col-check">
+      <input type="checkbox" ${txVisibleCols.includes(col.key) ? 'checked' : ''}
+        onchange="toggleCol('${col.key}', this.checked)" />
+      ${col.label}
+    </label>
+  `).join('');
+}
+
+function toggleCol(key, checked) {
+  if (checked && !txVisibleCols.includes(key)) txVisibleCols.push(key);
+  else if (!checked) txVisibleCols = txVisibleCols.filter(k => k !== key);
+  renderGrid();
+}
+
+async function deleteSavedTx(id) {
+  if (!confirm('Delete this transaction?')) return;
+  try {
+    const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Delete failed');
+    savedTxList = savedTxList.filter(t => t.id !== id);
+    document.getElementById('savedTxCount').textContent =
+      `${savedTxList.length} transaction${savedTxList.length !== 1 ? 's' : ''}`;
+    if (savedTxList.length === 0) {
+      document.getElementById('savedTxSection').style.display = 'none';
+    } else {
+      renderGrid();
+    }
+    loadMonths();
+  } catch (err) {
+    alert(`Failed to delete: ${err.message}`);
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatCurrency(n) {
+  return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
+function showLoading(visible) {
+  document.getElementById('loadingSection').classList.toggle('hidden', !visible);
+}
+function setLoadingText(text) {
+  document.getElementById('loadingText').textContent = text;
+}
+function showError(msg) {
+  const el = document.getElementById('errorSection');
+  if (msg) {
+    document.getElementById('errorText').textContent = msg;
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+function showResult(msg, type) {
+  const el = document.getElementById('pushResult');
+  el.textContent = msg;
+  el.className = `push-result ${type}`;
+  el.classList.remove('hidden');
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function hideResult() {
+  document.getElementById('pushResult').classList.add('hidden');
+}
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}

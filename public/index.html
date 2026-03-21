@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expense Tracker</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+
+    <header class="header">
+      <div class="header-inner">
+        <div>
+          <h1>Expense Tracker</h1>
+          <p>Upload screenshots → AI extracts transactions → review → save</p>
+        </div>
+        <div id="userInfo" class="user-info"></div>
+      </div>
+    </header>
+
+    <!-- Tab nav -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
+      <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
+    </nav>
+
+    <main class="main">
+
+      <!-- ═══════════════════════════════ DASHBOARD TAB ══════════════════════════════ -->
+      <div id="tab-dashboard">
+
+        <!-- Month picker + export -->
+        <div class="dashboard-toolbar">
+          <div class="month-picker-wrap">
+            <label for="monthPicker">Month</label>
+            <select id="monthPicker" onchange="loadDashboard(this.value)"></select>
+          </div>
+          <button class="btn-secondary" onclick="exportToSheets()">Export to Google Sheets</button>
+        </div>
+
+        <!-- KPI cards -->
+        <div class="kpi-grid" id="kpiGrid">
+          <div class="kpi-card">
+            <div class="kpi-label">Total Spend</div>
+            <div class="kpi-value" id="kpiTotal">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Transactions</div>
+            <div class="kpi-value" id="kpiCount">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Pooja vs Kunal</div>
+            <div class="kpi-value small" id="kpiSplit">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Impulse Spend</div>
+            <div class="kpi-value" id="kpiImpulse">—</div>
+          </div>
+        </div>
+
+        <!-- Charts grid -->
+        <div class="section-header" onclick="toggleCharts()">
+          <span class="section-title">Charts</span>
+          <span id="chartsToggleIcon" class="section-toggle-icon">▲</span>
+        </div>
+        <div class="charts-grid" id="chartsGrid">
+          <div class="chart-card">
+            <h3>Top Categories</h3>
+            <div class="chart-container"><canvas id="chartCategory"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <h3>Daily Spend Trend</h3>
+            <div class="chart-container"><canvas id="chartDaily"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <h3>Expense Type</h3>
+            <div class="chart-container chart-container--sm"><canvas id="chartExpenseType"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <h3>Payment Method</h3>
+            <div class="chart-container chart-container--sm"><canvas id="chartPaymentMethod"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Top merchants -->
+        <div class="table-section" id="merchantsSection" style="display:none">
+          <div class="table-header-row" style="cursor:pointer" onclick="toggleMerchants()">
+            <h2>Top Merchants</h2>
+            <span id="merchantsToggleIcon" class="section-toggle-icon" style="font-size:12px">▲</span>
+          </div>
+          <div id="merchantsBody_wrap">
+          <div class="table-wrapper">
+            <table id="merchantsTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Merchant</th>
+                  <th>Total</th>
+                  <th>Transactions</th>
+                </tr>
+              </thead>
+              <tbody id="merchantsBody"></tbody>
+            </table>
+          </div>
+          </div>
+        </div>
+
+        <!-- Saved transactions list -->
+        <div class="table-section" id="savedTxSection" style="display:none">
+          <div class="table-header-row">
+            <div style="cursor:pointer;display:flex;align-items:center;gap:8px" onclick="toggleTxTable()">
+              <h2>All Transactions</h2>
+              <span id="savedTxCount" class="tx-count"></span>
+              <span id="txTableToggleIcon" class="section-toggle-icon" style="font-size:12px">▲</span>
+            </div>
+            <div class="table-actions">
+              <button class="btn-secondary small" id="filterBtn" onclick="toggleFilterBar()">Filter ▾</button>
+              <div class="col-toggle-wrap">
+                <button class="btn-secondary small" onclick="toggleColPanel()">Columns ▾</button>
+                <div id="colPanel" class="col-panel hidden"></div>
+              </div>
+              <button class="btn-primary small" onclick="addTxRow()">+ Add row</button>
+            </div>
+          </div>
+          <div id="txTableBody_wrap">
+          <div class="table-wrapper">
+            <table id="savedTxTable" class="grid-table">
+              <thead id="savedTxHead"><tr></tr></thead>
+              <tbody id="savedTxBody"></tbody>
+            </table>
+          </div>
+          </div>
+        </div>
+
+        <div id="dashboardEmpty" class="empty-state hidden">
+          <p>No data for this month yet. Add some expenses first.</p>
+        </div>
+
+      </div><!-- /tab-dashboard -->
+
+      <!-- ═══════════════════════════════ ADD EXPENSES TAB ══════════════════════════ -->
+      <div id="tab-add" class="hidden">
+
+        <!-- Settings bar (optional Sheets export) -->
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-field wide">
+              <label for="sheetsUrl">Google Apps Script URL <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional — for Sheets export)</span></label>
+              <input type="url" id="sheetsUrl" placeholder="https://script.google.com/macros/s/…/exec" />
+            </div>
+            <div class="settings-field">
+              <label for="sheetName">Sheet Tab Name</label>
+              <input type="text" id="sheetName" placeholder="March_2026" />
+            </div>
+            <button class="btn-save" onclick="saveSettings()">Save</button>
+          </div>
+          <div id="settingsSaved" class="settings-saved hidden">✓ Settings saved</div>
+        </div>
+
+        <!-- Upload area -->
+        <div class="upload-card" id="uploadArea">
+          <div class="upload-icon">⬆</div>
+          <p class="upload-title">Drop your screenshots or PDFs here</p>
+          <p class="upload-sub">PhonePe · GPay · CRED · AmazonPay · Bank statements</p>
+          <label for="fileInput" class="btn-upload">Choose files</label>
+          <input type="file" id="fileInput" multiple accept="image/*,.pdf" hidden />
+          <p class="upload-hint">PNG, JPG, HEIC, PDF — up to 20MB per file</p>
+        </div>
+
+        <!-- Loading -->
+        <div id="loadingSection" class="loading-card hidden">
+          <div class="spinner"></div>
+          <span id="loadingText">Extracting transactions…</span>
+        </div>
+
+        <!-- Error -->
+        <div id="errorSection" class="error-card hidden">
+          <strong>Error:</strong> <span id="errorText"></span>
+        </div>
+
+        <!-- Transactions table -->
+        <div id="tableSection" class="table-section hidden">
+          <div class="table-header-row">
+            <div>
+              <h2>Review Transactions</h2>
+              <span id="txCount" class="tx-count"></span>
+            </div>
+            <div class="table-actions">
+              <button class="btn-secondary" onclick="addEmptyRow()">+ Add row</button>
+              <button class="btn-primary" onclick="saveToTracker()" id="saveBtn">Save to Tracker</button>
+            </div>
+          </div>
+
+          <div class="table-wrapper">
+            <table id="txTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Amount (₹)</th>
+                  <th>Description</th>
+                  <th>Payment Method</th>
+                  <th>Paid by</th>
+                  <th>Expense Type</th>
+                  <th>Category</th>
+                  <th>Mood</th>
+                  <th>Impulse/Int.</th>
+                  <th>Remarks</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="txBody"></tbody>
+            </table>
+          </div>
+
+          <div class="table-footer">
+            <button class="btn-secondary small" onclick="clearAll()">Clear all</button>
+            <button class="btn-primary large" onclick="saveToTracker()" id="saveBtn2">Save to Tracker →</button>
+          </div>
+        </div>
+
+        <!-- Save result -->
+        <div id="pushResult" class="push-result hidden"></div>
+
+      </div><!-- /tab-add -->
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
