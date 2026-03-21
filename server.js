@@ -157,13 +157,23 @@ app.post('/api/transactions', (req, res) => {
        @category, @mood, @impulse, @remarks, @month)
   `);
 
+  const checkDupe = db.prepare(
+    `SELECT COUNT(*) as cnt FROM transactions WHERE date=? AND amount=? AND description=?`
+  );
+
   const insertMany = db.transaction((rows) => {
     const ids = [];
+    let skipped = 0;
     for (const tx of rows) {
+      const date = tx.date || '';
+      const amount = parseFloat(tx.amount) || 0;
+      const description = tx.description || '';
+      const { cnt } = checkDupe.get(date, amount, description);
+      if (cnt > 0) { skipped++; continue; }
       const info = insert.run({
-        date: tx.date || '',
-        amount: parseFloat(tx.amount) || 0,
-        description: tx.description || '',
+        date,
+        amount,
+        description,
         payment_method: tx.payment_method || '',
         paid_by: tx.paid_by || '',
         expense_type: tx.expense_type || '',
@@ -171,16 +181,16 @@ app.post('/api/transactions', (req, res) => {
         mood: tx.mood || '',
         impulse: tx.impulse || '',
         remarks: tx.remarks || '',
-        month: monthFromDate(tx.date || '')
+        month: monthFromDate(date)
       });
       ids.push(info.lastInsertRowid);
     }
-    return ids;
+    return { ids, skipped };
   });
 
   try {
-    const ids = insertMany(transactions);
-    res.json({ saved: ids.length, ids });
+    const { ids, skipped } = insertMany(transactions);
+    res.json({ saved: ids.length, skipped, ids });
   } catch (err) {
     console.error('Insert error:', err.message);
     res.status(500).json({ error: err.message });

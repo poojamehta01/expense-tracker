@@ -442,7 +442,8 @@ async function saveToTracker() {
       throw new Error(err.error || 'Server error');
     }
     const data = await res.json();
-    showResult(`✓ ${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!`, 'success');
+    const skipNote = data.skipped > 0 ? ` (${data.skipped} duplicate${data.skipped !== 1 ? 's' : ''} skipped)` : '';
+    showResult(`✓ ${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!${skipNote}`, 'success');
     transactions = [];
     document.getElementById('tableSection').classList.add('hidden');
     // Refresh months list in dashboard
