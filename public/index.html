@@ -269,6 +269,64 @@
     </main>
   </div>
 
+  <!-- Add Row Modal -->
+  <div id="addRowModal" class="modal-overlay hidden" onclick="if(event.target===this)closeAddRowModal()">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Add Transaction</h2>
+        <button class="modal-close" onclick="closeAddRowModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="arm-grid">
+          <div class="arm-field">
+            <label class="arm-label">Date</label>
+            <input class="arm-input" id="arm-date" type="date" />
+          </div>
+          <div class="arm-field">
+            <label class="arm-label">Amount (₹)</label>
+            <input class="arm-input" id="arm-amount" type="number" min="0" step="0.01" placeholder="0" />
+          </div>
+          <div class="arm-field arm-full">
+            <label class="arm-label">Description</label>
+            <input class="arm-input" id="arm-description" type="text" placeholder="e.g. Swiggy, Uber, Rent…" />
+          </div>
+          <div class="arm-field">
+            <label class="arm-label">Category</label>
+            <div id="arm-category"></div>
+          </div>
+          <div class="arm-field">
+            <label class="arm-label">Paid By</label>
+            <div id="arm-paid_by"></div>
+          </div>
+          <div class="arm-field">
+            <label class="arm-label">Expense Type</label>
+            <div id="arm-expense_type"></div>
+          </div>
+          <div class="arm-field">
+            <label class="arm-label">Payment Method</label>
+            <div id="arm-payment_method"></div>
+          </div>
+          <div class="arm-field">
+            <label class="arm-label">Mood</label>
+            <div id="arm-mood"></div>
+          </div>
+          <div class="arm-field">
+            <label class="arm-label">Impulse / Intentional</label>
+            <div id="arm-impulse"></div>
+          </div>
+          <div class="arm-field arm-full">
+            <label class="arm-label">Remarks</label>
+            <input class="arm-input" id="arm-remarks" type="text" placeholder="Optional note…" />
+          </div>
+        </div>
+        <div class="arm-footer">
+          <button class="btn-secondary" onclick="closeAddRowModal()">Cancel</button>
+          <button class="btn-primary" id="arm-save-btn" onclick="submitAddRowModal()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Manage Lists Modal -->
   <div id="manageListsModal" class="modal-overlay hidden" onclick="if(event.target===this)closeManageLists()">
     <div class="modal-card">

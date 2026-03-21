@@ -1375,45 +1375,191 @@ function startEdit(cell) {
   }
 }
 
-async function addTxRow() {
-  const month = document.getElementById('monthPicker').value;
-  let defaultDate = '1 ' + (month ? month.replace('_', ' ') : 'March 2026');
+// ─── Add Row Modal ────────────────────────────────────────────────────────────
 
-  const newTx = {
-    date: defaultDate, amount: 0, description: '',
-    payment_method: 'HDFC_Debit_Card', paid_by: currentUserName,
-    expense_type: currentUserName + '_Personal', category: 'Others',
-    mood: '', impulse: '', remarks: '',
-    month: clientMonthFromDate(defaultDate)
+let addRowData = {};
+
+function addTxRow() {
+  const month = document.getElementById('monthPicker').value;
+  const defaultDate = '1 ' + (month ? month.replace('_', ' ') : 'March 2026');
+  addRowData = {
+    date: defaultDate,
+    amount: '',
+    description: '',
+    category: 'Others',
+    paid_by: currentUserName || 'Pooja',
+    expense_type: (currentUserName || 'Pooja') + '_Personal',
+    payment_method: 'HDFC_Debit_Card',
+    mood: '',
+    impulse: '',
+    remarks: ''
   };
+  renderAddRowModal();
+  document.getElementById('addRowModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('arm-description')?.focus(), 80);
+}
+
+function closeAddRowModal() {
+  document.getElementById('addRowModal').classList.add('hidden');
+}
+
+function makeModalCombo(options, initialVal, field) {
+  const searchable = options.length > 6;
+  const wrap = document.createElement('div');
+  wrap.className = 'rv-combo';
+
+  const trigger = document.createElement('div');
+  trigger.className = 'rv-combo-trigger';
+  trigger.innerHTML = chipHtml(initialVal || '') + '<span class="rv-arrow">▾</span>';
+
+  const panel = document.createElement('div');
+  panel.className = 'rv-combo-panel hidden';
+
+  let current = initialVal;
+  let searchInput = null;
+  if (searchable) {
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'rv-combo-search';
+    searchInput.placeholder = 'Search…';
+    panel.appendChild(searchInput);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'rv-combo-list';
+  panel.appendChild(list);
+
+  let highlighted = 0;
+  const renderOpts = (q) => {
+    const qlo = (q || '').toLowerCase();
+    const filtered = options.filter(o => !qlo || String(o).replace(/_/g, ' ').toLowerCase().includes(qlo));
+    highlighted = 0;
+    list.innerHTML = filtered.map((o, i) =>
+      `<div class="rv-opt${i === 0 ? ' hi' : ''}${o === current ? ' cur' : ''}" data-val="${esc(o)}">${chipHtml(o)}</div>`
+    ).join('');
+  };
+
+  const pick = (val) => {
+    current = val;
+    trigger.innerHTML = chipHtml(val || '') + '<span class="rv-arrow">▾</span>';
+    panel.classList.add('hidden');
+    addRowData[field] = val;
+  };
+
+  const highlight = (delta) => {
+    const opts = [...list.querySelectorAll('.rv-opt')];
+    if (!opts.length) return;
+    opts[highlighted]?.classList.remove('hi');
+    highlighted = Math.max(0, Math.min(opts.length - 1, highlighted + delta));
+    opts[highlighted]?.classList.add('hi');
+    opts[highlighted]?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const open = () => {
+    document.querySelectorAll('.rv-combo-panel:not(.hidden)').forEach(p => p.classList.add('hidden'));
+    renderOpts('');
+    panel.classList.remove('hidden');
+    if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+    setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
+  };
+
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    panel.classList.contains('hidden') ? open() : panel.classList.add('hidden');
+  });
+  panel.addEventListener('mousedown', e => e.preventDefault());
+  list.addEventListener('click', e => {
+    const opt = e.target.closest('.rv-opt');
+    if (opt) pick(opt.dataset.val);
+  });
+  if (searchInput) {
+    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { panel.classList.add('hidden'); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
+      if (e.key === 'Enter') { e.preventDefault(); const hi = list.querySelector('.rv-opt.hi'); if (hi) pick(hi.dataset.val); }
+    });
+    searchInput.addEventListener('blur', () => {
+      setTimeout(() => { if (!wrap.contains(document.activeElement)) panel.classList.add('hidden'); }, 150);
+    });
+  }
+  document.addEventListener('click', () => panel.classList.add('hidden'));
+
+  wrap.appendChild(trigger);
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+function renderAddRowModal() {
+  const d = addRowData;
+
+  // Date field
+  document.getElementById('arm-date').value = appDateToISO(d.date) || '';
+  // Amount
+  document.getElementById('arm-amount').value = d.amount || '';
+  // Description
+  document.getElementById('arm-description').value = d.description || '';
+  // Remarks
+  document.getElementById('arm-remarks').value = d.remarks || '';
+
+  // Chip combos
+  const combos = [
+    ['arm-category',       CATEGORIES,                   'category'],
+    ['arm-paid_by',        ['Pooja','Kunal'],             'paid_by'],
+    ['arm-expense_type',   EXPENSE_TYPES,                'expense_type'],
+    ['arm-payment_method', PAYMENT_METHODS,              'payment_method'],
+    ['arm-mood',           MOODS,                        'mood'],
+    ['arm-impulse',        IMPULSE_OPTIONS,              'impulse'],
+  ];
+  for (const [id, opts, field] of combos) {
+    const cell = document.getElementById(id);
+    cell.innerHTML = '';
+    cell.appendChild(makeModalCombo(opts, d[field], field));
+  }
+}
+
+async function submitAddRowModal() {
+  const dateISO = document.getElementById('arm-date').value;
+  const amount = parseFloat(document.getElementById('arm-amount').value);
+  const description = document.getElementById('arm-description').value.trim();
+  addRowData.remarks = document.getElementById('arm-remarks').value.trim();
+
+  if (!dateISO) { document.getElementById('arm-date').focus(); return; }
+  if (!amount || amount <= 0) { document.getElementById('arm-amount').focus(); return; }
+
+  addRowData.date = isoToAppDate(dateISO);
+  addRowData.amount = amount;
+  addRowData.description = description;
+  addRowData.month = clientMonthFromDate(addRowData.date);
+
+  const saveBtn = document.getElementById('arm-save-btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
 
   try {
     const res = await fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transactions: [newTx] })
+      body: JSON.stringify({ transactions: [addRowData] })
     });
     if (!res.ok) {
       if (res.status === 401 || res.headers.get('content-type')?.includes('text/html')) {
         alert('Session expired — please reload the page and sign in again.');
       } else {
-        alert('Failed to add row: server error ' + res.status);
+        alert('Server error ' + res.status);
       }
       return;
     }
     const data = await res.json();
-    newTx.id = data.ids[0];
-    savedTxList.push(newTx);
-    document.getElementById('savedTxCount').textContent =
-      `${savedTxList.length} transaction${savedTxList.length !== 1 ? 's' : ''}`;
-    renderGrid();
-    const lastRow = document.querySelector('#savedTxBody tr:last-child');
-    if (lastRow) {
-      lastRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      const firstCell = lastRow.querySelector('.gc');
-      if (firstCell) setTimeout(() => startEdit(firstCell), 80);
-    }
-  } catch (e) { alert('Failed to add row: ' + e.message); }
+    closeAddRowModal();
+    loadDashboard(document.getElementById('monthPicker').value);
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+  }
 }
 
 // Column visibility toggle
