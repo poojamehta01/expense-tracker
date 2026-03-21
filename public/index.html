@@ -17,6 +17,7 @@
           <p>Upload screenshots → AI extracts transactions → review → save</p>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
+          <button class="dark-toggle" onclick="openManageLists()" title="Manage categories & lists">⚙</button>
           <button class="dark-toggle" onclick="toggleDark()" id="darkToggleBtn" title="Toggle dark mode">🌙</button>
           <div id="userInfo" class="user-info"></div>
         </div>
@@ -266,6 +267,17 @@
       </div><!-- /tab-trends -->
 
     </main>
+  </div>
+
+  <!-- Manage Lists Modal -->
+  <div id="manageListsModal" class="modal-overlay hidden" onclick="if(event.target===this)closeManageLists()">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Manage Lists</h2>
+        <button class="modal-close" onclick="closeManageLists()">×</button>
+      </div>
+      <div class="modal-body" id="manageListsBody"></div>
+    </div>
   </div>
 
   <script src="app.js"></script>

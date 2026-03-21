@@ -366,6 +366,41 @@ app.get('/api/dashboard', (req, res) => {
   });
 });
 
+// ─── Lists API (custom categories / expense types / payment methods) ──────────
+
+const VALID_LIST_NAMES = ['categories', 'expense_types', 'payment_methods'];
+
+app.get('/api/lists', (req, res) => {
+  const rows = db.prepare('SELECT id, list_name, value FROM lists ORDER BY id').all();
+  const result = { categories: [], expense_types: [], payment_methods: [] };
+  for (const r of rows) {
+    if (result[r.list_name]) result[r.list_name].push({ id: r.id, value: r.value });
+  }
+  res.json(result);
+});
+
+app.post('/api/lists', (req, res) => {
+  const { list_name, value } = req.body;
+  if (!list_name || !value || !value.trim()) {
+    return res.status(400).json({ error: 'list_name and value required' });
+  }
+  if (!VALID_LIST_NAMES.includes(list_name)) {
+    return res.status(400).json({ error: 'invalid list_name' });
+  }
+  try {
+    const info = db.prepare('INSERT INTO lists (list_name, value) VALUES (?, ?)').run(list_name, value.trim());
+    res.json({ id: info.lastInsertRowid, list_name, value: value.trim() });
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'already exists' });
+    throw err;
+  }
+});
+
+app.delete('/api/lists/:id', (req, res) => {
+  db.prepare('DELETE FROM lists WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ─── Gemini extraction ────────────────────────────────────────────────────────
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -393,16 +428,26 @@ const PAYMENT_METHODS = [
   'HDFC_Credit_Card', 'ABFL_Credit_Card', 'HDFC_Debit_Card', 'Zaggle'
 ];
 
-const EXTRACTION_PROMPT = `You are an expense extraction assistant for an Indian household budget tracker.
+function buildExtractionPrompt() {
+  const customRows = db.prepare('SELECT list_name, value FROM lists').all();
+  const cats = [...CATEGORIES];
+  const expTypes = [...EXPENSE_TYPES];
+  const payMethods = [...PAYMENT_METHODS];
+  for (const r of customRows) {
+    if (r.list_name === 'categories' && !cats.includes(r.value)) cats.push(r.value);
+    if (r.list_name === 'expense_types' && !expTypes.includes(r.value)) expTypes.push(r.value);
+    if (r.list_name === 'payment_methods' && !payMethods.includes(r.value)) payMethods.push(r.value);
+  }
+  return `You are an expense extraction assistant for an Indian household budget tracker.
 Analyze this payment screenshot or bank/credit card statement and extract ALL transactions shown.
 
 For each transaction return a JSON object with exactly these fields:
 - date: string in format "D Month YYYY" (e.g. "21 March 2026"). If year is unclear assume 2026.
 - amount: number only, no currency symbol (e.g. 358)
 - description: short merchant/payee name (e.g. "Uber", "Swiggy", "Zepto")
-- category: pick best match from this exact list: ${CATEGORIES.join(', ')}
-- expense_type: pick from: ${EXPENSE_TYPES.join(', ')} — default "Pooja_Personal" unless clearly joint or Kunal's
-- payment_method: pick from: ${PAYMENT_METHODS.join(', ')} — infer from card/app shown in screenshot
+- category: pick best match from this exact list: ${cats.join(', ')}
+- expense_type: pick from: ${expTypes.join(', ')} — default "Pooja_Personal" unless clearly joint or Kunal's
+- payment_method: pick from: ${payMethods.join(', ')} — infer from card/app shown in screenshot
 - paid_by: "Pooja" or "Kunal" — default "Pooja" unless Kunal is clearly the payer
 
 Category hints:
@@ -424,6 +469,7 @@ Category hints:
 Return ONLY a valid JSON array. No explanation, no markdown, no code blocks.
 Example: [{"date":"21 March 2026","amount":358,"description":"Uber","category":"Ola/Uber","expense_type":"Pooja_Personal","payment_method":"HDFC_Credit_Card","paid_by":"Pooja"}]
 If no transactions found, return: []`;
+}
 
 app.post('/api/extract', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -435,7 +481,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
 
     const result = await model.generateContent([
       { inlineData: { data: base64Data, mimeType } },
-      EXTRACTION_PROMPT
+      buildExtractionPrompt()
     ]);
 
     const text = result.response.text().trim();

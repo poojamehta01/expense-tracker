@@ -883,6 +883,73 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
 .col-check:hover { background: #f3f4f6; }
 .col-check input { cursor: pointer; accent-color: var(--primary); }
 
+/* ─── Manage Lists Modal ────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+.modal-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+  width: 100%; max-width: 560px;
+  max-height: 85vh;
+  display: flex; flex-direction: column;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-header h2 { font-size: 17px; font-weight: 700; margin: 0; }
+.modal-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 22px; line-height: 1; color: var(--text-muted);
+  padding: 0 4px;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body {
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.ml-section { display: flex; flex-direction: column; gap: 10px; }
+.ml-section-title {
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ml-items {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 44px;
+}
+.ml-item { display: flex; align-items: center; gap: 3px; }
+.ml-item-default { opacity: 0.6; }
+.ml-remove {
+  background: none; border: none; cursor: pointer;
+  font-size: 15px; line-height: 1; color: var(--text-muted);
+  padding: 0 2px; border-radius: 3px;
+}
+.ml-remove:hover { color: var(--error); background: var(--error-bg); }
+.ml-add-row { display: flex; gap: 8px; }
+.ml-input {
+  flex: 1; padding: 7px 10px; border: 1px solid var(--border);
+  border-radius: 7px; font-size: 13px;
+  background: var(--white); color: var(--text);
+}
+.ml-input:focus { outline: none; border-color: var(--primary); }
+
+body.dark .modal-card { background: #1e293b; }
+body.dark .ml-items { background: #0f172a; border-color: #334155; }
+body.dark .ml-input { background: #0f172a; color: #f1f5f9; border-color: #334155; }
+
 /* Utilities */
 .hidden { display: none !important; }
 

@@ -19,7 +19,14 @@ db.exec(`
     remarks        TEXT,
     month          TEXT,
     created_at     TEXT DEFAULT (datetime('now'))
-  )
+  );
+
+  CREATE TABLE IF NOT EXISTS lists (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_name TEXT NOT NULL,
+    value     TEXT NOT NULL,
+    UNIQUE(list_name, value)
+  );
 `);
 
 module.exports = db;

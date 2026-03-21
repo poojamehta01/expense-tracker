@@ -1,6 +1,6 @@
 // ─── Data ───────────────────────────────────────────────────────────────────
 
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   'Zepto/Blinkit','Credit Card Payment','Doctor','Donation','Entertainment',
   'Fitness','Fruits & Veggies','Furlenco','Gifts','Home stuff','House Help',
   'Investment','Laundry','Loan EMI','Medicines','Monthly Home bills','Ola/Uber',
@@ -13,15 +13,20 @@ const CATEGORIES = [
   'Books','Flowers','ESOPS','Movies','DryClear'
 ];
 
-const EXPENSE_TYPES = [
+const DEFAULT_EXPENSE_TYPES = [
   'Pooja_Personal','Kunal_Personal','Common_50_50',
   'Pooja_for_Kunal','Kunal_for_Pooja','Kunal_CreditCard_Bill','Pooja_CreditCard_Bill'
 ];
 
-const PAYMENT_METHODS = [
+const DEFAULT_PAYMENT_METHODS = [
   'Cash','ICICI_Credit_Card','Amazon_Credit_Card','SBI_Credit_Card',
   'HDFC_Credit_Card','ABFL_Credit_Card','HDFC_Debit_Card','Zaggle'
 ];
+
+let CATEGORIES = [...DEFAULT_CATEGORIES];
+let EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES];
+let PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS];
+let customLists = { categories: [], expense_types: [], payment_methods: [] };
 
 const MOODS = ['', 'Neutral', 'Happy', 'Sad', 'Angry', 'Anxious', 'Bored'];
 const IMPULSE_OPTIONS = ['', 'Impulse', 'Intentional'];
@@ -160,6 +165,92 @@ function switchTab(name) {
 
 function loadSettings() {
   // sheetsUrl preserved in localStorage for optional export
+  loadLists();
+}
+
+async function loadLists() {
+  try {
+    const res = await fetch('/api/lists');
+    if (!res.ok) return;
+    const data = await res.json();
+    customLists = data;
+    CATEGORIES = [...DEFAULT_CATEGORIES, ...data.categories.map(x => x.value)];
+    EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...data.expense_types.map(x => x.value)];
+    PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...data.payment_methods.map(x => x.value)];
+  } catch (e) { console.error('loadLists error:', e); }
+}
+
+// ─── Manage Lists Modal ───────────────────────────────────────────────────────
+
+function openManageLists() {
+  renderManageModal();
+  document.getElementById('manageListsModal').classList.remove('hidden');
+}
+
+function closeManageLists() {
+  document.getElementById('manageListsModal').classList.add('hidden');
+}
+
+function renderManageModal() {
+  const sections = [
+    { key: 'categories', label: 'Categories', defaults: DEFAULT_CATEGORIES },
+    { key: 'expense_types', label: 'Expense Types', defaults: DEFAULT_EXPENSE_TYPES },
+    { key: 'payment_methods', label: 'Payment Methods', defaults: DEFAULT_PAYMENT_METHODS },
+  ];
+  document.getElementById('manageListsBody').innerHTML = sections.map(s => `
+    <div class="ml-section">
+      <div class="ml-section-title">${s.label}</div>
+      <div class="ml-items" id="ml-items-${s.key}">
+        ${s.defaults.map(v => `
+          <span class="ml-item ml-item-default" title="Built-in (cannot be removed)">
+            <span class="chip chip-neutral">${esc(v)}</span>
+          </span>`).join('')}
+        ${(customLists[s.key] || []).map(x => `
+          <span class="ml-item">
+            <span class="chip chip-neutral">${esc(x.value)}</span>
+            <button class="ml-remove" onclick="removeListItem(${x.id}, '${s.key}')" title="Remove">×</button>
+          </span>`).join('')}
+      </div>
+      <div class="ml-add-row">
+        <input class="ml-input" id="ml-input-${s.key}" type="text" placeholder="Add new ${s.label.toLowerCase().slice(0, -1)}…"
+          onkeydown="if(event.key==='Enter')addListItem('${s.key}')" />
+        <button class="btn-primary small" onclick="addListItem('${s.key}')">Add</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addListItem(listName) {
+  const input = document.getElementById(`ml-input-${listName}`);
+  const value = input.value.trim();
+  if (!value) return;
+  try {
+    const res = await fetch('/api/lists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ list_name: listName, value })
+    });
+    if (res.status === 409) { alert('Already exists'); return; }
+    if (!res.ok) throw new Error('Failed');
+    const item = await res.json();
+    customLists[listName].push(item);
+    if (listName === 'categories') CATEGORIES = [...DEFAULT_CATEGORIES, ...customLists.categories.map(x => x.value)];
+    if (listName === 'expense_types') EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...customLists.expense_types.map(x => x.value)];
+    if (listName === 'payment_methods') PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...customLists.payment_methods.map(x => x.value)];
+    input.value = '';
+    renderManageModal();
+  } catch (e) { alert('Error adding item'); }
+}
+
+async function removeListItem(id, listName) {
+  try {
+    await fetch(`/api/lists/${id}`, { method: 'DELETE' });
+    customLists[listName] = customLists[listName].filter(x => x.id !== id);
+    if (listName === 'categories') CATEGORIES = [...DEFAULT_CATEGORIES, ...customLists.categories.map(x => x.value)];
+    if (listName === 'expense_types') EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...customLists.expense_types.map(x => x.value)];
+    if (listName === 'payment_methods') PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...customLists.payment_methods.map(x => x.value)];
+    renderManageModal();
+  } catch (e) { alert('Error removing item'); }
 }
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
