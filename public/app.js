@@ -1083,35 +1083,34 @@ function startEdit(cell) {
   };
 
   if (col.type === 'select') {
-    // ── Searchable dropdown ──────────────────────────────────────────────────
-    const wrap = document.createElement('div');
-    wrap.className = 'ss-wrap';
+    // ── Chip-based inline dropdown (same style as review table) ──────────────
+    const panel = document.createElement('div');
+    panel.className = 'rv-combo-panel rv-inline';
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'ss-input';
-    input.value = origVal;
-    input.placeholder = 'Search…';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'rv-combo-search';
+    searchInput.placeholder = 'Search…';
 
     const list = document.createElement('div');
-    list.className = 'ss-list';
+    list.className = 'rv-combo-list';
+
+    panel.appendChild(searchInput);
+    panel.appendChild(list);
 
     let highlighted = 0;
 
     const renderOpts = (q) => {
       const qlo = q.toLowerCase();
-      const opts = (col.opts || []).filter(o => !qlo || String(o).toLowerCase().includes(qlo));
+      const opts = (col.opts || []).filter(o => !qlo || String(o).replace(/_/g, ' ').toLowerCase().includes(qlo));
       highlighted = 0;
       list.innerHTML = opts.map((o, i) =>
-        `<div class="ss-opt${i === 0 ? ' hi' : ''}${o === origVal ? ' cur' : ''}" data-val="${esc(o)}">${o ? chipHtml(o) : '<span class="cell-empty">—</span>'}</div>`
+        `<div class="rv-opt${i === 0 ? ' hi' : ''}${o === origVal ? ' cur' : ''}" data-val="${esc(o)}">${chipHtml(o)}</div>`
       ).join('');
-      list.style.display = opts.length ? '' : 'none';
     };
 
-    const getOpts = () => [...list.querySelectorAll('.ss-opt')];
-
     const highlight = (delta) => {
-      const opts = getOpts();
+      const opts = [...list.querySelectorAll('.rv-opt')];
       if (!opts.length) return;
       opts[highlighted]?.classList.remove('hi');
       highlighted = Math.max(0, Math.min(opts.length - 1, highlighted + delta));
@@ -1119,47 +1118,43 @@ function startEdit(cell) {
       opts[highlighted]?.scrollIntoView({ block: 'nearest' });
     };
 
-    // mousedown prevents input blur, then click commits
     list.addEventListener('mousedown', e => e.preventDefault());
     list.addEventListener('click', e => {
-      const opt = e.target.closest('.ss-opt');
-      if (opt) saveVal(opt.dataset.val);
+      const opt = e.target.closest('.rv-opt');
+      if (opt) { saveVal(opt.dataset.val); }
     });
 
-    input.addEventListener('input', () => renderOpts(input.value));
+    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
 
-    input.addEventListener('keydown', e => {
+    searchInput.addEventListener('keydown', e => {
       if (e.key === 'Escape') { cancelEdit(); return; }
       if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
       if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        const hi = list.querySelector('.ss-opt.hi');
+        const hi = list.querySelector('.rv-opt.hi');
         if (hi) saveVal(hi.dataset.val);
         else {
-          const exact = (col.opts || []).find(o => String(o).toLowerCase() === input.value.toLowerCase().trim());
+          const exact = (col.opts || []).find(o => String(o).toLowerCase() === searchInput.value.toLowerCase().trim());
           if (exact) saveVal(exact); else cancelEdit();
         }
         if (e.key === 'Tab') moveToNext(e.shiftKey);
       }
     });
 
-    input.addEventListener('blur', () => {
-      // Short delay so click on list item fires first
+    searchInput.addEventListener('blur', () => {
       setTimeout(() => {
         if (cell.classList.contains('editing')) {
-          const exact = (col.opts || []).find(o => String(o).toLowerCase() === input.value.toLowerCase().trim());
+          const exact = (col.opts || []).find(o => String(o).toLowerCase() === searchInput.value.toLowerCase().trim());
           if (exact) saveVal(exact); else cancelEdit();
         }
       }, 150);
     });
 
     renderOpts('');
-    wrap.appendChild(input);
-    wrap.appendChild(list);
-    cell.appendChild(wrap);
-    input.focus();
-    input.select();
+    cell.appendChild(panel);
+    searchInput.focus();
+    setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
 
   } else {
     // ── Text / number input ──────────────────────────────────────────────────
