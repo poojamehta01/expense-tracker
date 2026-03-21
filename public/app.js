@@ -243,63 +243,79 @@ function buildRow(tx, index) {
   const tr = document.createElement('tr');
   tr.dataset.index = index;
 
-  // Build most cells via innerHTML
-  const staticHtml = `
+  tr.innerHTML = `
     <td><input type="text" value="${esc(tx.date || '')}" onchange="updateTx(${index},'date',this.value)" /></td>
     <td><input type="number" value="${tx.amount || ''}" step="0.01" onchange="updateTx(${index},'amount',parseFloat(this.value))" /></td>
     <td><input type="text" value="${esc(tx.description || '')}" onchange="updateTx(${index},'description',this.value)" /></td>
-    <td>${makeSelect(PAYMENT_METHODS, tx.payment_method, index, 'payment_method')}</td>
-    <td>${makeSelect(['Pooja','Kunal'], tx.paid_by, index, 'paid_by')}</td>
-    <td>${makeSelect(EXPENSE_TYPES, tx.expense_type, index, 'expense_type')}</td>
-    <td class="cat-placeholder"></td>
-    <td>${makeSelect(MOODS, tx.mood || '', index, 'mood')}</td>
-    <td>${makeSelect(IMPULSE_OPTIONS, tx.impulse || '', index, 'impulse')}</td>
+    <td class="rv-td"></td>
+    <td class="rv-td"></td>
+    <td class="rv-td"></td>
+    <td class="rv-td"></td>
+    <td class="rv-td"></td>
+    <td class="rv-td"></td>
     <td><input type="text" value="${esc(tx.remarks || '')}" onchange="updateTx(${index},'remarks',this.value)" /></td>
     <td><button class="btn-delete" onclick="deleteRow(${index})" title="Delete">×</button></td>
   `;
-  tr.innerHTML = staticHtml;
 
-  // Replace category placeholder with searchable combo
-  tr.querySelector('.cat-placeholder').appendChild(makeReviewCombo(CATEGORIES, tx.category || '', index, 'category'));
+  const tds = tr.querySelectorAll('.rv-td');
+  tds[0].appendChild(makeChipCombo(PAYMENT_METHODS, tx.payment_method || '', index, 'payment_method'));
+  tds[1].appendChild(makeChipCombo(['Pooja','Kunal'], tx.paid_by || '', index, 'paid_by'));
+  tds[2].appendChild(makeChipCombo(EXPENSE_TYPES, tx.expense_type || '', index, 'expense_type'));
+  tds[3].appendChild(makeChipCombo(CATEGORIES, tx.category || '', index, 'category'));
+  tds[4].appendChild(makeChipCombo(MOODS, tx.mood || '', index, 'mood'));
+  tds[5].appendChild(makeChipCombo(IMPULSE_OPTIONS, tx.impulse || '', index, 'impulse'));
 
   return tr;
 }
 
-function makeReviewCombo(options, current, index, field) {
+// Chip-based searchable combo for review table
+function makeChipCombo(options, current, index, field) {
+  const searchable = options.length > 6;
   const wrap = document.createElement('div');
-  wrap.className = 'ss-wrap';
+  wrap.className = 'rv-combo';
 
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'ss-input';
-  input.value = current;
-  input.placeholder = 'Search…';
+  // Trigger: shows current value as chip + arrow
+  const trigger = document.createElement('div');
+  trigger.className = 'rv-combo-trigger';
+  trigger.innerHTML = chipHtml(current || '') + '<span class="rv-arrow">▾</span>';
+
+  // Panel: search input + list
+  const panel = document.createElement('div');
+  panel.className = 'rv-combo-panel hidden';
+
+  let searchInput = null;
+  if (searchable) {
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'rv-combo-search';
+    searchInput.placeholder = 'Search…';
+    panel.appendChild(searchInput);
+  }
 
   const list = document.createElement('div');
-  list.className = 'ss-list';
-  list.style.display = 'none';
+  list.className = 'rv-combo-list';
+  panel.appendChild(list);
 
   let highlighted = 0;
 
   const renderOpts = (q) => {
-    const qlo = q.toLowerCase();
-    const filtered = options.filter(o => !qlo || String(o).toLowerCase().includes(qlo));
+    const qlo = (q || '').toLowerCase();
+    const filtered = options.filter(o => !qlo || String(o).replace(/_/g, ' ').toLowerCase().includes(qlo));
     highlighted = 0;
     list.innerHTML = filtered.map((o, i) =>
-      `<div class="ss-opt${i === 0 ? ' hi' : ''}${o === current ? ' cur' : ''}" data-val="${esc(o)}">${esc(o) || '—'}</div>`
+      `<div class="rv-opt${i === 0 ? ' hi' : ''}${o === current ? ' cur' : ''}" data-val="${esc(o)}">${chipHtml(o)}</div>`
     ).join('');
-    list.style.display = filtered.length ? '' : 'none';
   };
 
   const pick = (val) => {
     current = val;
-    input.value = val;
-    list.style.display = 'none';
+    trigger.innerHTML = chipHtml(val || '') + '<span class="rv-arrow">▾</span>';
+    panel.classList.add('hidden');
     updateTx(index, field, val);
   };
 
   const highlight = (delta) => {
-    const opts = [...list.querySelectorAll('.ss-opt')];
+    const opts = [...list.querySelectorAll('.rv-opt')];
     if (!opts.length) return;
     opts[highlighted]?.classList.remove('hi');
     highlighted = Math.max(0, Math.min(opts.length - 1, highlighted + delta));
@@ -307,30 +323,50 @@ function makeReviewCombo(options, current, index, field) {
     opts[highlighted]?.scrollIntoView({ block: 'nearest' });
   };
 
-  list.addEventListener('mousedown', e => e.preventDefault());
+  const open = () => {
+    // Close any other open combos first
+    document.querySelectorAll('.rv-combo-panel:not(.hidden)').forEach(p => p.classList.add('hidden'));
+    renderOpts('');
+    panel.classList.remove('hidden');
+    if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+    else list.focus();
+    // Scroll current into view
+    setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
+  };
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    panel.classList.contains('hidden') ? open() : panel.classList.add('hidden');
+  });
+
+  panel.addEventListener('mousedown', e => e.preventDefault());
   list.addEventListener('click', e => {
-    const opt = e.target.closest('.ss-opt');
+    const opt = e.target.closest('.rv-opt');
     if (opt) pick(opt.dataset.val);
   });
 
-  input.addEventListener('focus', () => renderOpts(input.value));
-  input.addEventListener('input', () => renderOpts(input.value));
-  input.addEventListener('blur', () => {
-    setTimeout(() => { list.style.display = 'none'; }, 150);
-  });
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { list.style.display = 'none'; return; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const hi = list.querySelector('.ss-opt.hi');
-      if (hi) pick(hi.dataset.val);
-    }
-  });
+  if (searchInput) {
+    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { panel.classList.add('hidden'); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const hi = list.querySelector('.rv-opt.hi');
+        if (hi) pick(hi.dataset.val);
+      }
+    });
+    searchInput.addEventListener('blur', () => {
+      setTimeout(() => { if (!wrap.contains(document.activeElement)) panel.classList.add('hidden'); }, 150);
+    });
+  }
 
-  wrap.appendChild(input);
-  wrap.appendChild(list);
+  // Close on outside click
+  document.addEventListener('click', () => panel.classList.add('hidden'));
+
+  wrap.appendChild(trigger);
+  wrap.appendChild(panel);
   return wrap;
 }
 
