@@ -137,6 +137,20 @@ app.get('/api/me', (req, res) => {
   res.json({ email: req.user.email, name: req.user.name, photo: req.user.photo });
 });
 
+// ─── Admin / diagnostics ──────────────────────────────────────────────────────
+
+app.get('/api/admin/db-stats', requireAuth, (req, res) => {
+  const pageCount  = db.pragma('page_count',    { simple: true });
+  const pageSize   = db.pragma('page_size',      { simple: true });
+  const freePages  = db.pragma('freelist_count', { simple: true });
+  res.json({
+    sizeMB:     ((pageCount * pageSize) / 1048576).toFixed(3),
+    freePages,
+    walMode:    db.pragma('journal_mode', { simple: true }),
+    autoVacuum: db.pragma('auto_vacuum',  { simple: true }),
+  });
+});
+
 // ─── Transaction API routes ───────────────────────────────────────────────────
 
 // Helper: derive month string from date like "21 March 2026" → "March_2026"
@@ -321,7 +335,7 @@ const MONTH_SORT = `
     WHEN 'October' THEN 10 WHEN 'November' THEN 11 WHEN 'December' THEN 12
   END`;
 
-const CC_EXCLUDE = " AND category != 'Credit Card Payment'";
+const CC_EXCLUDE = " AND category != 'Credit Card Payment' AND category != 'Settlement'";
 
 app.get('/api/trends', (req, res) => {
   const { person } = req.query;

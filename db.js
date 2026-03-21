@@ -4,6 +4,19 @@ const path = require('path');
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'expenses.db');
 const db = new Database(dbPath);
 
+// Performance & storage optimizations
+db.pragma('journal_mode = WAL');        // WAL: better read concurrency, no exclusive write locks
+db.pragma('synchronous = NORMAL');      // safe with WAL, faster than FULL
+db.pragma('temp_store = MEMORY');       // temp tables in memory, not disk
+db.pragma('mmap_size = 30000000');      // 30MB memory-mapped I/O
+
+// One-time migration: enable auto_vacuum (requires full VACUUM to activate on existing DB)
+const avMode = db.pragma('auto_vacuum', { simple: true });
+if (avMode === 0) {                     // 0 = NONE (SQLite default, never been set)
+  db.pragma('auto_vacuum = INCREMENTAL');
+  db.exec('VACUUM');                    // rebuild DB with new setting — runs once ever
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS transactions (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,5 +59,7 @@ db.exec(`
     changed_at TEXT DEFAULT (datetime('now'))
   );
 `);
+
+db.pragma('incremental_vacuum(100)');   // reclaim up to 100 free pages on each startup
 
 module.exports = db;

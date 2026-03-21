@@ -10,7 +10,8 @@
   <meta name="theme-color" content="#6c63ff" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-  <title>Expense Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>" />
+  <title>💰 Expense Tracker</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
@@ -81,6 +82,22 @@
           <div class="kpi-card">
             <div class="kpi-label">Settlement</div>
             <div class="kpi-value small" id="kpiSettlement">—</div>
+          </div>
+        </div>
+
+        <!-- Salary KPI row -->
+        <div class="kpi-grid kpi-salary-grid" id="kpiSalaryGrid" style="display:none">
+          <div class="kpi-card kpi-salary-pooja">
+            <div class="kpi-label">Pooja Salary</div>
+            <div class="kpi-value" id="kpiSalaryPooja">—</div>
+          </div>
+          <div class="kpi-card kpi-salary-kunal">
+            <div class="kpi-label">Kunal Salary</div>
+            <div class="kpi-value" id="kpiSalaryKunal">—</div>
+          </div>
+          <div class="kpi-card kpi-salary-combined">
+            <div class="kpi-label">Combined Salary</div>
+            <div class="kpi-value" id="kpiSalaryCombined">—</div>
           </div>
         </div>
 
@@ -345,6 +362,64 @@
       <div id="tab-salary" class="hidden">
         <div class="salary-page">
 
+          <!-- Summary KPIs -->
+          <div id="salarySummarySection" class="salary-summary-section" style="display:none">
+            <!-- Salary row -->
+            <div class="salary-summary-group">
+              <div class="salary-summary-group-label">Salary</div>
+              <div class="salary-summary-row">
+                <div class="salary-kpi-card salary-kpi-pooja">
+                  <div class="salary-kpi-label">Pooja</div>
+                  <div class="salary-kpi-value" id="salKpiPooja">—</div>
+                </div>
+                <div class="salary-kpi-card salary-kpi-kunal">
+                  <div class="salary-kpi-label">Kunal</div>
+                  <div class="salary-kpi-value" id="salKpiKunal">—</div>
+                </div>
+                <div class="salary-kpi-card salary-kpi-neutral">
+                  <div class="salary-kpi-label">Combined</div>
+                  <div class="salary-kpi-value" id="salKpiCombined">—</div>
+                </div>
+              </div>
+            </div>
+            <!-- Spend row -->
+            <div class="salary-summary-group">
+              <div class="salary-summary-group-label">Spend</div>
+              <div class="salary-summary-row">
+                <div class="salary-kpi-card salary-kpi-pooja">
+                  <div class="salary-kpi-label">Pooja</div>
+                  <div class="salary-kpi-value" id="salKpiPoojaSpend">—</div>
+                </div>
+                <div class="salary-kpi-card salary-kpi-kunal">
+                  <div class="salary-kpi-label">Kunal</div>
+                  <div class="salary-kpi-value" id="salKpiKunalSpend">—</div>
+                </div>
+                <div class="salary-kpi-card salary-kpi-neutral">
+                  <div class="salary-kpi-label">Combined</div>
+                  <div class="salary-kpi-value" id="salKpiSpend">—</div>
+                </div>
+              </div>
+            </div>
+            <!-- Savings row -->
+            <div class="salary-summary-group">
+              <div class="salary-summary-group-label">Savings</div>
+              <div class="salary-summary-row">
+                <div class="salary-kpi-card salary-kpi-pooja">
+                  <div class="salary-kpi-label">Pooja</div>
+                  <div class="salary-kpi-value" id="salKpiPoojaSavings">—</div>
+                </div>
+                <div class="salary-kpi-card salary-kpi-kunal">
+                  <div class="salary-kpi-label">Kunal</div>
+                  <div class="salary-kpi-value" id="salKpiKunalSavings">—</div>
+                </div>
+                <div class="salary-kpi-card salary-kpi-neutral">
+                  <div class="salary-kpi-label">Combined</div>
+                  <div class="salary-kpi-value" id="salKpiSavings">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Entry card -->
           <div class="table-section salary-entry-card">
             <div class="table-header-row">
@@ -398,9 +473,11 @@
                 <thead>
                   <tr>
                     <th>Month</th>
-                    <th>Pooja</th>
-                    <th>Kunal</th>
+                    <th>Pooja Salary</th>
+                    <th>Kunal Salary</th>
                     <th>Combined</th>
+                    <th>Pooja Spend</th>
+                    <th>Kunal Spend</th>
                     <th>Total Spend</th>
                     <th>Savings</th>
                     <th>Savings %</th>

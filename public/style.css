@@ -38,7 +38,15 @@ body.dark .rv-combo-search { background: #1e293b; color: #f1f5f9; border-bottom-
 body.dark .rv-opt:hover, body.dark .rv-opt.hi { background: #0f172a; }
 body.dark .rv-opt.cur { background: #1e3a5f; }
 body.dark .gc:hover { background: #1a2744; }
-body.dark .gc.editing { background: #1e293b; }
+body.dark .gc.editing { background: #0f172a; }
+body.dark .cell-input { background: #0f172a; color: #f1f5f9; }
+body.dark .cell-input[type="date"] { color-scheme: dark; }
+body.dark .cf-dd-list { background: #1e293b; border-color: #334155; }
+body.dark .cf-sel-opt { color: #f1f5f9; }
+body.dark .cf-sel-opt:hover { background: #273548; }
+body.dark .cf-sel-opt.cf-sel-cur { background: #1e3a5f; outline-color: #3b4fd8; }
+body.dark .grid-table thead th.sortable:hover { background: #1e3a5f; color: var(--primary); }
+body.dark .grid-table thead th.sorted { background: #1e3a5f; }
 body.dark .ss-list { background: #1e293b; border-color: #334155; }
 body.dark .ss-opt:hover, body.dark .ss-opt.hi { background: #0f172a; }
 body.dark table thead th { background: #0f172a; color: #94a3b8; border-color: #334155; }
@@ -48,7 +56,8 @@ body.dark input, body.dark select { background: #0f172a; color: #f1f5f9; border-
 body.dark .tab-btn { color: #94a3b8; }
 body.dark .tab-btn.active { color: var(--primary); }
 body.dark .tab-nav { border-bottom-color: #334155; background: #1e293b; }
-body.dark .section-header { border-color: #334155; color: #94a3b8; }
+body.dark .section-header { background: #1e293b; border-color: #334155; color: #94a3b8; }
+body.dark .section-header:hover { background: #273548; }
 body.dark .col-panel { background: #1e293b; border-color: #334155; }
 body.dark .col-panel label { color: #cbd5e1; }
 body.dark .filter-bar { background: #1e293b; border-color: #334155; }
@@ -64,10 +73,21 @@ body.dark .loading-card { background: #1e293b; border-color: #334155; }
 body.dark .error-card { background: #2d1515; border-color: #7f1d1d; }
 body.dark #txTable th, body.dark #savedTxTable th { background: #0f172a; color: #94a3b8; }
 body.dark #txTable td, body.dark #savedTxTable td { border-color: #1e293b; }
+body.dark td input[type="text"]:hover,
+body.dark td input[type="number"]:hover,
+body.dark td input[type="date"]:hover,
+body.dark td select:hover,
+body.dark td input[type="text"]:focus,
+body.dark td input[type="number"]:focus,
+body.dark td input[type="date"]:focus,
+body.dark td select:focus { background: #0f172a; color: #f1f5f9; }
+body.dark .cell-input { background: #0f172a !important; color: #f1f5f9; }
 body.dark #txTable input, body.dark #txTable select { background: #0f172a; color: #f1f5f9; border-color: #334155; }
 body.dark .kpi-label { color: #94a3b8; }
 body.dark .section-title { color: #94a3b8; }
 body.dark .table-header-row { border-color: #334155; }
+body.dark .table-header-row[onclick]:hover,
+body.dark .table-header-row [onclick]:hover { background: #273548; }
 body.dark .tx-count { background: #1e3a5f; color: #93c5fd; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -461,7 +481,7 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
 }
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-primary.large { padding: 10px 24px; font-size: 14px; }
-.btn-primary.small { padding: 6px 12px; font-size: 12px; }
+.btn-primary.small { padding: 6px 12px; font-size: 12px; line-height: 1.4; }
 .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
 body.dark .btn-primary { background: var(--primary); color: #fff; }
 body.dark .btn-primary:disabled { background: #1e40af; color: #bfdbfe; }
@@ -478,7 +498,7 @@ body.dark .btn-primary:disabled { background: #1e40af; color: #bfdbfe; }
   transition: background 0.15s;
 }
 .btn-secondary:hover { background: #f3f4f6; }
-.btn-secondary.small { padding: 6px 12px; font-size: 12px; }
+.btn-secondary.small { padding: 6px 12px; font-size: 12px; line-height: 1.4; }
 
 /* Push result */
 .push-result {
@@ -586,6 +606,14 @@ body.dark .btn-primary:disabled { background: #1e40af; color: #bfdbfe; }
 .kpi-card:nth-child(3) .kpi-label { color: #0891b2; }
 .kpi-card:nth-child(4) { border-left-color: #16a34a; background: linear-gradient(135deg, #fff 60%, #f0fdf4); }
 .kpi-card:nth-child(4) .kpi-label { color: #16a34a; }
+.kpi-salary-grid { grid-template-columns: repeat(3, 1fr); }
+.kpi-salary-pooja { border-left-color: #7c3aed !important; background: linear-gradient(135deg, #fff 60%, #f5f3ff) !important; }
+.kpi-salary-pooja .kpi-label { color: #7c3aed !important; }
+.kpi-salary-kunal { border-left-color: #2563eb !important; background: linear-gradient(135deg, #fff 60%, #eff6ff) !important; }
+.kpi-salary-kunal .kpi-label { color: #2563eb !important; }
+.kpi-salary-combined { border-left-color: #16a34a !important; background: linear-gradient(135deg, #fff 60%, #f0fdf4) !important; }
+.kpi-salary-combined .kpi-label { color: #16a34a !important; }
+body.dark .kpi-salary-pooja, body.dark .kpi-salary-kunal, body.dark .kpi-salary-combined { background: #1e293b !important; }
 .kpi-label {
   font-size: 11px;
   font-weight: 600;
@@ -1204,10 +1232,26 @@ body.dark .salary-amount-row { background: #1e293b; }
 body.dark .salary-note-input { background: #1e293b; border-color: #334155; }
 .salary-entry-footer { display: flex; align-items: center; gap: 14px; padding: 0 20px 18px; }
 .salary-save-msg { font-size: 13px; color: var(--success); font-weight: 500; }
+.salary-summary-section { display: flex; flex-direction: column; gap: 16px; }
+.salary-summary-group { display: flex; flex-direction: column; gap: 8px; }
+.salary-summary-group-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); padding-left: 2px; }
+.salary-summary-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.salary-kpi-card { background: var(--white); border: 1px solid var(--border); border-left-width: 3px; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+body.dark .salary-kpi-card { background: #1e293b; }
+.salary-kpi-card.salary-kpi-pooja { border-left-color: #7c3aed; }
+.salary-kpi-card.salary-kpi-pooja .salary-kpi-label { color: #7c3aed; }
+.salary-kpi-card.salary-kpi-kunal { border-left-color: #2563eb; }
+.salary-kpi-card.salary-kpi-kunal .salary-kpi-label { color: #2563eb; }
+.salary-kpi-card.salary-kpi-neutral { border-left-color: #0891b2; }
+.salary-kpi-card.salary-kpi-neutral .salary-kpi-label { color: #0891b2; }
+.salary-kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+.salary-kpi-value { font-size: 20px; font-weight: 700; color: var(--text); }
+.salary-kpi-value.savings-positive { color: #16a34a; }
+.salary-kpi-value.savings-negative { color: #dc2626; }
 #salaryHistoryTable td:nth-child(n+5) { color: var(--text-muted); }
 #salaryHistoryTable td.savings-positive { color: #16a34a; font-weight: 600; }
 #salaryHistoryTable td.savings-negative { color: #dc2626; font-weight: 600; }
-@media (max-width: 640px) { .salary-inputs { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .salary-inputs { grid-template-columns: 1fr; } .salary-summary-row { grid-template-columns: 1fr 1fr; } }
 
 /* ─── Ask AI Section ────────────────────────────────────────────────────────── */
 .ai-section {

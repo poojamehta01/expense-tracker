@@ -838,13 +838,16 @@ async function loadDashboard(month) {
   if (!month) return;
 
   try {
-    const [dashRes, txRes] = await Promise.all([
+    const [dashRes, txRes, salRes] = await Promise.all([
       fetch(`/api/dashboard?month=${encodeURIComponent(month)}`),
-      fetch(`/api/transactions?month=${encodeURIComponent(month)}`)
+      fetch(`/api/transactions?month=${encodeURIComponent(month)}`),
+      fetch(`/api/salary?month=${encodeURIComponent(month)}`)
     ]);
 
     const dash = await dashRes.json();
     const txData = await txRes.json();
+    const salData = await salRes.json();
+    renderSalaryKPIs(salData);
 
     if (dashRes.ok && dash.transactionCount > 0) {
       document.getElementById('dashboardEmpty').classList.add('hidden');
@@ -934,6 +937,18 @@ function renderKPIs(data) {
       detailLine('Pooja→Kunal', s.poojaForKunal) +
       detailLine('Kunal→Pooja', s.kunalForPooja) +
     `</div>`;
+}
+
+function renderSalaryKPIs(data) {
+  const pooja = data.Pooja || 0;
+  const kunal = data.Kunal || 0;
+  const combined = pooja + kunal;
+  const grid = document.getElementById('kpiSalaryGrid');
+  if (!pooja && !kunal) { grid.style.display = 'none'; return; }
+  document.getElementById('kpiSalaryPooja').textContent = pooja ? formatCurrency(pooja) : '—';
+  document.getElementById('kpiSalaryKunal').textContent = kunal ? formatCurrency(kunal) : '—';
+  document.getElementById('kpiSalaryCombined').textContent = combined ? formatCurrency(combined) : '—';
+  grid.style.display = '';
 }
 
 const CHART_COLORS = [
@@ -2529,14 +2544,59 @@ async function loadSalaryHistory() {
       spendByMonth[trendsData.months[i]] = r.total;
     });
 
+    const splitByMonth = {};
+    trendsData.monthlySplit?.forEach(r => {
+      splitByMonth[r.month] = { Pooja: r.Pooja || 0, Kunal: r.Kunal || 0 };
+    });
+
     const months = Object.keys(salData.history || {});
     if (!months.length) return;
+
+    // Compute all-time totals for summary KPIs
+    let totalPoojaSal = 0, totalKunalSal = 0, totalPoojaSpend = 0, totalKunalSpend = 0;
+    months.forEach(m => {
+      const s = salData.history[m];
+      totalPoojaSal += s.Pooja || 0;
+      totalKunalSal += s.Kunal || 0;
+      totalPoojaSpend += splitByMonth[m]?.Pooja || 0;
+      totalKunalSpend += splitByMonth[m]?.Kunal || 0;
+    });
+    const totalCombined = totalPoojaSal + totalKunalSal;
+    const totalSpendAll = totalPoojaSpend + totalKunalSpend;
+    const poojaSavings = totalPoojaSal - totalPoojaSpend;
+    const kunalSavings = totalKunalSal - totalKunalSpend;
+    const totalSavings = totalCombined - totalSpendAll;
+
+    const savClass = v => v >= 0 ? 'savings-positive' : 'savings-negative';
+
+    // Salary row
+    document.getElementById('salKpiPooja').textContent = totalPoojaSal ? formatCurrency(totalPoojaSal) : '—';
+    document.getElementById('salKpiKunal').textContent = totalKunalSal ? formatCurrency(totalKunalSal) : '—';
+    document.getElementById('salKpiCombined').textContent = totalCombined ? formatCurrency(totalCombined) : '—';
+    // Spend row
+    document.getElementById('salKpiPoojaSpend').textContent = totalPoojaSpend ? formatCurrency(totalPoojaSpend) : '—';
+    document.getElementById('salKpiKunalSpend').textContent = totalKunalSpend ? formatCurrency(totalKunalSpend) : '—';
+    document.getElementById('salKpiSpend').textContent = totalSpendAll ? formatCurrency(totalSpendAll) : '—';
+    // Savings row
+    const psEl = document.getElementById('salKpiPoojaSavings');
+    psEl.textContent = totalPoojaSal ? formatCurrency(poojaSavings) : '—';
+    psEl.className = 'salary-kpi-value ' + (totalPoojaSal ? savClass(poojaSavings) : '');
+    const ksEl = document.getElementById('salKpiKunalSavings');
+    ksEl.textContent = totalKunalSal ? formatCurrency(kunalSavings) : '—';
+    ksEl.className = 'salary-kpi-value ' + (totalKunalSal ? savClass(kunalSavings) : '');
+    const savEl = document.getElementById('salKpiSavings');
+    savEl.textContent = totalCombined ? formatCurrency(totalSavings) : '—';
+    savEl.className = 'salary-kpi-value ' + (totalCombined ? savClass(totalSavings) : '');
+
+    document.getElementById('salarySummarySection').style.display = '';
 
     const tbody = document.getElementById('salaryHistoryBody');
     tbody.innerHTML = [...months].reverse().map(m => {
       const s = salData.history[m];
       const combined = (s.Pooja || 0) + (s.Kunal || 0);
       const spend = spendByMonth[m] || 0;
+      const poojaSpend = splitByMonth[m]?.Pooja || 0;
+      const kunalSpend = splitByMonth[m]?.Kunal || 0;
       const savings = combined - spend;
       const savingsPct = combined > 0 ? Math.round((savings / combined) * 100) : null;
       const savClass = !combined ? '' : savings >= 0 ? 'savings-positive' : 'savings-negative';
@@ -2546,6 +2606,8 @@ async function loadSalaryHistory() {
         <td>${s.Pooja ? formatCurrency(s.Pooja) : '—'}</td>
         <td>${s.Kunal ? formatCurrency(s.Kunal) : '—'}</td>
         <td>${combined ? formatCurrency(combined) : '—'}</td>
+        <td>${poojaSpend ? formatCurrency(poojaSpend) : '—'}</td>
+        <td>${kunalSpend ? formatCurrency(kunalSpend) : '—'}</td>
         <td>${spend ? formatCurrency(spend) : '—'}</td>
         <td class="${savClass}">${combined ? formatCurrency(savings) : '—'}</td>
         <td class="${savClass}">${savingsPct !== null ? savingsPct + '%' : '—'}</td>

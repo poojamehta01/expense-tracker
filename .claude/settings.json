@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(node -e \"try{const d=JSON.parse(process.env.CLAUDE_TOOL_INPUT||'{}');console.log(d.file_path||'')}catch(e){}\" 2>/dev/null); case \"$FILE\" in *server.js) node --check server.js 2>&1 && echo '✓ server.js syntax OK' || echo '✗ server.js syntax ERROR';; *app.js) node --check public/app.js 2>&1 && echo '✓ app.js syntax OK' || echo '✗ app.js syntax ERROR';; esac"
+          }
+        ]
+      }
+    ]
+  }
+}
