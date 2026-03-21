@@ -1,116 +1,405 @@
-# Expense Tracker — Setup Guide
+# Expense Tracker — Complete Reference Guide
 
-Two things to set up, takes ~15 minutes total.
+> Personal expense tracker for Pooja & Kunal. Upload payment screenshots → AI extracts transactions → review & save → dashboard with charts.
 
----
-
-## Part 1 — Google Apps Script (do this first)
-
-### Step 1: Open your Google Sheet
-Go to your expense tracker Google Sheet.
-
-### Step 2: Open Apps Script
-Click **Extensions → Apps Script** in the menu bar.
-
-### Step 3: Paste the code
-- Delete all existing code in the editor
-- Open the file `apps-script.gs` from this project
-- Copy everything and paste it into the Apps Script editor
-- Click **Save** (Ctrl+S / Cmd+S)
-
-### Step 4: Deploy as Web App
-1. Click **Deploy → New deployment**
-2. Click the gear icon ⚙️ next to "Select type" → choose **Web app**
-3. Fill in:
-   - Description: `Expense Tracker`
-   - Execute as: **Me**
-   - Who has access: **Anyone** (needed so the web app can call it)
-4. Click **Deploy**
-5. If asked, click **Authorize access** and approve with your Google account
-6. **Copy the Web App URL** — it looks like:
-   `https://script.google.com/macros/s/AKfycbxjf97EzU7NWTEFwgIaQFLB1-_ZLrQnfKWPcgMLgl-idFs-l8GU9Rxl_925UloW0m0b/exec`
-
-> ⚠️ Important: Every time you change the Apps Script code, you must create a **New deployment** (not update existing) to get changes to take effect.
+**Live app:** https://expense-tracker-pooja.fly.dev
+**GitHub:** https://github.com/poojamehta01/expense-tracker
+**Deployed on:** Fly.io (Singapore region)
 
 ---
 
-## Part 2 — Gemini API Key (free)
-
-### Step 1: Get your free API key
-1. Go to **https://aistudio.google.com/app/apikey**
-2. Sign in with your Google account
-3. Click **Create API key**
-4. Copy the key (looks like `AIzaSyCO66-Xn-Jvnj7pazafUJG-7-Wm-_4O36c`)
-
-Free tier limits: 15 requests/minute, 1 million tokens/day — more than enough for personal use.
+## Table of Contents
+1. [What the App Does](#what-the-app-does)
+2. [Tech Stack](#tech-stack)
+3. [File Structure](#file-structure)
+4. [Running Locally](#running-locally)
+5. [Environment Variables](#environment-variables)
+6. [Database](#database)
+7. [API Routes](#api-routes)
+8. [Features Walkthrough](#features-walkthrough)
+9. [Fly.io Deployment](#flyio-deployment)
+10. [Google OAuth Setup](#google-oauth-setup)
+11. [Optional: Google Sheets Export](#optional-google-sheets-export)
+12. [Maintenance](#maintenance)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Part 3 — Run the web app locally
+## What the App Does
 
-### Step 1: Install Node.js (if not installed)
-Download from **https://nodejs.org** — install the LTS version.
+Two-tab single-page app:
 
-Check it worked: open Terminal and run:
+**Dashboard tab (default)**
+- Month picker — shows all months Jan 2026 → current month; months with data shown without dash
+- KPI cards: Total Spend, Transaction Count, Pooja vs Kunal split, Impulse Spend %
+- Charts (collapsible): Category breakdown, Daily spend trend, Expense type, Payment method
+- Top Merchants table (collapsible)
+- All Transactions table: sortable, filterable, inline-editable with chip dropdowns, column toggle
+
+**Add Expenses tab**
+- Upload screenshots/PDFs (PhonePe, GPay, HDFC bank statements, Amazon Pay, CRED, etc.)
+- Gemini AI extracts transactions automatically
+- Review table: edit date (date picker), amount, description, category (searchable), expense type, payment method, paid by — all with colored chip dropdowns
+- "Paid By" auto-defaults to the logged-in user (Pooja → Pooja, Kunal → Kunal)
+- Duplicate detection: saves only new transactions (matches on date + amount + description)
+- "Save to Tracker" → writes to SQLite DB
+- Optional "Export to Google Sheets" button on Dashboard
+
+**Other features**
+- Dark mode toggle (🌙/☀️) — persists in localStorage
+- Mobile responsive (works on phone)
+- Google OAuth login — only Pooja & Kunal's emails can sign in
+
+---
+
+## Tech Stack
+
+| Layer | Tech |
+|---|---|
+| Backend | Node.js + Express |
+| Database | SQLite via `better-sqlite3` |
+| Frontend | Vanilla HTML + CSS + JS (no build step) |
+| Auth | Google OAuth 2.0 via Passport.js |
+| AI extraction | Google Gemini Flash (`gemini-2.0-flash-exp`) |
+| Charts | Chart.js 4.x (CDN) |
+| Hosting | Fly.io (free tier + persistent volume) |
+
+---
+
+## File Structure
+
 ```
-node --version
+expenseTracker/
+├── server.js          # Express app — all routes, Gemini extraction, OAuth
+├── db.js              # SQLite init, CREATE TABLE, exports db instance
+├── package.json       # Dependencies
+├── fly.toml           # Fly.io deployment config
+├── .env               # Local secrets (NOT committed)
+├── .gitignore         # node_modules, .env, expenses.db, uploads/, *.csv
+├── SETUP.md           # This file
+├── CLAUDE.md          # AI assistant context (schema, routes, conventions)
+├── apps-script.gs     # Google Sheets Apps Script (optional export)
+└── public/
+    ├── index.html     # Two-tab UI skeleton
+    ├── app.js         # All frontend JS (~1400 lines)
+    └── style.css      # All styles + dark mode + mobile (~900 lines)
 ```
 
-### Step 2: Set up the project
-Open Terminal, then run:
+---
+
+## Running Locally
+
+### Prerequisites
+- Node.js (LTS) — https://nodejs.org
+- A Google Cloud project with OAuth credentials (see [Google OAuth Setup](#google-oauth-setup))
+- A Gemini API key — https://aistudio.google.com/app/apikey
+
+### Steps
+
 ```bash
+# 1. Clone / go to project
 cd ~/Documents/expenseTracker
+
+# 2. Install dependencies
 npm install
-```
 
-### Step 3: Add your Gemini API key
-```bash
-cp .env.example .env
-```
-Open the `.env` file and replace `your_gemini_api_key_here` with your actual key:
-```
-GEMINI_API_KEY=AIzaSy...your actual key here...
-PORT=3000
-```
+# 3. Create .env file
+cp .env.example .env   # or create manually (see env vars below)
 
-### Step 4: Start the app
-```bash
+# 4. Start
 npm start
+# → Server running at http://localhost:3000
 ```
 
-You should see:
-```
-✅ Expense Tracker running at http://localhost:3000
-```
-
-Open **http://localhost:3000** in your browser.
+Open http://localhost:3000 → sign in with your Google account.
 
 ---
 
-## Part 4 — Connect everything in the app
+## Environment Variables
 
-1. In the app, paste your **Google Apps Script URL** into the URL field
-2. Set the **Sheet Tab Name** to `March_2026` (or whichever month)
-3. Click **Save**
+Create a `.env` file in the project root (never commit this):
+
+```env
+# Required
+GEMINI_API_KEY=AIzaSy...             # From aistudio.google.com
+GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+SESSION_SECRET=any-random-string-here
+ALLOWED_EMAILS=poojamehta1197@gmail.com,kunal@example.com
+
+# For local dev, BASE_URL is http://localhost:3000
+BASE_URL=http://localhost:3000
+
+# Production only (set via fly secrets, not .env)
+DB_PATH=/data/expenses.db            # Where SQLite file lives on Fly volume
+PORT=3000                            # Fly expects 3000 (set in fly.toml)
+```
+
+### Setting secrets on Fly.io
+
+```bash
+fly secrets set \
+  GEMINI_API_KEY="AIzaSy..." \
+  GOOGLE_CLIENT_ID="....apps.googleusercontent.com" \
+  GOOGLE_CLIENT_SECRET="GOCSPX-..." \
+  SESSION_SECRET="some-random-string" \
+  ALLOWED_EMAILS="poojamehta1197@gmail.com,kunal@example.com" \
+  BASE_URL="https://expense-tracker-pooja.fly.dev" \
+  DB_PATH="/data/expenses.db"
+```
+
+Changing any secret triggers an automatic redeploy.
 
 ---
 
-## Daily use
+## Database
 
-1. Run `npm start` in Terminal (takes 2 seconds)
-2. Go to http://localhost:3000
-3. Drop in your screenshots/PDFs
-4. Review the extracted transactions — fix anything wrong
-5. Click **Push to Google Sheets**
+**File location:**
+- Local: `./expenses.db`
+- Production: `/data/expenses.db` (on Fly.io persistent volume `expense_data`)
+
+**Schema:**
+
+```sql
+CREATE TABLE IF NOT EXISTS transactions (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  date           TEXT NOT NULL,         -- "21 March 2026"
+  amount         REAL NOT NULL,
+  description    TEXT,
+  payment_method TEXT,                  -- see enums below
+  paid_by        TEXT,                  -- "Pooja" or "Kunal"
+  expense_type   TEXT,                  -- see enums below
+  category       TEXT,                  -- see enums below
+  mood           TEXT,
+  impulse        TEXT,                  -- "Impulse" or "Intentional"
+  remarks        TEXT,
+  month          TEXT,                  -- "March_2026" (derived from date at insert)
+  created_at     TEXT DEFAULT (datetime('now'))
+);
+```
+
+**Enum values used in the UI:**
+
+| Field | Values |
+|---|---|
+| `paid_by` | Pooja, Kunal |
+| `payment_method` | Cash, ICICI_Credit_Card, Amazon_Credit_Card, SBI_Credit_Card, HDFC_Credit_Card, ABFL_Credit_Card, HDFC_Debit_Card, Zaggle |
+| `expense_type` | Pooja_Personal, Kunal_Personal, Common_50_50, Pooja_for_Kunal, Kunal_for_Pooja, Kunal_CreditCard_Bill, Pooja_CreditCard_Bill |
+| `impulse` | Impulse, Intentional |
+| `category` | 50 categories: Zepto/Blinkit, Outside Food, Fruits & Veggies, Salon, Medicines, Doctor, Shopping - clothes/home/bag/shoes/etc., Ola/Uber, House Help, Rent, Wifi/Phone bills, Subscriptions, and more |
+
+---
+
+## API Routes
+
+All routes require login (protected by `requireAuth` middleware).
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/me` | Current user: `{email, name, photo}` |
+| POST | `/api/extract` | Multipart file → Gemini extraction → `[{date, amount, description, ...}]` |
+| POST | `/api/transactions` | Save batch. Skips duplicates (same date+amount+description). Returns `{saved, skipped, ids}` |
+| GET | `/api/transactions?month=March_2026` | All transactions for a month |
+| PUT | `/api/transactions/:id` | Update one transaction |
+| DELETE | `/api/transactions/:id` | Delete one transaction |
+| GET | `/api/months` | List of distinct months that have data |
+| GET | `/api/dashboard?month=March_2026` | Pre-aggregated stats for all charts |
+
+**Dashboard response shape:**
+```json
+{
+  "totalSpend": 84250,
+  "transactionCount": 87,
+  "byCategory": [{"category": "Outside Food", "total": 12400}],
+  "byPaidBy": {"Pooja": 52000, "Kunal": 32250},
+  "byExpenseType": [{"expense_type": "Common_50_50", "total": 41000}],
+  "byPaymentMethod": [{"payment_method": "HDFC_Debit_Card", "total": 38000}],
+  "dailySpend": [{"date": "1 March 2026", "total": 2400}],
+  "impulseVsIntentional": {"Impulse": 8400, "Intentional": 42000},
+  "topMerchants": [{"description": "Swiggy", "total": 6200, "cnt": 8}]
+}
+```
+
+---
+
+## Features Walkthrough
+
+### Adding Expenses (daily workflow)
+1. Open app → **Add Expenses** tab
+2. Drop screenshots or PDFs into the upload area (or click Choose files)
+   - Supported: PhonePe, GPay, HDFC bank statements, Amazon Pay, CRED, any payment app screenshot
+   - Formats: PNG, JPG, HEIC, PDF — up to 20MB per file
+3. Gemini extracts all transactions automatically
+4. Review table appears — edit anything that's wrong:
+   - **Date**: calendar date picker
+   - **Category**: searchable chip dropdown (type to filter 50 options)
+   - **Paid By**: defaults to logged-in user (Pooja or Kunal)
+   - **Expense Type**: defaults to `{User}_Personal`
+   - All dropdowns show colored chips matching the dashboard
+5. Click **Save to Tracker** → saved to DB. Success message shows count + duplicates skipped.
+
+### Dashboard
+- **Month picker**: all months Jan 2026 → current. Months without data show `—` suffix.
+- **Charts** and **Top Merchants** are collapsed by default — click section header to expand.
+- **All Transactions table**:
+  - Click any cell to edit inline
+  - Date cells → date picker
+  - Category/Expense Type/etc → chip dropdown with search
+  - Sort by any column (click header)
+  - Filter by category, paid by, expense type, etc. (Filter button)
+  - Toggle visible columns (Columns button)
+  - `+ Add row` to manually add a transaction
+
+### Dark Mode
+- Click 🌙 in the top-right of the header
+- Preference saved in `localStorage` — persists across sessions and page reloads
+
+### Export to Google Sheets (optional)
+- Set Apps Script URL in Add Expenses tab settings
+- Click **Export to Google Sheets** on the Dashboard
+- Exports the currently selected month to your configured sheet
+
+---
+
+## Fly.io Deployment
+
+**App name:** `expense-tracker-pooja`
+**Region:** Singapore (`sin`)
+**Machine ID:** `17813e20ad5068`
+**Persistent volume:** `expense_data` mounted at `/data`
+
+### Deploy a new version
+
+```bash
+# From project root
+git add .
+git commit -m "your message"
+git push
+fly deploy --ha=false
+```
+
+### View logs
+
+```bash
+fly logs
+```
+
+### SSH into the machine
+
+```bash
+fly ssh console
+# Then: ls /data, sqlite3 /data/expenses.db, etc.
+```
+
+### Check app status
+
+```bash
+fly status
+fly machine list
+```
+
+### Scale (if needed)
+
+```bash
+fly scale memory 512    # increase RAM
+fly scale count 1       # ensure 1 machine
+```
+
+---
+
+## Google OAuth Setup
+
+The app uses Google OAuth so only Pooja & Kunal can sign in.
+
+**Where it's configured:** Google Cloud Console → project → APIs & Services → Credentials
+
+**Authorized redirect URIs** currently set:
+- `http://localhost:3000/auth/google/callback` (local dev)
+- `https://expense-tracker-pooja.fly.dev/auth/google/callback` (production)
+
+**If you deploy to a new URL**, add that URL's callback to the Google Cloud Console authorized redirect URIs, otherwise you'll get a `redirect_uri_mismatch` error.
+
+**Steps to update:**
+1. Go to https://console.cloud.google.com
+2. APIs & Services → Credentials → click the OAuth 2.0 Client
+3. Add new authorized redirect URI
+4. Save
+
+**Allowed users** controlled by `ALLOWED_EMAILS` env var (comma-separated).
+
+---
+
+## Optional: Google Sheets Export
+
+This was the original workflow — now optional. The DB is the source of truth.
+
+### Setup (one-time)
+1. Open your Google Sheet
+2. Extensions → Apps Script → paste contents of `apps-script.gs`
+3. Deploy → New deployment → Web app
+   - Execute as: Me
+   - Who has access: Anyone
+4. Copy the Web App URL
+
+### Use in the app
+1. Add Expenses tab → paste URL into "Google Apps Script URL" field → Save
+2. On Dashboard → click "Export to Google Sheets"
+3. The currently selected month's transactions get pushed to the sheet
+
+> Note: every time you change the Apps Script code, create a **New deployment** (not update existing).
+
+---
+
+## Maintenance
+
+### Backup the database
+
+```bash
+# Download from Fly volume to local
+fly ssh console --command "cat /data/expenses.db" > backup_$(date +%Y%m%d).db
+```
+
+Or use SFTP:
+```bash
+fly sftp get /data/expenses.db ./backup_local.db
+```
+
+### Upload a local DB to production
+
+```bash
+# Delete existing first
+fly ssh console --command "rm /data/expenses.db"
+# Upload
+fly sftp put ./expenses.db /data/expenses.db
+```
+
+### Add a new secret
+
+```bash
+fly secrets set NEW_VAR="value"
+# This triggers automatic redeploy
+```
+
+### Update dependencies
+
+```bash
+npm update
+git add package.json package-lock.json
+git commit -m "Update dependencies"
+git push && fly deploy --ha=false
+```
 
 ---
 
 ## Troubleshooting
 
-**"No transactions found"** — Try a clearer screenshot. Full transaction history page works better than single notification screens.
-
-**Push fails with network error** — Double-check your Apps Script URL. Make sure it ends with `/exec`.
-
-**Wrong tab error** — Make sure the tab name in the app exactly matches your sheet tab (e.g., `March_2026`).
-
-**Gemini API error** — Check that your API key in `.env` is correct and has no extra spaces.
+| Problem | Likely cause | Fix |
+|---|---|---|
+| `redirect_uri_mismatch` on login | New URL not in Google Cloud Console | Add the callback URL to OAuth credentials |
+| App shows 502 on Fly | Port mismatch | Check `internal_port = 3000` in fly.toml, don't set PORT env var |
+| "No transactions found" from AI | Blurry/partial screenshot | Use a clearer full-screen screenshot of the payment history |
+| Duplicate entries in DB | Uploaded same screenshot twice | App now auto-deduplicates — but if already in DB, delete via dashboard |
+| Dark mode not applying to some elements | Missing dark override in CSS | Add `body.dark .classname` rule to style.css |
+| Data missing after redeploy | DB_PATH not set or volume not mounted | Check `fly secrets list` for DB_PATH and `fly volumes list` |
+| Can't log in (not allowed) | Email not in ALLOWED_EMAILS | `fly secrets set ALLOWED_EMAILS="..."` with your email included |
+| Local: OAuth error | BASE_URL wrong | Set `BASE_URL=http://localhost:3000` in .env |
