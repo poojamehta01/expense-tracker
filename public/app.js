@@ -862,7 +862,10 @@ async function loadDashboard(month) {
     }
 
     renderTransactionsList(txData.transactions || []);
-    if (dashRes.ok && dash.transactionCount > 0) applyGlobalFilter();
+    if (dashRes.ok && dash.transactionCount > 0) {
+      applyGlobalFilter();
+      document.getElementById('aiSection').style.display = '';
+    }
   } catch (err) {
     console.error('loadDashboard error:', err);
   }
@@ -2457,6 +2460,57 @@ function renderTrendsSummaryTable(data) {
     </tr>`;
   }).reverse().join(''); // most recent first
   document.getElementById('trendsSummarySection').style.display = '';
+}
+
+// ── Ask AI ────────────────────────────────────────────────────────────────────
+
+let _activeAiChip = null;
+
+function askChip(btn) {
+  if (_activeAiChip) _activeAiChip.classList.remove('active');
+  _activeAiChip = btn;
+  btn.classList.add('active');
+  document.getElementById('aiInput').value = btn.textContent;
+  submitAsk();
+}
+
+async function submitAsk() {
+  const input = document.getElementById('aiInput');
+  const question = input.value.trim();
+  if (!question) return;
+
+  const responseEl = document.getElementById('aiResponse');
+  const btn = document.getElementById('aiBtn');
+  responseEl.textContent = 'Thinking…';
+  responseEl.classList.remove('hidden');
+  responseEl.classList.add('loading');
+  btn.disabled = true;
+
+  const month = document.getElementById('monthPicker')?.value || '';
+
+  try {
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, month })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    responseEl.classList.remove('loading');
+    responseEl.innerHTML = formatAiResponse(data.answer);
+  } catch (err) {
+    responseEl.classList.remove('loading');
+    responseEl.textContent = 'Something went wrong. Please try again.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function formatAiResponse(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^[-•] /gm, '• ')
+    .replace(/\n/g, '<br>');
 }
 
 // ── PWA Service Worker Registration ──────────────────────────────────────────

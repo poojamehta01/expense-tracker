@@ -124,7 +124,13 @@ function requireAuth(req, res, next) {
 // ─── App routes (protected) ───────────────────────────────────────────────────
 
 app.use(requireAuth);
-app.use(express.static('public'));
+app.use(express.static('public', {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
+}));
 
 // Pass current user info to frontend
 app.get('/api/me', (req, res) => {
@@ -629,6 +635,66 @@ app.post('/api/extract-text', express.json(), async (req, res) => {
     res.json({ transactions });
   } catch (err) {
     console.error('Text extraction error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/ask — AI-powered financial Q&A
+app.post('/api/ask', async (req, res) => {
+  const { question, month } = req.body;
+  if (!question) return res.status(400).json({ error: 'question required' });
+
+  // Monthly totals (excl CC payments)
+  const monthlyRows = db.prepare(
+    `SELECT month, COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+     FROM transactions WHERE category != 'Credit Card Payment'
+     GROUP BY month ORDER BY ${MONTH_SORT}`
+  ).all();
+
+  // Top 10 categories all-time (excl CC)
+  const topCats = db.prepare(
+    `SELECT category, COALESCE(SUM(amount),0) AS total
+     FROM transactions WHERE category != '' AND category != 'Credit Card Payment'
+     GROUP BY category ORDER BY total DESC LIMIT 10`
+  ).all();
+
+  // Current month detail
+  const currentMonth = month || (monthlyRows.length ? monthlyRows[monthlyRows.length - 1].month : null);
+  let monthDetail = '';
+  if (currentMonth) {
+    const base = `FROM transactions WHERE month = ? AND category != 'Credit Card Payment'`;
+    const tot = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt ${base}`).get(currentMonth);
+    const cats = db.prepare(`SELECT category, SUM(amount) AS total ${base} GROUP BY category ORDER BY total DESC`).all(currentMonth);
+    const split = db.prepare(`SELECT paid_by, SUM(amount) AS total ${base} GROUP BY paid_by`).all(currentMonth);
+    const expTypes = db.prepare(`SELECT expense_type, SUM(amount) AS total FROM transactions WHERE month = ? GROUP BY expense_type ORDER BY total DESC`).all(currentMonth);
+    monthDetail = `
+Current month (${currentMonth}): ₹${Math.round(tot.total).toLocaleString('en-IN')} across ${tot.cnt} transactions
+Categories: ${cats.map(c => `${c.category} ₹${Math.round(c.total).toLocaleString('en-IN')}`).join(', ')}
+Paid by: ${split.map(s => `${s.paid_by} ₹${Math.round(s.total).toLocaleString('en-IN')}`).join(', ')}
+Expense types: ${expTypes.map(e => `${e.expense_type} ₹${Math.round(e.total).toLocaleString('en-IN')}`).join(', ')}`;
+  }
+
+  const context = `You are a personal finance assistant for a couple — Pooja and Kunal — who track shared and personal expenses.
+
+Monthly totals (most recent last, Credit Card bill payments excluded):
+${monthlyRows.map(r => `- ${r.month}: ₹${Math.round(r.total).toLocaleString('en-IN')} (${r.cnt} txns)`).join('\n')}
+
+Top 10 spending categories all-time:
+${topCats.map(c => `- ${c.category}: ₹${Math.round(c.total).toLocaleString('en-IN')}`).join('\n')}
+${monthDetail}
+
+Expense types used: Pooja_Personal, Kunal_Personal, Common_50_50 (split 50/50), Pooja_for_Kunal (Pooja paid for Kunal), Kunal_for_Pooja.
+
+Answer the question below. Be specific with numbers. Use ₹ for currency. Keep response concise (under 180 words). If predicting, base it on recent trends.
+
+Question: ${question}`;
+
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+    const result = await model.generateContent(context);
+    res.json({ answer: result.response.text().trim() });
+  } catch (err) {
+    console.error('Ask AI error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
