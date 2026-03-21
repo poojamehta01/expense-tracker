@@ -848,3 +848,75 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
 
 /* Utilities */
 .hidden { display: none !important; }
+
+/* ─── Mobile responsive ────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Header */
+  .header { padding: 14px 16px; }
+  .header h1 { font-size: 18px; }
+  .header p { display: none; }
+  .user-info span { display: none; }
+
+  /* Tab nav */
+  .tab-nav { padding: 0 12px; }
+  .tab-btn { padding: 10px 14px; font-size: 13px; }
+
+  /* Main padding */
+  .main { padding: 14px 12px; gap: 14px; }
+
+  /* Dashboard toolbar: stack month + export */
+  .dashboard-toolbar { flex-direction: column; align-items: stretch; }
+  .dashboard-toolbar .btn-secondary { width: 100%; }
+  .month-picker-wrap { justify-content: space-between; }
+
+  /* KPI: 2 columns on phone */
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi-card { padding: 14px 14px 14px 12px; }
+  .kpi-value { font-size: 22px; }
+  .kpi-value.small { font-size: 15px; }
+
+  /* Charts: 1 column */
+  .charts-grid { grid-template-columns: 1fr; gap: 12px; }
+  .chart-container { height: 220px; }
+  .chart-container--sm { height: 200px; }
+
+  /* Section headers */
+  .section-header { padding: 10px 12px; }
+
+  /* Table header row: stack title + actions */
+  .table-header-row { flex-direction: column; align-items: flex-start; padding: 12px 14px; gap: 10px; }
+  .table-actions { width: 100%; flex-wrap: wrap; }
+  .table-actions .btn-primary,
+  .table-actions .btn-secondary { flex: 1; min-width: 80px; text-align: center; }
+
+  /* Table: smaller font, horizontal scroll already on */
+  .table-wrapper { max-height: 60vh; }
+  table { font-size: 12px; }
+  thead th { padding: 8px 6px; }
+  tbody td { padding: 7px 6px; }
+  .gc { padding: 5px 6px; max-width: 130px; }
+
+  /* Upload card */
+  .upload-card { padding: 28px 16px; }
+  .upload-icon { font-size: 26px; }
+  .upload-title { font-size: 14px; }
+
+  /* Settings: stack */
+  .settings-row { flex-direction: column; }
+  .settings-field.wide { min-width: unset; width: 100%; }
+  .btn-save { width: 100%; height: 38px; }
+
+  /* Review table buttons */
+  .table-footer { flex-direction: column; gap: 8px; }
+  .table-footer .btn-primary.large { width: 100%; }
+  .table-footer .btn-secondary.small { width: 100%; }
+
+  /* rv-combo panel: don't overflow off right edge */
+  .rv-combo-panel { min-width: 160px; max-width: 90vw; }
+
+  /* Col panel: anchor right on mobile */
+  .col-panel { right: 0; left: auto; }
+
+  /* Filter bar hidden text labels shrink */
+  .cf-input { font-size: 12px; }
+}
