@@ -186,6 +186,12 @@ async function handleFiles(files) {
     setLoadingText(`Processing file ${i + 1} of ${files.length}: ${files[i].name}…`);
     try {
       const extracted = await extractFromFile(files[i]);
+      extracted.forEach(tx => {
+        tx.paid_by = currentUserName;
+        if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
+          tx.expense_type = currentUserName + '_Personal';
+        }
+      });
       newTx.push(...extracted);
     } catch (err) {
       showError(`Failed to process "${files[i].name}": ${err.message}`);
