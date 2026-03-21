@@ -27,6 +27,7 @@
     <nav class="tab-nav">
       <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
       <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
+      <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
     </nav>
 
     <main class="main">
@@ -217,6 +218,52 @@
         <div id="pushResult" class="push-result hidden"></div>
 
       </div><!-- /tab-add -->
+
+      <!-- ═══════════════════════════════ TRENDS TAB ═══════════════════════════ -->
+      <div id="tab-trends" class="hidden">
+        <div class="trends-grid">
+
+          <div class="chart-card">
+            <h3>Monthly Total Spend</h3>
+            <div class="chart-container"><canvas id="chartMonthlySpend"></canvas></div>
+          </div>
+
+          <div class="chart-card">
+            <h3>Pooja vs Kunal — Monthly Split</h3>
+            <div class="chart-container"><canvas id="chartMonthlySplit"></canvas></div>
+          </div>
+
+          <div class="chart-card">
+            <h3>Top 5 Categories Over Time</h3>
+            <div class="chart-container chart-container--lg"><canvas id="chartTopCategories"></canvas></div>
+          </div>
+
+          <div class="table-section" id="trendsSummarySection">
+            <div class="table-header-row">
+              <h2>Monthly Summary</h2>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Total Spend</th>
+                    <th>Transactions</th>
+                    <th>Pooja</th>
+                    <th>Kunal</th>
+                  </tr>
+                </thead>
+                <tbody id="trendsSummaryBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="trendsEmpty" class="empty-state hidden">
+            <p>No data yet. Add some expenses first.</p>
+          </div>
+
+        </div>
+      </div><!-- /tab-trends -->
 
     </main>
   </div>

@@ -69,6 +69,10 @@ let chartCategory = null;
 let chartDaily = null;
 let chartExpenseType = null;
 let chartPaymentMethod = null;
+let chartMonthlySpend = null;
+let chartMonthlySplit = null;
+let chartTopCategories = null;
+let trendsLoaded = false;
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
@@ -145,10 +149,11 @@ function initUploadMonthPicker() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  document.getElementById('tab-dashboard').classList.toggle('hidden', name !== 'dashboard');
-  document.getElementById('tab-add').classList.toggle('hidden', name !== 'add');
-  document.getElementById('tab-btn-dashboard').classList.toggle('active', name === 'dashboard');
-  document.getElementById('tab-btn-add').classList.toggle('active', name === 'add');
+  ['dashboard', 'add', 'trends'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('hidden', name !== t);
+    document.getElementById('tab-btn-' + t).classList.toggle('active', name === t);
+  });
+  if (name === 'trends' && !trendsLoaded) loadTrends();
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -469,6 +474,7 @@ async function saveToTracker() {
     const data = await res.json();
     const skipNote = data.skipped > 0 ? ` (${data.skipped} duplicate${data.skipped !== 1 ? 's' : ''} skipped)` : '';
     showResult(`✓ ${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!${skipNote}`, 'success');
+    trendsLoaded = false; // refresh trends next time tab is opened
     transactions = [];
     document.getElementById('tableSection').classList.add('hidden');
     // Refresh months list in dashboard
@@ -1369,4 +1375,130 @@ function hideResult() {
 }
 function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── Trends Tab ───────────────────────────────────────────────────────────────
+
+function formatMonthLabel(m) {
+  const [name, year] = m.split('_');
+  return name.slice(0, 3) + " '" + String(year).slice(2);
+}
+
+async function loadTrends() {
+  try {
+    const res = await fetch('/api/trends');
+    if (!res.ok) throw new Error('Failed');
+    const data = await res.json();
+
+    if (!data.months || data.months.length === 0) {
+      document.getElementById('trendsEmpty').classList.remove('hidden');
+      return;
+    }
+    document.getElementById('trendsEmpty').classList.add('hidden');
+
+    renderMonthlySpendChart(data);
+    renderMonthlySplitChart(data);
+    renderTopCategoriesChart(data);
+    renderTrendsSummaryTable(data);
+    trendsLoaded = true;
+  } catch (err) {
+    console.error('loadTrends error:', err);
+  }
+}
+
+function renderMonthlySpendChart(data) {
+  if (chartMonthlySpend) chartMonthlySpend.destroy();
+  chartMonthlySpend = new Chart(document.getElementById('chartMonthlySpend'), {
+    type: 'bar',
+    data: {
+      labels: data.months.map(formatMonthLabel),
+      datasets: [{
+        label: 'Total Spend',
+        data: data.monthlyTotals.map(r => r.total),
+        backgroundColor: '#2563eb',
+        borderRadius: 5,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => formatCurrency(ctx.parsed.y) } }
+      },
+      scales: { y: { ticks: { callback: v => '₹' + (v >= 1000 ? Math.round(v/1000) + 'k' : v) } } }
+    }
+  });
+}
+
+function renderMonthlySplitChart(data) {
+  if (chartMonthlySplit) chartMonthlySplit.destroy();
+  chartMonthlySplit = new Chart(document.getElementById('chartMonthlySplit'), {
+    type: 'bar',
+    data: {
+      labels: data.months.map(formatMonthLabel),
+      datasets: [
+        { label: 'Pooja', data: data.monthlySplit.map(r => r.Pooja), backgroundColor: '#7c3aed', borderRadius: 3, stack: 'split' },
+        { label: 'Kunal', data: data.monthlySplit.map(r => r.Kunal), backgroundColor: '#2563eb', borderRadius: 3, stack: 'split' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` } }
+      },
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, ticks: { callback: v => '₹' + (v >= 1000 ? Math.round(v/1000) + 'k' : v) } }
+      }
+    }
+  });
+}
+
+function renderTopCategoriesChart(data) {
+  if (chartTopCategories) chartTopCategories.destroy();
+  const { categories, byMonth } = data.topCategories;
+  if (!categories.length) return;
+
+  const colors = ['#2563eb','#7c3aed','#db2777','#ea580c','#16a34a'];
+  const datasets = categories.map((cat, i) => ({
+    label: cat,
+    data: byMonth.map(row => row[cat] || 0),
+    backgroundColor: colors[i % colors.length],
+    borderRadius: 3,
+    stack: 'cats'
+  }));
+
+  chartTopCategories = new Chart(document.getElementById('chartTopCategories'), {
+    type: 'bar',
+    data: { labels: data.months.map(formatMonthLabel), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` } }
+      },
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, ticks: { callback: v => '₹' + (v >= 1000 ? Math.round(v/1000) + 'k' : v) } }
+      }
+    }
+  });
+}
+
+function renderTrendsSummaryTable(data) {
+  const body = document.getElementById('trendsSummaryBody');
+  body.innerHTML = data.months.map((m, i) => {
+    const tot = data.monthlyTotals[i];
+    const spl = data.monthlySplit[i];
+    return `<tr>
+      <td><strong>${esc(m.replace('_', ' '))}</strong></td>
+      <td>${formatCurrency(tot.total)}</td>
+      <td>${tot.cnt}</td>
+      <td>${formatCurrency(spl.Pooja)}</td>
+      <td>${formatCurrency(spl.Kunal)}</td>
+    </tr>`;
+  }).reverse().join(''); // most recent first
+  document.getElementById('trendsSummarySection').style.display = '';
 }

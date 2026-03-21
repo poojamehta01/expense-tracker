@@ -243,6 +243,67 @@ app.delete('/api/transactions/:id', (req, res) => {
   res.json({ deleted: true });
 });
 
+// GET /api/trends — multi-month aggregated data
+const MONTH_SORT = `
+  CAST(substr(month, instr(month,'_')+1) AS INTEGER),
+  CASE substr(month,1,instr(month,'_')-1)
+    WHEN 'January' THEN 1 WHEN 'February' THEN 2 WHEN 'March' THEN 3
+    WHEN 'April' THEN 4 WHEN 'May' THEN 5 WHEN 'June' THEN 6
+    WHEN 'July' THEN 7 WHEN 'August' THEN 8 WHEN 'September' THEN 9
+    WHEN 'October' THEN 10 WHEN 'November' THEN 11 WHEN 'December' THEN 12
+  END`;
+
+app.get('/api/trends', (req, res) => {
+  // Monthly totals
+  const monthlyTotals = db.prepare(
+    `SELECT month, COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+     FROM transactions GROUP BY month ORDER BY ${MONTH_SORT}`
+  ).all();
+
+  const months = monthlyTotals.map(r => r.month);
+  if (months.length === 0) return res.json({ months: [], monthlyTotals: [], monthlySplit: [], topCategories: { categories: [], byMonth: [] } });
+
+  // Pooja vs Kunal split — pivot in JS
+  const splitRows = db.prepare(
+    `SELECT month, paid_by, COALESCE(SUM(amount),0) AS total
+     FROM transactions WHERE paid_by IN ('Pooja','Kunal')
+     GROUP BY month, paid_by ORDER BY ${MONTH_SORT}`
+  ).all();
+  const splitMap = {};
+  for (const r of splitRows) {
+    if (!splitMap[r.month]) splitMap[r.month] = { Pooja: 0, Kunal: 0 };
+    splitMap[r.month][r.paid_by] = r.total;
+  }
+  const monthlySplit = months.map(m => ({ month: m, Pooja: splitMap[m]?.Pooja || 0, Kunal: splitMap[m]?.Kunal || 0 }));
+
+  // Top 5 categories globally
+  const top5 = db.prepare(
+    `SELECT category FROM transactions WHERE category != '' AND category IS NOT NULL
+     GROUP BY category ORDER BY SUM(amount) DESC LIMIT 5`
+  ).all().map(r => r.category);
+
+  // Per-month breakdown for those 5
+  const placeholders = top5.map(() => '?').join(',');
+  const catRows = top5.length ? db.prepare(
+    `SELECT month, category, COALESCE(SUM(amount),0) AS total
+     FROM transactions WHERE category IN (${placeholders})
+     GROUP BY month, category ORDER BY ${MONTH_SORT}`
+  ).all(...top5) : [];
+
+  const catMap = {};
+  for (const r of catRows) {
+    if (!catMap[r.month]) { catMap[r.month] = {}; for (const c of top5) catMap[r.month][c] = 0; }
+    catMap[r.month][r.category] = r.total;
+  }
+  const byMonth = months.map(m => {
+    const obj = { month: m };
+    for (const c of top5) obj[c] = catMap[m]?.[c] || 0;
+    return obj;
+  });
+
+  res.json({ months, monthlyTotals, monthlySplit, topCategories: { categories: top5, byMonth } });
+});
+
 // GET /api/months
 app.get('/api/months', (req, res) => {
   const rows = db.prepare('SELECT DISTINCT month FROM transactions ORDER BY month').all();

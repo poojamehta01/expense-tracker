@@ -882,6 +882,14 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
 /* Utilities */
 .hidden { display: none !important; }
 
+/* ─── Trends Tab ────────────────────────────────────────────────────────────── */
+.trends-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.chart-container--lg { height: 340px; }
+
 /* ─── Mobile responsive ────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   /* Header */
