@@ -73,6 +73,11 @@ let chartPaymentMethod = null;
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Restore dark mode preference
+  if (localStorage.getItem('darkMode') === '1') {
+    document.body.classList.add('dark');
+    document.getElementById('darkToggleBtn').textContent = '☀️';
+  }
   loadSettings();
   setupUpload();
   setDefaultSheetName();
@@ -559,6 +564,9 @@ async function loadDashboard(month) {
       renderExpenseTypeChart(dash);
       renderPaymentMethodChart(dash);
       renderTopMerchants(dash);
+      // apply collapsed state for charts
+      document.getElementById('chartsGrid').style.display = chartsVisible ? '' : 'none';
+      document.getElementById('chartsToggleIcon').textContent = chartsVisible ? '▲' : '▼';
     } else {
       document.getElementById('dashboardEmpty').classList.remove('hidden');
       document.getElementById('merchantsSection').style.display = 'none';
@@ -571,9 +579,15 @@ async function loadDashboard(month) {
   }
 }
 
-let chartsVisible = true;
-let merchantsVisible = true;
+let chartsVisible = false;
+let merchantsVisible = false;
 let txTableVisible = true;
+
+function toggleDark() {
+  const dark = document.body.classList.toggle('dark');
+  document.getElementById('darkToggleBtn').textContent = dark ? '☀️' : '🌙';
+  localStorage.setItem('darkMode', dark ? '1' : '0');
+}
 
 function toggleCharts() {
   chartsVisible = !chartsVisible;
@@ -729,6 +743,9 @@ function renderTopMerchants(data) {
     </tr>
   `).join('');
   section.style.display = '';
+  // respect collapsed state
+  document.getElementById('merchantsBody_wrap').style.display = merchantsVisible ? '' : 'none';
+  document.getElementById('merchantsToggleIcon').textContent = merchantsVisible ? '▲' : '▼';
 }
 
 // ─── Transactions Grid ────────────────────────────────────────────────────────
