@@ -323,14 +323,31 @@ app.get('/api/dashboard', (req, res) => {
   const byExpenseType = db.prepare(`SELECT expense_type, SUM(amount) AS total ${base} GROUP BY expense_type ORDER BY total DESC`).all(month);
   const byPaymentMethod = db.prepare(`SELECT payment_method, SUM(amount) AS total ${base} GROUP BY payment_method ORDER BY total DESC`).all(month);
   const dailySpend = db.prepare(`SELECT date, SUM(amount) AS total ${base} GROUP BY date ORDER BY date`).all(month);
-  const impulseRows = db.prepare(`SELECT impulse, SUM(amount) AS total ${base} AND impulse != '' GROUP BY impulse`).all(month);
   const topMerchants = db.prepare(`SELECT description, SUM(amount) AS total, COUNT(*) AS cnt ${base} GROUP BY description ORDER BY total DESC LIMIT 10`).all(month);
 
   const byPaidBy = {};
   for (const r of byPaidByRows) byPaidBy[r.paid_by || 'Unknown'] = r.total;
 
-  const impulseVsIntentional = {};
-  for (const r of impulseRows) impulseVsIntentional[r.impulse] = r.total;
+  // Settlement: net amount Kunal owes Pooja (negative = Pooja owes Kunal)
+  const settlementRows = db.prepare(
+    `SELECT expense_type, paid_by, SUM(amount) AS total ${base}
+     AND expense_type IN ('Common_50_50','Pooja_for_Kunal','Kunal_for_Pooja')
+     GROUP BY expense_type, paid_by`
+  ).all(month);
+
+  let kunalOwesPooja = 0;
+  let poojaOwesKunal = 0;
+  for (const r of settlementRows) {
+    if (r.expense_type === 'Common_50_50') {
+      if (r.paid_by === 'Pooja') kunalOwesPooja += r.total / 2;
+      if (r.paid_by === 'Kunal') poojaOwesKunal += r.total / 2;
+    } else if (r.expense_type === 'Pooja_for_Kunal') {
+      kunalOwesPooja += r.total;
+    } else if (r.expense_type === 'Kunal_for_Pooja') {
+      poojaOwesKunal += r.total;
+    }
+  }
+  const netSettlement = kunalOwesPooja - poojaOwesKunal; // + = Kunal owes Pooja, - = Pooja owes Kunal
 
   res.json({
     totalSpend: totalRow.total,
@@ -340,8 +357,8 @@ app.get('/api/dashboard', (req, res) => {
     byExpenseType,
     byPaymentMethod,
     dailySpend,
-    impulseVsIntentional,
-    topMerchants
+    topMerchants,
+    settlement: { kunalOwesPooja, poojaOwesKunal, net: netSettlement }
   });
 });
 

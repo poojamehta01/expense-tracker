@@ -641,9 +641,17 @@ function renderKPIs(data) {
     `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
     `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
 
-  const impulse = data.impulseVsIntentional['Impulse'] || 0;
-  const pct = data.totalSpend > 0 ? Math.round((impulse / data.totalSpend) * 100) : 0;
-  document.getElementById('kpiImpulse').textContent = `${pct}%`;
+  const s = data.settlement || { net: 0, kunalOwesPooja: 0, poojaOwesKunal: 0 };
+  const net = s.net;
+  let settlementHtml;
+  if (Math.abs(net) < 1) {
+    settlementHtml = '<span style="color:var(--success)">All settled ✓</span>';
+  } else if (net > 0) {
+    settlementHtml = `<span class="split-label">Kunal owes</span><br>${formatCurrency(net)}`;
+  } else {
+    settlementHtml = `<span class="split-label">Pooja owes</span><br>${formatCurrency(Math.abs(net))}`;
+  }
+  document.getElementById('kpiSettlement').innerHTML = settlementHtml;
 }
 
 const CHART_COLORS = [
