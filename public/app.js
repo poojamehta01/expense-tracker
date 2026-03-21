@@ -1367,9 +1367,11 @@ function startEdit(cell) {
   };
 
   if (col.type === 'select') {
-    // ── Chip-based inline dropdown (same style as review table) ──────────────
+    // ── Chip-based inline dropdown — portal to body so it's never clipped ────
     const panel = document.createElement('div');
-    panel.className = 'rv-combo-panel rv-inline';
+    panel.className = 'rv-combo-panel';
+    panel.style.position = 'fixed';
+    panel.style.zIndex = '9999';
 
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
@@ -1381,6 +1383,28 @@ function startEdit(cell) {
 
     panel.appendChild(searchInput);
     panel.appendChild(list);
+    document.body.appendChild(panel);
+
+    // Position panel below (or above) the cell
+    const positionInlinePanel = () => {
+      const r = cell.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom - 8;
+      const spaceAbove = r.top - 8;
+      const panelH = Math.min(280, Math.max(spaceBelow, spaceAbove));
+      panel.style.minWidth = Math.max(r.width, 180) + 'px';
+      panel.style.maxHeight = panelH + 'px';
+      panel.style.overflowY = 'auto';
+      if (spaceBelow >= Math.min(180, spaceAbove)) {
+        panel.style.top = (r.bottom + 2) + 'px';
+        panel.style.bottom = '';
+      } else {
+        panel.style.bottom = (window.innerHeight - r.top + 2) + 'px';
+        panel.style.top = '';
+      }
+      panel.style.left = Math.min(r.left, window.innerWidth - 200) + 'px';
+    };
+
+    const removePanel = () => { panel.remove(); };
 
     let highlighted = 0;
 
@@ -1402,25 +1426,30 @@ function startEdit(cell) {
       opts[highlighted]?.scrollIntoView({ block: 'nearest' });
     };
 
+    const origSaveVal = saveVal;
+    const origCancelEdit = cancelEdit;
+    const saveValP = (v) => { removePanel(); origSaveVal(v); };
+    const cancelEditP = () => { removePanel(); origCancelEdit(); };
+
     list.addEventListener('mousedown', e => e.preventDefault());
     list.addEventListener('click', e => {
       const opt = e.target.closest('.rv-opt');
-      if (opt) { saveVal(opt.dataset.val); }
+      if (opt) saveValP(opt.dataset.val);
     });
 
     searchInput.addEventListener('input', () => renderOpts(searchInput.value));
 
     searchInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { cancelEdit(); return; }
+      if (e.key === 'Escape') { cancelEditP(); return; }
       if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
       if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         const hi = list.querySelector('.rv-opt.hi');
-        if (hi) saveVal(hi.dataset.val);
+        if (hi) saveValP(hi.dataset.val);
         else {
           const exact = (col.opts || []).find(o => String(o).toLowerCase() === searchInput.value.toLowerCase().trim());
-          if (exact) saveVal(exact); else cancelEdit();
+          if (exact) saveValP(exact); else cancelEditP();
         }
         if (e.key === 'Tab') moveToNext(e.shiftKey);
       }
@@ -1430,13 +1459,15 @@ function startEdit(cell) {
       setTimeout(() => {
         if (cell.classList.contains('editing')) {
           const exact = (col.opts || []).find(o => String(o).toLowerCase() === searchInput.value.toLowerCase().trim());
-          if (exact) saveVal(exact); else cancelEdit();
+          if (exact) saveValP(exact); else cancelEditP();
         }
       }, 150);
     });
 
     renderOpts('');
-    cell.appendChild(panel);
+    positionInlinePanel();
+    // Show chip placeholder in cell while editing
+    cell.innerHTML = chipHtml(origVal || '') || '<span class="cell-empty">—</span>';
     searchInput.focus();
     setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
 
