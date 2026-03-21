@@ -36,6 +36,7 @@
       <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
       <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
       <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
+      <button class="tab-btn" onclick="switchTab('ask')" id="tab-btn-ask">Ask AI</button>
       <div class="tab-nav-spacer"></div>
       <div class="global-filter-group">
         <button class="global-filter-btn active" data-person="all"    onclick="setGlobalFilter('all')">All</button>
@@ -80,27 +81,6 @@
             <div class="kpi-label">Settlement</div>
             <div class="kpi-value small" id="kpiSettlement">—</div>
           </div>
-        </div>
-
-        <!-- AI Ask section -->
-        <div class="ai-section" id="aiSection" style="display:none">
-          <div class="ai-header">
-            <span class="ai-title">✦ Ask AI</span>
-            <span class="ai-badge">Gemini</span>
-          </div>
-          <div class="ai-chips" id="aiChips">
-            <button class="ai-chip" onclick="askChip(this)">Top spend category this month</button>
-            <button class="ai-chip" onclick="askChip(this)">Where can we reduce spending?</button>
-            <button class="ai-chip" onclick="askChip(this)">Predict next month's total</button>
-            <button class="ai-chip" onclick="askChip(this)">Compare this month vs last month</button>
-            <button class="ai-chip" onclick="askChip(this)">How is the settlement looking?</button>
-            <button class="ai-chip" onclick="askChip(this)">Which category grew the most?</button>
-          </div>
-          <div class="ai-input-row">
-            <input type="text" id="aiInput" class="ai-input" placeholder="Ask anything about your expenses…" onkeydown="if(event.key==='Enter')submitAsk()">
-            <button class="btn-primary" id="aiBtn" onclick="submitAsk()">Ask</button>
-          </div>
-          <div id="aiResponse" class="ai-response hidden"></div>
         </div>
 
         <!-- Charts grid -->
@@ -359,6 +339,29 @@
 
         </div>
       </div><!-- /tab-trends -->
+
+      <!-- ════════════════════════════════ ASK AI TAB ══════════════════════════ -->
+      <div id="tab-ask" class="hidden">
+        <div class="ai-section">
+          <div class="ai-header">
+            <span class="ai-title">✦ Ask AI</span>
+            <span class="ai-badge">Gemini</span>
+          </div>
+          <div class="ai-chips">
+            <button class="ai-chip" onclick="askChip(this)">Top spend category this month</button>
+            <button class="ai-chip" onclick="askChip(this)">Where can we reduce spending?</button>
+            <button class="ai-chip" onclick="askChip(this)">Predict next month's total</button>
+            <button class="ai-chip" onclick="askChip(this)">Compare this month vs last month</button>
+            <button class="ai-chip" onclick="askChip(this)">How is the settlement looking?</button>
+            <button class="ai-chip" onclick="askChip(this)">Which category grew the most?</button>
+          </div>
+          <div class="ai-input-row">
+            <input type="text" id="aiInput" class="ai-input" placeholder="Ask anything about your expenses…" onkeydown="if(event.key==='Enter')submitAsk()">
+            <button class="btn-primary" id="aiBtn" onclick="submitAsk()">Ask</button>
+          </div>
+          <div id="aiResponse" class="ai-response hidden"></div>
+        </div>
+      </div><!-- /tab-ask -->
 
     </main>
   </div>

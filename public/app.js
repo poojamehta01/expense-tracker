@@ -159,7 +159,7 @@ function initUploadMonthPicker() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  ['dashboard', 'add', 'trends'].forEach(t => {
+  ['dashboard', 'add', 'trends', 'ask'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('hidden', name !== t);
     document.getElementById('tab-btn-' + t).classList.toggle('active', name === t);
   });
@@ -862,10 +862,7 @@ async function loadDashboard(month) {
     }
 
     renderTransactionsList(txData.transactions || []);
-    if (dashRes.ok && dash.transactionCount > 0) {
-      applyGlobalFilter();
-      document.getElementById('aiSection').style.display = '';
-    }
+    if (dashRes.ok && dash.transactionCount > 0) applyGlobalFilter();
   } catch (err) {
     console.error('loadDashboard error:', err);
   }
