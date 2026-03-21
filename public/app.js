@@ -74,9 +74,12 @@ let chartCategory = null;
 let chartDaily = null;
 let chartExpenseType = null;
 let chartPaymentMethod = null;
+let chartAllCategories = null;
 let chartMonthlySpend = null;
 let chartMonthlySplit = null;
 let chartTopCategories = null;
+let chartPersonFilter = 'all';
+let _lastDashData = null;
 let trendsLoaded = false;
 
 // ─── Init ────────────────────────────────────────────────────────────────────
@@ -671,11 +674,13 @@ async function loadDashboard(month) {
 
     if (dashRes.ok && dash.transactionCount > 0) {
       document.getElementById('dashboardEmpty').classList.add('hidden');
+      _lastDashData = dash;
+      // reset person filter on month change
+      chartPersonFilter = 'all';
+      document.querySelectorAll('.chart-filter-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.person === 'all'));
       renderKPIs(dash);
-      renderCategoryChart(dash);
-      renderDailyChart(dash);
-      renderExpenseTypeChart(dash);
-      renderPaymentMethodChart(dash);
+      renderChartsFromData(dash);
       renderTopMerchants(dash);
       // apply collapsed state for charts
       document.getElementById('chartsGrid').style.display = chartsVisible ? '' : 'none';
@@ -851,6 +856,81 @@ function renderPaymentMethodChart(data) {
       maintainAspectRatio: false,
       plugins: {
         legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } }
+      }
+    }
+  });
+}
+
+// ─── Person filter + chart aggregation ───────────────────────────────────────
+
+function setChartPersonFilter(person) {
+  chartPersonFilter = person;
+  document.querySelectorAll('.chart-filter-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.person === person));
+  if (person === 'all') {
+    if (_lastDashData) renderChartsFromData(_lastDashData);
+  } else {
+    const filtered = savedTxList.filter(t => t.paid_by === person);
+    renderChartsFromData(aggregateFromTxList(filtered, _lastDashData));
+  }
+}
+
+function aggregateFromTxList(txList, fallback) {
+  const byCatMap = {}, byDateMap = {}, byTypeMap = {}, byMethodMap = {};
+  for (const tx of txList) {
+    const amt = parseFloat(tx.amount) || 0;
+    byCatMap[tx.category]       = (byCatMap[tx.category]       || 0) + amt;
+    byDateMap[tx.date]          = (byDateMap[tx.date]          || 0) + amt;
+    byTypeMap[tx.expense_type]  = (byTypeMap[tx.expense_type]  || 0) + amt;
+    byMethodMap[tx.payment_method] = (byMethodMap[tx.payment_method] || 0) + amt;
+  }
+  return {
+    ...(fallback || {}),
+    byCategory:     Object.entries(byCatMap).sort((a,b) => b[1]-a[1]).map(([category,total])=>({category,total})),
+    dailySpend:     Object.entries(byDateMap).sort((a,b) => parseDateNum(a[0])-parseDateNum(b[0])).map(([date,total])=>({date,total})),
+    byExpenseType:  Object.entries(byTypeMap).sort((a,b) => b[1]-a[1]).map(([expense_type,total])=>({expense_type,total})),
+    byPaymentMethod:Object.entries(byMethodMap).sort((a,b) => b[1]-a[1]).map(([payment_method,total])=>({payment_method,total})),
+  };
+}
+
+function renderChartsFromData(data) {
+  renderCategoryChart(data);
+  renderDailyChart(data);
+  renderExpenseTypeChart(data);
+  renderPaymentMethodChart(data);
+  renderAllCategoriesChart(data);
+}
+
+function renderAllCategoriesChart(data) {
+  if (chartAllCategories) chartAllCategories.destroy();
+  const sorted = [...(data.byCategory || [])].sort((a, b) => b.total - a.total);
+  if (!sorted.length) return;
+  const labels = sorted.map(d => d.category);
+  const values = sorted.map(d => d.total);
+  // Dynamic height: ~28px per bar + padding
+  const container = document.getElementById('chartAllCategoriesContainer');
+  container.style.height = Math.max(280, labels.length * 30 + 40) + 'px';
+  chartAllCategories = new Chart(document.getElementById('chartAllCategories'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => formatCurrency(ctx.parsed.x) } }
+      },
+      scales: {
+        x: { ticks: { callback: v => '₹' + (v >= 1000 ? (v/1000).toFixed(0)+'k' : v) } }
       }
     }
   });

@@ -581,6 +581,32 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
 }
 .section-header:hover .section-toggle-icon { color: var(--primary); }
 
+/* ─── Chart person filter ───────────────────────────────────────────────────── */
+.chart-filter-group {
+  display: flex; gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px;
+}
+.chart-filter-btn {
+  padding: 3px 12px;
+  border: none; border-radius: 16px;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.chart-filter-btn.active {
+  background: var(--white);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+.chart-filter-btn:hover:not(.active) { color: var(--text); }
+body.dark .chart-filter-group { background: #0f172a; border-color: #334155; }
+body.dark .chart-filter-btn.active { background: #1e293b; }
+
 /* ─── Charts Grid ──────────────────────────────────────────────────────────── */
 .charts-grid {
   display: grid;
@@ -610,6 +636,9 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
 }
 .chart-container--sm {
   height: 240px;
+}
+.charts-full {
+  grid-column: 1 / -1;
 }
 
 /* ─── Empty state ──────────────────────────────────────────────────────────── */

@@ -68,6 +68,11 @@
         <!-- Charts grid -->
         <div class="section-header" onclick="toggleCharts()">
           <span class="section-title">Charts</span>
+          <div class="chart-filter-group" onclick="event.stopPropagation()">
+            <button class="chart-filter-btn active" data-person="all"   onclick="setChartPersonFilter('all')">Both</button>
+            <button class="chart-filter-btn"        data-person="Pooja" onclick="setChartPersonFilter('Pooja')">Pooja</button>
+            <button class="chart-filter-btn"        data-person="Kunal" onclick="setChartPersonFilter('Kunal')">Kunal</button>
+          </div>
           <span id="chartsToggleIcon" class="section-toggle-icon">▲</span>
         </div>
         <div class="charts-grid" id="chartsGrid">
@@ -86,6 +91,10 @@
           <div class="chart-card">
             <h3>Payment Method</h3>
             <div class="chart-container chart-container--sm"><canvas id="chartPaymentMethod"></canvas></div>
+          </div>
+          <div class="chart-card charts-full">
+            <h3>All Categories</h3>
+            <div class="chart-container" id="chartAllCategoriesContainer"><canvas id="chartAllCategories"></canvas></div>
           </div>
         </div>
 
