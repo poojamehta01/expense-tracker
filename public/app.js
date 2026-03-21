@@ -499,43 +499,35 @@ async function loadMonths() {
   try {
     const res = await fetch('/api/months');
     const data = await res.json();
+    const withData = new Set(data.months || []);
+
     const picker = document.getElementById('monthPicker');
     const prev = picker.value;
-
     picker.innerHTML = '';
-    if (!data.months || data.months.length === 0) {
-      picker.innerHTML = '<option value="">No data yet</option>';
-      return;
-    }
 
-    // Sort months chronologically
-    const sorted = data.months.slice().sort((a, b) => {
-      const monthOrder = ['January','February','March','April','May','June',
-                          'July','August','September','October','November','December'];
-      const [am, ay] = a.split('_');
-      const [bm, by] = b.split('_');
-      if (ay !== by) return parseInt(ay) - parseInt(by);
-      return monthOrder.indexOf(am) - monthOrder.indexOf(bm);
-    });
-
-    sorted.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m.replace('_', ' ');
-      picker.appendChild(opt);
-    });
-
-    // Pick current month or latest
-    const months = ['January','February','March','April','May','June',
+    // Always show Jan–Dec for every year from 2026 through current year
+    const MONTHS = ['January','February','March','April','May','June',
                     'July','August','September','October','November','December'];
     const now = new Date();
-    const currentMonth = `${months[now.getMonth()]}_${now.getFullYear()}`;
-    if (prev && sorted.includes(prev)) {
+    const endYear = now.getFullYear();
+
+    for (let year = 2026; year <= endYear; year++) {
+      const maxMonth = (year === endYear) ? now.getMonth() : 11; // 0-indexed
+      for (let mi = 0; mi <= maxMonth; mi++) {
+        const key = `${MONTHS[mi]}_${year}`;
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = withData.has(key) ? `${MONTHS[mi]} ${year}` : `${MONTHS[mi]} ${year} —`;
+        picker.appendChild(opt);
+      }
+    }
+
+    // Select: previous selection > current month > last option
+    const currentMonth = `${MONTHS[now.getMonth()]}_${now.getFullYear()}`;
+    if (prev && [...picker.options].some(o => o.value === prev)) {
       picker.value = prev;
-    } else if (sorted.includes(currentMonth)) {
-      picker.value = currentMonth;
     } else {
-      picker.value = sorted[sorted.length - 1];
+      picker.value = currentMonth;
     }
 
     loadDashboard(picker.value);
