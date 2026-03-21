@@ -896,6 +896,7 @@ let savedTxList = [];
 let txSort = { col: 'date', dir: 'asc' };
 let txVisibleCols = ['date', 'amount', 'description', 'category', 'paid_by', 'expense_type', 'payment_method', 'impulse'];
 let txFilters = { search: '', category: '', paid_by: '', expense_type: '', payment_method: '', impulse: '' };
+let selectedTxIds = new Set();
 
 const MONTH_NUM = {January:1,February:2,March:3,April:4,May:5,June:6,
                    July:7,August:8,September:9,October:10,November:11,December:12};
@@ -943,6 +944,7 @@ function resetTxFilters() {
 
 function renderTransactionsList(txList) {
   savedTxList = txList || [];
+  selectedTxIds.clear();
   resetTxFilters();
   filtersVisible = false;
   updateFilterBtn();
@@ -1016,7 +1018,11 @@ function renderGridHead() {
   thead.innerHTML = ''; // clear
 
   // ── Sort header row (plain innerHTML) ──────────────────────────────────────
-  const sortHtml = cols.map(col => {
+  const filtered = getFilteredList();
+  const allSelected = filtered.length > 0 && filtered.every(t => selectedTxIds.has(t.id));
+  const someSelected = filtered.some(t => selectedTxIds.has(t.id));
+  const checkboxTh = `<th class="th-cb"><input type="checkbox" class="tx-cb" title="Select all" ${allSelected ? 'checked' : ''} ${someSelected && !allSelected ? 'data-indeterminate="true"' : ''} onchange="toggleSelectAll(this.checked)" /></th>`;
+  const sortHtml = checkboxTh + cols.map(col => {
     const active = txSort.col === col.key;
     const icon = active
       ? `<span class="sort-icon active">${txSort.dir === 'asc' ? '▲' : '▼'}</span>`
@@ -1025,6 +1031,9 @@ function renderGridHead() {
   }).join('') + '<th class="th-actions"></th>';
   const sortTr = document.createElement('tr');
   sortTr.innerHTML = sortHtml;
+  // Set indeterminate state on the checkbox (can't do in HTML)
+  const cb = sortTr.querySelector('.tx-cb');
+  if (cb && someSelected && !allSelected) cb.indeterminate = true;
   thead.appendChild(sortTr);
 
   if (!filtersVisible) return;
@@ -1032,6 +1041,11 @@ function renderGridHead() {
   // ── Filter row (DOM-built for interactive dropdowns) ───────────────────────
   const filterTr = document.createElement('tr');
   filterTr.className = 'filter-row';
+
+  // Empty cell for checkbox column
+  const cbFilterTh = document.createElement('th');
+  cbFilterTh.className = 'filter-th th-cb';
+  filterTr.appendChild(cbFilterTh);
 
   cols.forEach(col => {
     const th = document.createElement('th');
@@ -1182,6 +1196,9 @@ function renderGridBody() {
   });
 
   document.getElementById('savedTxBody').innerHTML = sorted.map(tx => {
+    const checked = selectedTxIds.has(tx.id) ? 'checked' : '';
+    const rowClass = selectedTxIds.has(tx.id) ? ' class="row-selected"' : '';
+    const cbCell = `<td class="td-cb"><input type="checkbox" class="tx-cb" ${checked} onchange="toggleTxSelect(${tx.id}, this.checked)" /></td>`;
     const cells = cols.map(col => {
       const raw = tx[col.key] ?? '';
       let display;
@@ -1194,8 +1211,9 @@ function renderGridBody() {
       }
       return `<td class="gc" data-id="${tx.id}" data-field="${col.key}" onclick="startEdit(this)">${display}</td>`;
     }).join('');
-    return `<tr data-id="${tx.id}">${cells}<td class="td-actions"><button class="btn-delete" onclick="deleteSavedTx(${tx.id})" title="Delete">×</button></td></tr>`;
+    return `<tr data-id="${tx.id}"${rowClass}>${cbCell}${cells}<td class="td-actions"><button class="btn-delete" onclick="deleteSavedTx(${tx.id})" title="Delete">×</button></td></tr>`;
   }).join('');
+  updateBulkBar();
 }
 
 function txSortBy(col) {
@@ -1378,6 +1396,7 @@ function startEdit(cell) {
 // ─── Add Row Modal ────────────────────────────────────────────────────────────
 
 let addRowData = {};
+let bulkEditValue = {};
 
 function addTxRow() {
   const month = document.getElementById('monthPicker').value;
@@ -1584,14 +1603,104 @@ function toggleCol(key, checked) {
   renderGrid();
 }
 
-async function deleteSavedTx(id) {
-  if (!confirm('Delete this transaction?')) return;
+// ─── Selection ────────────────────────────────────────────────────────────────
+
+function toggleTxSelect(id, checked) {
+  if (checked) selectedTxIds.add(id);
+  else selectedTxIds.delete(id);
+  // Update row highlight
+  const row = document.querySelector(`#savedTxBody tr[data-id="${id}"]`);
+  if (row) row.classList.toggle('row-selected', checked);
+  // Update header checkbox indeterminate state
+  updateBulkBar();
+  const headerCb = document.querySelector('#savedTxHead .tx-cb');
+  if (headerCb) {
+    const filtered = getFilteredList();
+    const allSel = filtered.length > 0 && filtered.every(t => selectedTxIds.has(t.id));
+    const someSel = filtered.some(t => selectedTxIds.has(t.id));
+    headerCb.checked = allSel;
+    headerCb.indeterminate = someSel && !allSel;
+  }
+}
+
+function toggleSelectAll(checked) {
+  const filtered = getFilteredList();
+  filtered.forEach(t => checked ? selectedTxIds.add(t.id) : selectedTxIds.delete(t.id));
+  renderGridBody();
+}
+
+function clearSelection() {
+  selectedTxIds.clear();
+  renderGrid();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkActionsBar');
+  const count = selectedTxIds.size;
+  if (count === 0) {
+    bar.classList.add('hidden');
+  } else {
+    bar.classList.remove('hidden');
+    document.getElementById('bulkSelCount').textContent = `${count} selected`;
+  }
+}
+
+// ─── Confirmation Modal ───────────────────────────────────────────────────────
+
+let _confirmAction = null;
+
+function showConfirmModal(title, message, subMessage, btnLabel, action) {
+  _confirmAction = action;
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMessage').textContent = message;
+  document.getElementById('confirmSubMessage').textContent = subMessage || '';
+  document.getElementById('confirmOkBtn').textContent = btnLabel || 'Delete';
+  document.getElementById('confirmModal').classList.remove('hidden');
+}
+
+function closeConfirmModal() {
+  _confirmAction = null;
+  document.getElementById('confirmModal').classList.add('hidden');
+}
+
+function runConfirmAction() {
+  closeConfirmModal();
+  if (_confirmAction) _confirmAction();
+}
+
+// ─── Delete ───────────────────────────────────────────────────────────────────
+
+function deleteSavedTx(id) {
+  const tx = savedTxList.find(t => t.id === id);
+  const desc = tx?.description || 'this transaction';
+  showConfirmModal(
+    'Delete transaction',
+    `Delete "${desc}"?`,
+    'This cannot be undone.',
+    'Delete',
+    () => doDeleteTx([id])
+  );
+}
+
+function bulkDeleteSelected() {
+  const count = selectedTxIds.size;
+  if (!count) return;
+  showConfirmModal(
+    'Delete transactions',
+    `Delete ${count} selected transaction${count !== 1 ? 's' : ''}?`,
+    'This cannot be undone.',
+    `Delete ${count}`,
+    () => doDeleteTx([...selectedTxIds])
+  );
+}
+
+async function doDeleteTx(ids) {
   try {
-    const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Delete failed');
-    savedTxList = savedTxList.filter(t => t.id !== id);
-    document.getElementById('savedTxCount').textContent =
-      `${savedTxList.length} transaction${savedTxList.length !== 1 ? 's' : ''}`;
+    await Promise.all(ids.map(id => fetch(`/api/transactions/${id}`, { method: 'DELETE' })));
+    ids.forEach(id => {
+      savedTxList = savedTxList.filter(t => t.id !== id);
+      selectedTxIds.delete(id);
+    });
     if (savedTxList.length === 0) {
       document.getElementById('savedTxSection').style.display = 'none';
     } else {
@@ -1600,6 +1709,165 @@ async function deleteSavedTx(id) {
     loadMonths();
   } catch (err) {
     alert(`Failed to delete: ${err.message}`);
+  }
+}
+
+// ─── Bulk Edit ────────────────────────────────────────────────────────────────
+
+const BULK_EDITABLE_COLS = TX_COLS.filter(c => c.key !== 'date' && c.key !== 'amount');
+
+function openBulkEditModal() {
+  if (!selectedTxIds.size) return;
+  const sel = document.getElementById('beField');
+  sel.innerHTML = BULK_EDITABLE_COLS.map(c =>
+    `<option value="${c.key}">${c.label}</option>`
+  ).join('');
+  renderBulkEditValue();
+  document.getElementById('bulkEditModal').classList.remove('hidden');
+}
+
+function closeBulkEditModal() {
+  document.getElementById('bulkEditModal').classList.add('hidden');
+}
+
+function renderBulkEditValue() {
+  const field = document.getElementById('beField').value;
+  const col = TX_COLS.find(c => c.key === field);
+  const wrap = document.getElementById('beValueWrap');
+  wrap.innerHTML = '';
+  bulkEditValue = {};
+  if (col.type === 'select') {
+    const opts = col.opts || [];
+    bulkEditValue[field] = opts[0] || '';
+    // Use a special combo that writes into bulkEditValue
+    const combo = makeBulkEditCombo(opts, opts[0] || '', field);
+    wrap.appendChild(combo);
+  } else {
+    const inp = document.createElement('input');
+    inp.className = 'arm-input';
+    inp.id = 'beTextVal';
+    inp.type = col.type === 'number' ? 'number' : 'text';
+    inp.placeholder = 'New value…';
+    wrap.appendChild(inp);
+  }
+  const count = selectedTxIds.size;
+  document.getElementById('beApplyBtn').textContent = `Apply to ${count} row${count !== 1 ? 's' : ''}`;
+}
+
+function makeBulkEditCombo(options, initialVal, field) {
+  // Same as makeModalCombo but writes to bulkEditValue instead of addRowData
+  const searchable = options.length > 6;
+  const wrap = document.createElement('div');
+  wrap.className = 'rv-combo';
+
+  const trigger = document.createElement('div');
+  trigger.className = 'rv-combo-trigger';
+  trigger.innerHTML = chipHtml(initialVal || '') + '<span class="rv-arrow">▾</span>';
+
+  const panel = document.createElement('div');
+  panel.className = 'rv-combo-panel hidden';
+
+  let current = initialVal;
+  let searchInput = null;
+  if (searchable) {
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'rv-combo-search';
+    searchInput.placeholder = 'Search…';
+    panel.appendChild(searchInput);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'rv-combo-list';
+  panel.appendChild(list);
+
+  let highlighted = 0;
+  const renderOpts = (q) => {
+    const qlo = (q || '').toLowerCase();
+    const filtered = options.filter(o => !qlo || String(o).replace(/_/g, ' ').toLowerCase().includes(qlo));
+    highlighted = 0;
+    list.innerHTML = filtered.map((o, i) =>
+      `<div class="rv-opt${i === 0 ? ' hi' : ''}${o === current ? ' cur' : ''}" data-val="${esc(o)}">${chipHtml(o)}</div>`
+    ).join('');
+  };
+
+  const pick = (val) => {
+    current = val;
+    trigger.innerHTML = chipHtml(val || '') + '<span class="rv-arrow">▾</span>';
+    panel.classList.add('hidden');
+    bulkEditValue[field] = val;
+  };
+
+  const highlight = (delta) => {
+    const opts = [...list.querySelectorAll('.rv-opt')];
+    if (!opts.length) return;
+    opts[highlighted]?.classList.remove('hi');
+    highlighted = Math.max(0, Math.min(opts.length - 1, highlighted + delta));
+    opts[highlighted]?.classList.add('hi');
+    opts[highlighted]?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const open = () => {
+    document.querySelectorAll('.rv-combo-panel:not(.hidden)').forEach(p => p.classList.add('hidden'));
+    renderOpts('');
+    panel.classList.remove('hidden');
+    if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+    setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
+  };
+
+  trigger.addEventListener('click', e => { e.stopPropagation(); panel.classList.contains('hidden') ? open() : panel.classList.add('hidden'); });
+  panel.addEventListener('mousedown', e => e.preventDefault());
+  list.addEventListener('click', e => { const opt = e.target.closest('.rv-opt'); if (opt) pick(opt.dataset.val); });
+  if (searchInput) {
+    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { panel.classList.add('hidden'); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
+      if (e.key === 'Enter') { e.preventDefault(); const hi = list.querySelector('.rv-opt.hi'); if (hi) pick(hi.dataset.val); }
+    });
+    searchInput.addEventListener('blur', () => { setTimeout(() => { if (!wrap.contains(document.activeElement)) panel.classList.add('hidden'); }, 150); });
+  }
+  document.addEventListener('click', () => panel.classList.add('hidden'));
+  wrap.appendChild(trigger);
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+async function submitBulkEdit() {
+  const field = document.getElementById('beField').value;
+  const col = TX_COLS.find(c => c.key === field);
+  let value;
+  if (col.type === 'select') {
+    value = bulkEditValue[field] ?? (col.opts || [])[0] ?? '';
+  } else {
+    value = document.getElementById('beTextVal')?.value ?? '';
+  }
+
+  const ids = [...selectedTxIds];
+  const btn = document.getElementById('beApplyBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    await Promise.all(ids.map(id =>
+      fetch(`/api/transactions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+      })
+    ));
+    ids.forEach(id => {
+      const tx = savedTxList.find(t => t.id === id);
+      if (tx) tx[field] = value;
+    });
+    closeBulkEditModal();
+    renderGrid();
+    trendsLoaded = false;
+  } catch (err) {
+    alert('Failed to update: ' + err.message);
+  } finally {
+    btn.disabled = false;
   }
 }
 

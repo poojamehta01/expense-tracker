@@ -129,6 +129,16 @@
               <button class="btn-primary small" onclick="addTxRow()">+ Add row</button>
             </div>
           </div>
+          <!-- Bulk actions bar (shown when rows are selected) -->
+          <div id="bulkActionsBar" class="bulk-bar hidden">
+            <span id="bulkSelCount" class="bulk-count"></span>
+            <div class="bulk-actions">
+              <button class="btn-secondary small" onclick="openBulkEditModal()">Edit field…</button>
+              <button class="btn-danger small" onclick="bulkDeleteSelected()">Delete selected</button>
+            </div>
+            <button class="bulk-clear" onclick="clearSelection()" title="Clear selection">×</button>
+          </div>
+
           <div id="txTableBody_wrap">
           <div class="table-wrapper">
             <table id="savedTxTable" class="grid-table">
@@ -267,6 +277,47 @@
       </div><!-- /tab-trends -->
 
     </main>
+  </div>
+
+  <!-- Confirm Modal -->
+  <div id="confirmModal" class="modal-overlay hidden" onclick="if(event.target===this)closeConfirmModal()">
+    <div class="modal-card modal-card--sm">
+      <div class="modal-header">
+        <h2 id="confirmTitle">Confirm</h2>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMessage" style="margin:0 0 4px;color:var(--text)"></p>
+        <p id="confirmSubMessage" style="margin:0;font-size:13px;color:var(--text-muted)"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeConfirmModal()">Cancel</button>
+        <button class="btn-danger" id="confirmOkBtn" onclick="runConfirmAction()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Edit Modal -->
+  <div id="bulkEditModal" class="modal-overlay hidden" onclick="if(event.target===this)closeBulkEditModal()">
+    <div class="modal-card modal-card--sm">
+      <div class="modal-header">
+        <h2>Edit Field</h2>
+        <button class="modal-close" onclick="closeBulkEditModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="arm-field" style="margin-bottom:14px">
+          <label class="arm-label">Field to edit</label>
+          <select class="arm-input" id="beField" onchange="renderBulkEditValue()"></select>
+        </div>
+        <div class="arm-field">
+          <label class="arm-label">New value</label>
+          <div id="beValueWrap"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeBulkEditModal()">Cancel</button>
+        <button class="btn-primary" id="beApplyBtn" onclick="submitBulkEdit()">Apply</button>
+      </div>
+    </div>
   </div>
 
   <!-- Add Row Modal -->
