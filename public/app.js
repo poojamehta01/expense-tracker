@@ -647,9 +647,9 @@ function renderKPIs(data) {
   if (Math.abs(net) < 1) {
     settlementHtml = '<span style="color:var(--success)">All settled ✓</span>';
   } else if (net > 0) {
-    settlementHtml = `<span class="split-label">Kunal owes</span><br>${formatCurrency(net)}`;
+    settlementHtml = `<span class="split-label">Kunal owes Pooja</span><br>${formatCurrency(net)}`;
   } else {
-    settlementHtml = `<span class="split-label">Pooja owes</span><br>${formatCurrency(Math.abs(net))}`;
+    settlementHtml = `<span class="split-label">Pooja owes Kunal</span><br>${formatCurrency(Math.abs(net))}`;
   }
   document.getElementById('kpiSettlement').innerHTML = settlementHtml;
 }
