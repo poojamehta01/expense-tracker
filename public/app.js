@@ -2258,6 +2258,8 @@ async function loadTrends() {
 
     renderTrendsSummaryTable(data);
     renderCategoryBreakdownTable(data);
+    renderCreditCardPaymentsTable(data);
+    renderPaymentMethodTable(data);
     renderTopCategoriesChart(data);
     trendsLoaded = true;
   } catch (err) {
@@ -2305,6 +2307,69 @@ function renderCategoryBreakdownTable(data) {
   document.getElementById('trendsCategorySection').style.display = '';
 }
 
+function renderCreditCardPaymentsTable(data) {
+  const { creditCardPayments, months } = data;
+  const section = document.getElementById('trendsCCSection');
+  const hasAny = months.some(m => creditCardPayments[m]);
+  if (!hasAny) { section.style.display = 'none'; return; }
+
+  document.getElementById('trendsCCHead').innerHTML = `<tr>
+    <th>Month</th><th>Amount Paid</th><th>Transactions</th>
+  </tr>`;
+
+  let grandTotal = 0, grandCnt = 0;
+  document.getElementById('trendsCCBody').innerHTML = [...months].reverse().map(m => {
+    const r = creditCardPayments[m] || { total: 0, cnt: 0 };
+    grandTotal += r.total; grandCnt += r.cnt;
+    return `<tr>
+      <td><strong>${esc(m.replace('_', ' '))}</strong></td>
+      <td>${formatCurrency(r.total)}</td>
+      <td>${r.cnt}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('trendsCCFoot').innerHTML = `<tr>
+    <td><strong>Total</strong></td>
+    <td><strong>${formatCurrency(grandTotal)}</strong></td>
+    <td><strong>${grandCnt}</strong></td>
+  </tr>`;
+
+  section.style.display = '';
+}
+
+function renderPaymentMethodTable(data) {
+  const { methods, byMonth, totals } = data.byPaymentMethod;
+  const months = data.months;
+  if (!methods.length) return;
+
+  document.getElementById('trendsPaymentMethodHead').innerHTML = `<tr>
+    <th>Payment Method</th>
+    ${months.map(m => `<th>${esc(formatMonthLabel(m))}</th>`).join('')}
+    <th><strong>Total</strong></th>
+  </tr>`;
+
+  document.getElementById('trendsPaymentMethodBody').innerHTML = methods.map(pm => {
+    const cells = months.map(m => `<td>${formatCurrency((byMonth[m] && byMonth[m][pm]) || 0)}</td>`).join('');
+    return `<tr>
+      <td>${esc(pm)}</td>
+      ${cells}
+      <td><strong>${formatCurrency(totals[pm] || 0)}</strong></td>
+    </tr>`;
+  }).join('');
+
+  const monthSums = months.map(m => {
+    const md = byMonth[m] || {};
+    return methods.reduce((s, pm) => s + (md[pm] || 0), 0);
+  });
+  const grandTotal = monthSums.reduce((s, v) => s + v, 0);
+  document.getElementById('trendsPaymentMethodFoot').innerHTML = `<tr>
+    <td><strong>Total</strong></td>
+    ${monthSums.map(s => `<td><strong>${formatCurrency(s)}</strong></td>`).join('')}
+    <td><strong>${formatCurrency(grandTotal)}</strong></td>
+  </tr>`;
+
+  document.getElementById('trendsPaymentMethodSection').style.display = '';
+}
 
 function renderTopCategoriesChart(data) {
   if (chartTopCategories) chartTopCategories.destroy();

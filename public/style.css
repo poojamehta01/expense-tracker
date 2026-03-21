@@ -324,6 +324,8 @@ body.dark .paste-textarea { background: #0f172a; color: #f1f5f9; border-color: #
 .table-header-row[onclick]:hover,
 .table-header-row [onclick]:hover { background: #f8fafc; }
 .table-header-row h2 { font-size: 15px; font-weight: 600; }
+.table-note { font-size: 12px; color: #64748b; font-style: italic; }
+body.dark .table-note { color: #94a3b8; }
 .tx-count {
   display: inline-block;
   background: #eff6ff;

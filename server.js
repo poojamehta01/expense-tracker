@@ -315,6 +315,8 @@ const MONTH_SORT = `
     WHEN 'October' THEN 10 WHEN 'November' THEN 11 WHEN 'December' THEN 12
   END`;
 
+const CC_EXCLUDE = " AND category != 'Credit Card Payment'";
+
 app.get('/api/trends', (req, res) => {
   const { person } = req.query;
   let pf = '';
@@ -322,19 +324,19 @@ app.get('/api/trends', (req, res) => {
   if (person === 'Pooja' || person === 'Kunal') { pf = ' AND paid_by = ?'; pfParams = [person]; }
   else if (person === 'Common') { pf = " AND expense_type = 'Common_50_50'"; pfParams = []; }
 
-  // Monthly totals
+  // Monthly totals (excluding CC payments)
   const monthlyTotals = db.prepare(
     `SELECT month, COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
-     FROM transactions WHERE 1=1${pf} GROUP BY month ORDER BY ${MONTH_SORT}`
+     FROM transactions WHERE 1=1${CC_EXCLUDE}${pf} GROUP BY month ORDER BY ${MONTH_SORT}`
   ).all(...pfParams);
 
   const months = monthlyTotals.map(r => r.month);
-  if (months.length === 0) return res.json({ months: [], monthlyTotals: [], monthlySplit: [], topCategories: { categories: [], byMonth: [] } });
+  if (months.length === 0) return res.json({ months: [], monthlyTotals: [], monthlySplit: [], topCategories: { categories: [], byMonth: [] }, categoryBreakdown: { categories: [], byMonth: {}, totals: {} }, creditCardPayments: {}, byPaymentMethod: { methods: [], byMonth: {}, totals: {} } });
 
-  // Pooja vs Kunal split — pivot in JS
+  // Pooja vs Kunal split (excluding CC payments)
   const splitRows = db.prepare(
     `SELECT month, paid_by, COALESCE(SUM(amount),0) AS total
-     FROM transactions WHERE paid_by IN ('Pooja','Kunal')${pf}
+     FROM transactions WHERE paid_by IN ('Pooja','Kunal')${CC_EXCLUDE}${pf}
      GROUP BY month, paid_by ORDER BY ${MONTH_SORT}`
   ).all(...pfParams);
   const splitMap = {};
@@ -344,9 +346,9 @@ app.get('/api/trends', (req, res) => {
   }
   const monthlySplit = months.map(m => ({ month: m, Pooja: splitMap[m]?.Pooja || 0, Kunal: splitMap[m]?.Kunal || 0 }));
 
-  // Top 5 categories
+  // Top 5 categories (excluding CC payments)
   const top5 = db.prepare(
-    `SELECT category FROM transactions WHERE category != '' AND category IS NOT NULL${pf}
+    `SELECT category FROM transactions WHERE category != '' AND category IS NOT NULL${CC_EXCLUDE}${pf}
      GROUP BY category ORDER BY SUM(amount) DESC LIMIT 5`
   ).all(...pfParams).map(r => r.category);
 
@@ -369,10 +371,10 @@ app.get('/api/trends', (req, res) => {
     return obj;
   });
 
-  // All categories breakdown
+  // All categories breakdown (excluding CC payments)
   const allCatRows = db.prepare(
     `SELECT month, category, COALESCE(SUM(amount),0) AS total
-     FROM transactions WHERE category != '' AND category IS NOT NULL${pf}
+     FROM transactions WHERE category != '' AND category IS NOT NULL${CC_EXCLUDE}${pf}
      GROUP BY month, category ORDER BY ${MONTH_SORT}`
   ).all(...pfParams);
 
@@ -385,9 +387,35 @@ app.get('/api/trends', (req, res) => {
   }
   const allCategories = Object.keys(allCatTotals).sort((a, b) => allCatTotals[b] - allCatTotals[a]);
 
+  // Credit card payments (separate — not counted as expense)
+  const ccRows = db.prepare(
+    `SELECT month, COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+     FROM transactions WHERE category = 'Credit Card Payment'${pf}
+     GROUP BY month ORDER BY ${MONTH_SORT}`
+  ).all(...pfParams);
+  const creditCardPayments = {};
+  for (const r of ccRows) creditCardPayments[r.month] = { total: r.total, cnt: r.cnt };
+
+  // Spend by payment method (excluding CC payments)
+  const pmRows = db.prepare(
+    `SELECT month, payment_method, COALESCE(SUM(amount),0) AS total
+     FROM transactions WHERE payment_method != '' AND payment_method IS NOT NULL${CC_EXCLUDE}${pf}
+     GROUP BY month, payment_method ORDER BY ${MONTH_SORT}`
+  ).all(...pfParams);
+  const pmTotals = {};
+  const pmByMonth = {};
+  for (const r of pmRows) {
+    if (!pmByMonth[r.month]) pmByMonth[r.month] = {};
+    pmByMonth[r.month][r.payment_method] = r.total;
+    pmTotals[r.payment_method] = (pmTotals[r.payment_method] || 0) + r.total;
+  }
+  const allMethods = Object.keys(pmTotals).sort((a, b) => pmTotals[b] - pmTotals[a]);
+
   res.json({
     months, monthlyTotals, monthlySplit, topCategories: { categories: top5, byMonth },
-    categoryBreakdown: { categories: allCategories, byMonth: allCatByMonth, totals: allCatTotals }
+    categoryBreakdown: { categories: allCategories, byMonth: allCatByMonth, totals: allCatTotals },
+    creditCardPayments,
+    byPaymentMethod: { methods: allMethods, byMonth: pmByMonth, totals: pmTotals }
   });
 });
 
