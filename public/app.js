@@ -641,17 +641,25 @@ function renderKPIs(data) {
     `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
     `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
 
-  const s = data.settlement || { net: 0, kunalOwesPooja: 0, poojaOwesKunal: 0 };
+  const s = data.settlement || { net: 0, kunalOwesPooja: 0, poojaOwesKunal: 0, commonSpend: 0, poojaForKunal: 0, kunalForPooja: 0 };
   const net = s.net;
-  let settlementHtml;
+  let netLine;
   if (Math.abs(net) < 1) {
-    settlementHtml = '<span style="color:var(--success)">All settled ✓</span>';
+    netLine = '<span style="color:var(--success);font-size:13px;font-weight:600">All settled ✓</span>';
   } else if (net > 0) {
-    settlementHtml = `<span class="split-label">Kunal owes Pooja</span><br>${formatCurrency(net)}`;
+    netLine = `<span class="split-label">Kunal owes Pooja</span> <strong>${formatCurrency(net)}</strong>`;
   } else {
-    settlementHtml = `<span class="split-label">Pooja owes Kunal</span><br>${formatCurrency(Math.abs(net))}`;
+    netLine = `<span class="split-label">Pooja owes Kunal</span> <strong>${formatCurrency(Math.abs(net))}</strong>`;
   }
-  document.getElementById('kpiSettlement').innerHTML = settlementHtml;
+  const detailLine = (label, val) =>
+    `<div class="sett-row"><span class="split-label">${label}</span><span>${formatCurrency(val)}</span></div>`;
+  document.getElementById('kpiSettlement').innerHTML =
+    `<div class="sett-net">${netLine}</div>` +
+    `<div class="sett-detail">` +
+      detailLine('Common', s.commonSpend) +
+      detailLine('Pooja→Kunal', s.poojaForKunal) +
+      detailLine('Kunal→Pooja', s.kunalForPooja) +
+    `</div>`;
 }
 
 const CHART_COLORS = [

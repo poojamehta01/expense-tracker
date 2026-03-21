@@ -337,17 +337,21 @@ app.get('/api/dashboard', (req, res) => {
 
   let kunalOwesPooja = 0;
   let poojaOwesKunal = 0;
+  let commonSpend = 0, poojaForKunal = 0, kunalForPooja = 0;
   for (const r of settlementRows) {
     if (r.expense_type === 'Common_50_50') {
+      commonSpend += r.total;
       if (r.paid_by === 'Pooja') kunalOwesPooja += r.total / 2;
       if (r.paid_by === 'Kunal') poojaOwesKunal += r.total / 2;
     } else if (r.expense_type === 'Pooja_for_Kunal') {
+      poojaForKunal += r.total;
       kunalOwesPooja += r.total;
     } else if (r.expense_type === 'Kunal_for_Pooja') {
+      kunalForPooja += r.total;
       poojaOwesKunal += r.total;
     }
   }
-  const netSettlement = kunalOwesPooja - poojaOwesKunal; // + = Kunal owes Pooja, - = Pooja owes Kunal
+  const netSettlement = kunalOwesPooja - poojaOwesKunal;
 
   res.json({
     totalSpend: totalRow.total,
@@ -358,7 +362,7 @@ app.get('/api/dashboard', (req, res) => {
     byPaymentMethod,
     dailySpend,
     topMerchants,
-    settlement: { kunalOwesPooja, poojaOwesKunal, net: netSettlement }
+    settlement: { kunalOwesPooja, poojaOwesKunal, net: netSettlement, commonSpend, poojaForKunal, kunalForPooja }
   });
 });
 

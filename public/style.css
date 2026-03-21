@@ -537,6 +537,10 @@ td:nth-child(11) { min-width: 32px; width: 32px; } /* Delete */
   letter-spacing: -0.5px;
 }
 .kpi-value.small { font-size: 19px; line-height: 1.5; }
+.sett-net { font-size: 16px; font-weight: 600; margin-bottom: 8px; line-height: 1.4; }
+.sett-detail { display: flex; flex-direction: column; gap: 3px; }
+.sett-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.sett-row span:last-child { font-weight: 600; color: var(--text); }
 .split-label {
   font-size: 10px;
   font-weight: 700;
