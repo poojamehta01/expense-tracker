@@ -160,6 +160,39 @@ body {
 .btn-save:hover { opacity: 0.85; }
 .settings-saved { font-size: 12px; color: var(--success); margin-top: 8px; }
 
+/* Upload month bar */
+.upload-month-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  box-shadow: var(--shadow);
+}
+.upload-month-bar label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.upload-month-bar select {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  cursor: pointer;
+  outline: none;
+}
+.upload-month-bar select:focus { border-color: var(--primary); }
+body.dark .upload-month-bar { background: #1e293b; border-color: #334155; }
+body.dark .upload-month-bar select { background: #0f172a; color: #f1f5f9; border-color: #334155; }
+
 /* Upload */
 .upload-card {
   background: var(--white);

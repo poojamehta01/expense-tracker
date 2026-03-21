@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   setupUpload();
   setDefaultSheetName();
+  initUploadMonthPicker();
   loadUser();
   switchTab('dashboard');
   loadMonths();
@@ -112,6 +113,38 @@ async function loadUser() {
       <a href="/auth/logout">Sign out</a>
     `;
   } catch {}
+}
+
+function getUploadMonth() {
+  return document.getElementById('uploadMonthPicker').value;
+}
+
+function onUploadMonthChange() {
+  // update sheet name to match selected month (for optional Sheets export)
+  const m = getUploadMonth();
+  const el = document.getElementById('sheetName');
+  if (el && m) el.value = m;
+}
+
+function initUploadMonthPicker() {
+  const picker = document.getElementById('uploadMonthPicker');
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const now = new Date();
+  const endYear = now.getFullYear();
+  picker.innerHTML = '';
+  for (let year = 2026; year <= endYear; year++) {
+    const maxMonth = (year === endYear) ? now.getMonth() : 11;
+    for (let mi = 0; mi <= maxMonth; mi++) {
+      const opt = document.createElement('option');
+      opt.value = `${MONTHS[mi]}_${year}`;
+      opt.textContent = `${MONTHS[mi]} ${year}`;
+      picker.appendChild(opt);
+    }
+  }
+  // default to current month
+  picker.value = `${MONTHS[now.getMonth()]}_${now.getFullYear()}`;
+  onUploadMonthChange();
 }
 
 function setDefaultSheetName() {
@@ -191,10 +224,19 @@ async function handleFiles(files) {
     setLoadingText(`Processing file ${i + 1} of ${files.length}: ${files[i].name}…`);
     try {
       const extracted = await extractFromFile(files[i]);
+      const uploadMonth = getUploadMonth(); // e.g. "March_2026"
+      const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
       extracted.forEach(tx => {
         tx.paid_by = currentUserName;
         if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
           tx.expense_type = currentUserName + '_Personal';
+        }
+        // if date is missing or has no month/year, pin it to selected month
+        if (uMon && uYr && tx.date) {
+          const parts = tx.date.trim().split(' ');
+          if (parts.length < 3) tx.date = `1 ${uMon} ${uYr}`;
+        } else if (uMon && uYr && !tx.date) {
+          tx.date = `1 ${uMon} ${uYr}`;
         }
       });
       newTx.push(...extracted);
@@ -396,11 +438,16 @@ function deleteRow(index) {
 }
 
 function addEmptyRow() {
-  const months = ['January','February','March','April','May','June',
-                  'July','August','September','October','November','December'];
+  const uploadMonth = getUploadMonth(); // e.g. "March_2026"
+  const [mon, yr] = uploadMonth ? uploadMonth.split('_') : [null, null];
   const now = new Date();
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const defaultDate = mon && yr
+    ? `${now.getDate()} ${mon} ${yr}`
+    : `${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
   transactions.push({
-    date: `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`,
+    date: defaultDate,
     amount: '',
     description: '',
     payment_method: 'HDFC_Credit_Card',

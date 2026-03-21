@@ -162,6 +162,12 @@
           <div id="settingsSaved" class="settings-saved hidden">✓ Settings saved</div>
         </div>
 
+        <!-- Month selector for upload -->
+        <div class="upload-month-bar">
+          <label for="uploadMonthPicker">Adding expenses for</label>
+          <select id="uploadMonthPicker" onchange="onUploadMonthChange()"></select>
+        </div>
+
         <!-- Upload area -->
         <div class="upload-card" id="uploadArea">
           <div class="upload-icon">⬆</div>
