@@ -2539,7 +2539,7 @@ async function loadSalaryHistory() {
       const spend = spendByMonth[m] || 0;
       const savings = combined - spend;
       const savingsPct = combined > 0 ? Math.round((savings / combined) * 100) : null;
-      const savClass = savings >= 0 ? 'savings-positive' : 'savings-negative';
+      const savClass = !combined ? '' : savings >= 0 ? 'savings-positive' : 'savings-negative';
       const note = [s.notes?.Pooja, s.notes?.Kunal].filter(Boolean).join(' / ');
       return `<tr>
         <td><strong>${esc(m.replace('_', ' '))}</strong>${note ? `<br><span style="font-size:11px;color:var(--text-muted)">${esc(note)}</span>` : ''}</td>
