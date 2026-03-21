@@ -36,6 +36,7 @@
       <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
       <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
       <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
+      <button class="tab-btn" onclick="switchTab('salary')" id="tab-btn-salary">Salary</button>
       <button class="tab-btn" onclick="switchTab('ask')" id="tab-btn-ask">Ask AI</button>
       <div class="tab-nav-spacer"></div>
       <div class="global-filter-group">
@@ -339,6 +340,67 @@
 
         </div>
       </div><!-- /tab-trends -->
+
+      <!-- ═══════════════════════════════ SALARY TAB ══════════════════════════ -->
+      <div id="tab-salary" class="hidden">
+        <div class="salary-page">
+
+          <!-- Entry card -->
+          <div class="table-section salary-entry-card">
+            <div class="table-header-row">
+              <h2>Enter Salary</h2>
+              <div style="display:flex;align-items:center;gap:10px">
+                <label style="font-size:12px;color:var(--text-muted)">Month</label>
+                <select id="salaryMonthPicker" class="salary-month-select" onchange="loadSalaryForMonth()"></select>
+              </div>
+            </div>
+            <div class="salary-inputs">
+              <div class="salary-person-card">
+                <div class="salary-person-label pooja-color">Pooja</div>
+                <div class="salary-amount-row">
+                  <span class="salary-rupee">₹</span>
+                  <input type="number" id="salaryPooja" class="salary-input" placeholder="0" min="0">
+                </div>
+                <input type="text" id="salaryPoojaNote" class="salary-note-input" placeholder="Note (e.g. includes bonus)">
+              </div>
+              <div class="salary-person-card">
+                <div class="salary-person-label kunal-color">Kunal</div>
+                <div class="salary-amount-row">
+                  <span class="salary-rupee">₹</span>
+                  <input type="number" id="salaryKunal" class="salary-input" placeholder="0" min="0">
+                </div>
+                <input type="text" id="salaryKunalNote" class="salary-note-input" placeholder="Note (e.g. includes bonus)">
+              </div>
+            </div>
+            <div class="salary-entry-footer">
+              <button class="btn-primary" onclick="saveSalary()">Save</button>
+              <span id="salarySaveMsg" class="salary-save-msg"></span>
+            </div>
+          </div>
+
+          <!-- History table -->
+          <div class="table-section" id="salaryHistorySection" style="display:none">
+            <div class="table-header-row"><h2>Salary History</h2></div>
+            <div class="table-wrapper">
+              <table id="salaryHistoryTable">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Pooja</th>
+                    <th>Kunal</th>
+                    <th>Combined</th>
+                    <th>Total Spend</th>
+                    <th>Savings</th>
+                    <th>Savings %</th>
+                  </tr>
+                </thead>
+                <tbody id="salaryHistoryBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /tab-salary -->
 
       <!-- ════════════════════════════════ ASK AI TAB ══════════════════════════ -->
       <div id="tab-ask" class="hidden">

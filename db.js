@@ -28,6 +28,16 @@ db.exec(`
     UNIQUE(list_name, value)
   );
 
+  CREATE TABLE IF NOT EXISTS salaries (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    person     TEXT NOT NULL,
+    month      TEXT NOT NULL,
+    amount     REAL NOT NULL DEFAULT 0,
+    notes      TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(person, month)
+  );
+
   CREATE TABLE IF NOT EXISTS transaction_audit (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     tx_id      INTEGER NOT NULL,

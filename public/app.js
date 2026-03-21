@@ -159,11 +159,12 @@ function initUploadMonthPicker() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  ['dashboard', 'add', 'trends', 'ask'].forEach(t => {
+  ['dashboard', 'add', 'trends', 'salary', 'ask'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('hidden', name !== t);
     document.getElementById('tab-btn-' + t).classList.toggle('active', name === t);
   });
   if (name === 'trends' && !trendsLoaded) loadTrends();
+  if (name === 'salary') initSalaryTab();
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -2457,6 +2458,102 @@ function renderTrendsSummaryTable(data) {
     </tr>`;
   }).reverse().join(''); // most recent first
   document.getElementById('trendsSummarySection').style.display = '';
+}
+
+// ── Salary Tab ───────────────────────────────────────────────────────────────
+
+let _salaryInited = false;
+
+function initSalaryTab() {
+  const picker = document.getElementById('salaryMonthPicker');
+  if (!picker.options.length) {
+    // Populate same months as dashboard picker
+    const dp = document.getElementById('monthPicker');
+    Array.from(dp.options).forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.value; opt.textContent = o.textContent;
+      picker.appendChild(opt);
+    });
+    picker.value = dp.value || picker.options[0]?.value || '';
+  }
+  loadSalaryForMonth();
+  if (!_salaryInited) { loadSalaryHistory(); _salaryInited = true; }
+}
+
+async function loadSalaryForMonth() {
+  const month = document.getElementById('salaryMonthPicker').value;
+  if (!month) return;
+  try {
+    const res = await fetch(`/api/salary?month=${encodeURIComponent(month)}`);
+    const data = await res.json();
+    document.getElementById('salaryPooja').value = data.Pooja || '';
+    document.getElementById('salaryKunal').value = data.Kunal || '';
+    document.getElementById('salaryPoojaNote').value = data.notes?.Pooja || '';
+    document.getElementById('salaryKunalNote').value = data.notes?.Kunal || '';
+  } catch (e) { console.error(e); }
+}
+
+async function saveSalary() {
+  const month = document.getElementById('salaryMonthPicker').value;
+  const Pooja = document.getElementById('salaryPooja').value;
+  const Kunal = document.getElementById('salaryKunal').value;
+  const notes = {
+    Pooja: document.getElementById('salaryPoojaNote').value,
+    Kunal: document.getElementById('salaryKunalNote').value
+  };
+  const msg = document.getElementById('salarySaveMsg');
+  try {
+    await fetch('/api/salary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, Pooja, Kunal, notes })
+    });
+    msg.textContent = '✓ Saved';
+    setTimeout(() => msg.textContent = '', 2500);
+    _salaryInited = false;
+    loadSalaryHistory();
+  } catch (e) { msg.textContent = 'Error saving'; }
+}
+
+async function loadSalaryHistory() {
+  try {
+    const [salRes, trendsRes] = await Promise.all([
+      fetch('/api/salary'),
+      fetch('/api/trends')
+    ]);
+    const salData = await salRes.json();
+    const trendsData = await trendsRes.json();
+
+    const spendByMonth = {};
+    trendsData.monthlyTotals?.forEach((r, i) => {
+      spendByMonth[trendsData.months[i]] = r.total;
+    });
+
+    const months = Object.keys(salData.history || {});
+    if (!months.length) return;
+
+    const tbody = document.getElementById('salaryHistoryBody');
+    tbody.innerHTML = [...months].reverse().map(m => {
+      const s = salData.history[m];
+      const combined = (s.Pooja || 0) + (s.Kunal || 0);
+      const spend = spendByMonth[m] || 0;
+      const savings = combined - spend;
+      const savingsPct = combined > 0 ? Math.round((savings / combined) * 100) : null;
+      const savClass = savings >= 0 ? 'savings-positive' : 'savings-negative';
+      const note = [s.notes?.Pooja, s.notes?.Kunal].filter(Boolean).join(' / ');
+      return `<tr>
+        <td><strong>${esc(m.replace('_', ' '))}</strong>${note ? `<br><span style="font-size:11px;color:var(--text-muted)">${esc(note)}</span>` : ''}</td>
+        <td>${s.Pooja ? formatCurrency(s.Pooja) : '—'}</td>
+        <td>${s.Kunal ? formatCurrency(s.Kunal) : '—'}</td>
+        <td>${combined ? formatCurrency(combined) : '—'}</td>
+        <td>${spend ? formatCurrency(spend) : '—'}</td>
+        <td class="${savClass}">${combined ? formatCurrency(savings) : '—'}</td>
+        <td class="${savClass}">${savingsPct !== null ? savingsPct + '%' : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('salaryHistorySection').style.display = '';
+  } catch (e) { console.error(e); }
 }
 
 // ── Ask AI ────────────────────────────────────────────────────────────────────

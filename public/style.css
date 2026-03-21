@@ -1182,6 +1182,30 @@ body.dark .ml-input { background: #0f172a; color: #f1f5f9; border-color: #334155
 /* Utilities */
 .hidden { display: none !important; }
 
+/* ─── Salary Tab ─────────────────────────────────────────────────────────────── */
+.salary-page { display: flex; flex-direction: column; gap: 20px; max-width: 900px; margin: 0 auto; }
+.salary-entry-card {}
+.salary-month-select { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--white); color: var(--text); outline: none; }
+body.dark .salary-month-select { background: #0f172a; border-color: #334155; }
+.salary-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px; }
+.salary-person-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+body.dark .salary-person-card { background: #0f172a; }
+.salary-person-label { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; }
+.pooja-color { color: #7c3aed; }
+.kunal-color { color: #2563eb; }
+.salary-amount-row { display: flex; align-items: center; gap: 6px; }
+.salary-rupee { font-size: 22px; font-weight: 600; color: var(--text-muted); }
+.salary-input { flex: 1; font-size: 24px; font-weight: 700; border: none; border-bottom: 2px solid var(--border); background: transparent; color: var(--text); outline: none; padding: 4px 0; width: 100%; }
+.salary-input:focus { border-bottom-color: var(--primary); }
+.salary-note-input { font-size: 12px; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; background: var(--white); color: var(--text); outline: none; width: 100%; }
+body.dark .salary-note-input { background: #1e293b; border-color: #334155; }
+.salary-entry-footer { display: flex; align-items: center; gap: 14px; padding: 0 20px 18px; }
+.salary-save-msg { font-size: 13px; color: var(--success); font-weight: 500; }
+#salaryHistoryTable td:nth-child(n+5) { color: var(--text-muted); }
+#salaryHistoryTable td.savings-positive { color: #16a34a; font-weight: 600; }
+#salaryHistoryTable td.savings-negative { color: #dc2626; font-weight: 600; }
+@media (max-width: 640px) { .salary-inputs { grid-template-columns: 1fr; } }
+
 /* ─── Ask AI Section ────────────────────────────────────────────────────────── */
 .ai-section {
   background: var(--white);

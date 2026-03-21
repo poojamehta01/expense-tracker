@@ -639,6 +639,39 @@ app.post('/api/extract-text', express.json(), async (req, res) => {
   }
 });
 
+// GET /api/salary?month= — get salary entries for all months or a specific month
+app.get('/api/salary', (req, res) => {
+  const { month } = req.query;
+  if (month) {
+    const rows = db.prepare('SELECT person, amount, notes FROM salaries WHERE month = ?').all(month);
+    const result = { Pooja: 0, Kunal: 0, notes: { Pooja: '', Kunal: '' } };
+    for (const r of rows) { result[r.person] = r.amount; result.notes[r.person] = r.notes || ''; }
+    return res.json(result);
+  }
+  // All months history
+  const rows = db.prepare(`SELECT person, month, amount, notes FROM salaries ORDER BY ${MONTH_SORT}`).all();
+  const byMonth = {};
+  for (const r of rows) {
+    if (!byMonth[r.month]) byMonth[r.month] = { Pooja: 0, Kunal: 0, notes: { Pooja: '', Kunal: '' } };
+    byMonth[r.month][r.person] = r.amount;
+    byMonth[r.month].notes[r.person] = r.notes || '';
+  }
+  res.json({ history: byMonth });
+});
+
+// POST /api/salary — upsert salary for a person+month
+app.post('/api/salary', (req, res) => {
+  const { month, Pooja, Kunal, notes } = req.body;
+  if (!month) return res.status(400).json({ error: 'month required' });
+  const upsert = db.prepare(`
+    INSERT INTO salaries (person, month, amount, notes) VALUES (?, ?, ?, ?)
+    ON CONFLICT(person, month) DO UPDATE SET amount = excluded.amount, notes = excluded.notes
+  `);
+  if (Pooja !== undefined) upsert.run('Pooja', month, Number(Pooja) || 0, notes?.Pooja || '');
+  if (Kunal !== undefined) upsert.run('Kunal', month, Number(Kunal) || 0, notes?.Kunal || '');
+  res.json({ saved: true });
+});
+
 // POST /api/ask — AI-powered financial Q&A
 app.post('/api/ask', async (req, res) => {
   const { question, month } = req.body;
