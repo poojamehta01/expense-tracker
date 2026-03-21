@@ -806,10 +806,7 @@ body.dark .chart-filter-btn.active { background: #1e293b; }
 .rv-combo-trigger:hover { background: #f1f5f9; }
 .rv-arrow { font-size: 10px; color: #94a3b8; }
 .rv-combo-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 1000;
+  /* position/top/left/z-index set dynamically via JS portal approach */
   background: white;
   border: 1px solid #e2e8f0;
   border-radius: 10px;

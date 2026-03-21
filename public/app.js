@@ -388,6 +388,71 @@ function buildRow(tx, index) {
 }
 
 // Chip-based searchable combo for review table
+// Shared portal logic for all chip combo variants.
+// Panel is appended to document.body and positioned via getBoundingClientRect
+// so it's never clipped by overflow:hidden/scroll ancestors.
+function _attachPortalCombo(wrap, trigger, panel, searchInput, renderOpts, pick, highlight) {
+  panel.style.position = 'fixed';
+  panel.style.zIndex = '9999';
+  document.body.appendChild(panel);
+
+  const positionPanel = () => {
+    const r = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    const spaceAbove = r.top - 8;
+    const panelH = Math.min(280, Math.max(spaceBelow, spaceAbove));
+    panel.style.minWidth = Math.max(r.width, 180) + 'px';
+    panel.style.maxHeight = panelH + 'px';
+    panel.style.overflowY = 'auto';
+    if (spaceBelow >= Math.min(180, spaceAbove)) {
+      panel.style.top  = (r.bottom + 4) + 'px';
+      panel.style.bottom = '';
+    } else {
+      panel.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+      panel.style.top = '';
+    }
+    panel.style.left = Math.min(r.left, window.innerWidth - 200) + 'px';
+  };
+
+  const open = () => {
+    document.querySelectorAll('.rv-combo-panel:not(.hidden)').forEach(p => p.classList.add('hidden'));
+    renderOpts('');
+    positionPanel();
+    panel.classList.remove('hidden');
+    if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+    setTimeout(() => panel.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
+  };
+
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    panel.classList.contains('hidden') ? open() : panel.classList.add('hidden');
+  });
+  panel.addEventListener('mousedown', e => e.preventDefault());
+  panel.addEventListener('click', e => {
+    const opt = e.target.closest('.rv-opt');
+    if (opt) pick(opt.dataset.val);
+  });
+  if (searchInput) {
+    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { panel.classList.add('hidden'); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const hi = panel.querySelector('.rv-opt.hi');
+        if (hi) pick(hi.dataset.val);
+      }
+    });
+    searchInput.addEventListener('blur', () => {
+      setTimeout(() => { if (!panel.contains(document.activeElement)) panel.classList.add('hidden'); }, 150);
+    });
+  }
+  document.addEventListener('click', () => panel.classList.add('hidden'));
+  wrap.appendChild(trigger);
+  // panel lives in body
+}
+
 function makeChipCombo(options, current, index, field) {
   const searchable = options.length > 6;
   const wrap = document.createElement('div');
@@ -442,50 +507,7 @@ function makeChipCombo(options, current, index, field) {
     opts[highlighted]?.scrollIntoView({ block: 'nearest' });
   };
 
-  const open = () => {
-    // Close any other open combos first
-    document.querySelectorAll('.rv-combo-panel:not(.hidden)').forEach(p => p.classList.add('hidden'));
-    renderOpts('');
-    panel.classList.remove('hidden');
-    if (searchInput) { searchInput.value = ''; searchInput.focus(); }
-    else list.focus();
-    // Scroll current into view
-    setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
-  };
-
-  trigger.addEventListener('click', (e) => {
-    e.stopPropagation();
-    panel.classList.contains('hidden') ? open() : panel.classList.add('hidden');
-  });
-
-  panel.addEventListener('mousedown', e => e.preventDefault());
-  list.addEventListener('click', e => {
-    const opt = e.target.closest('.rv-opt');
-    if (opt) pick(opt.dataset.val);
-  });
-
-  if (searchInput) {
-    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
-    searchInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { panel.classList.add('hidden'); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const hi = list.querySelector('.rv-opt.hi');
-        if (hi) pick(hi.dataset.val);
-      }
-    });
-    searchInput.addEventListener('blur', () => {
-      setTimeout(() => { if (!wrap.contains(document.activeElement)) panel.classList.add('hidden'); }, 150);
-    });
-  }
-
-  // Close on outside click
-  document.addEventListener('click', () => panel.classList.add('hidden'));
-
-  wrap.appendChild(trigger);
-  wrap.appendChild(panel);
+  _attachPortalCombo(wrap, trigger, panel, searchInput, renderOpts, pick, highlight);
   return wrap;
 }
 
@@ -1562,31 +1584,7 @@ function makeModalCombo(options, initialVal, field) {
     setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
   };
 
-  trigger.addEventListener('click', e => {
-    e.stopPropagation();
-    panel.classList.contains('hidden') ? open() : panel.classList.add('hidden');
-  });
-  panel.addEventListener('mousedown', e => e.preventDefault());
-  list.addEventListener('click', e => {
-    const opt = e.target.closest('.rv-opt');
-    if (opt) pick(opt.dataset.val);
-  });
-  if (searchInput) {
-    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
-    searchInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { panel.classList.add('hidden'); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
-      if (e.key === 'Enter') { e.preventDefault(); const hi = list.querySelector('.rv-opt.hi'); if (hi) pick(hi.dataset.val); }
-    });
-    searchInput.addEventListener('blur', () => {
-      setTimeout(() => { if (!wrap.contains(document.activeElement)) panel.classList.add('hidden'); }, 150);
-    });
-  }
-  document.addEventListener('click', () => panel.classList.add('hidden'));
-
-  wrap.appendChild(trigger);
-  wrap.appendChild(panel);
+  _attachPortalCombo(wrap, trigger, panel, searchInput, renderOpts, pick, highlight);
   return wrap;
 }
 
@@ -1887,30 +1885,7 @@ function makeBulkEditCombo(options, initialVal, field) {
     opts[highlighted]?.scrollIntoView({ block: 'nearest' });
   };
 
-  const open = () => {
-    document.querySelectorAll('.rv-combo-panel:not(.hidden)').forEach(p => p.classList.add('hidden'));
-    renderOpts('');
-    panel.classList.remove('hidden');
-    if (searchInput) { searchInput.value = ''; searchInput.focus(); }
-    setTimeout(() => list.querySelector('.cur')?.scrollIntoView({ block: 'nearest' }), 0);
-  };
-
-  trigger.addEventListener('click', e => { e.stopPropagation(); panel.classList.contains('hidden') ? open() : panel.classList.add('hidden'); });
-  panel.addEventListener('mousedown', e => e.preventDefault());
-  list.addEventListener('click', e => { const opt = e.target.closest('.rv-opt'); if (opt) pick(opt.dataset.val); });
-  if (searchInput) {
-    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
-    searchInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { panel.classList.add('hidden'); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(1); return; }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); highlight(-1); return; }
-      if (e.key === 'Enter') { e.preventDefault(); const hi = list.querySelector('.rv-opt.hi'); if (hi) pick(hi.dataset.val); }
-    });
-    searchInput.addEventListener('blur', () => { setTimeout(() => { if (!wrap.contains(document.activeElement)) panel.classList.add('hidden'); }, 150); });
-  }
-  document.addEventListener('click', () => panel.classList.add('hidden'));
-  wrap.appendChild(trigger);
-  wrap.appendChild(panel);
+  _attachPortalCombo(wrap, trigger, panel, searchInput, renderOpts, pick, highlight);
   return wrap;
 }
 
