@@ -1393,6 +1393,14 @@ async function addTxRow() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ transactions: [newTx] })
     });
+    if (!res.ok) {
+      if (res.status === 401 || res.headers.get('content-type')?.includes('text/html')) {
+        alert('Session expired — please reload the page and sign in again.');
+      } else {
+        alert('Failed to add row: server error ' + res.status);
+      }
+      return;
+    }
     const data = await res.json();
     newTx.id = data.ids[0];
     savedTxList.push(newTx);
