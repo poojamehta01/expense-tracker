@@ -463,6 +463,15 @@ app.get('/api/dashboard', (req, res) => {
   const byPaidBy = {};
   for (const r of byPaidByRows) byPaidBy[r.paid_by || 'Unknown'] = r.total;
 
+  // Actual spend responsibility: Personal + half of Common + paid-for-other
+  const etMap = {};
+  for (const r of byExpenseType) etMap[r.expense_type] = r.total || 0;
+  const commonHalf = (etMap['Common_50_50'] || 0) / 2;
+  const byResponsibility = {
+    Pooja: (etMap['Pooja_Personal'] || 0) + (etMap['Kunal_for_Pooja'] || 0) + commonHalf,
+    Kunal: (etMap['Kunal_Personal'] || 0) + (etMap['Pooja_for_Kunal'] || 0) + commonHalf,
+  };
+
   // Settlement: net amount Kunal owes Pooja (negative = Pooja owes Kunal)
   const settlementRows = db.prepare(
     `SELECT expense_type, paid_by, SUM(amount) AS total ${base}
@@ -493,6 +502,7 @@ app.get('/api/dashboard', (req, res) => {
     transactionCount: totalRow.cnt,
     byCategory,
     byPaidBy,
+    byResponsibility,
     byExpenseType,
     byPaymentMethod,
     dailySpend,

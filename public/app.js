@@ -906,8 +906,8 @@ function renderKPIs(data) {
   document.getElementById('kpiTotal').textContent = formatCurrency(data.totalSpend);
   document.getElementById('kpiCount').textContent = data.transactionCount;
 
-  const pooja = (data.byPaidBy && data.byPaidBy['Pooja']) || 0;
-  const kunal = (data.byPaidBy && data.byPaidBy['Kunal']) || 0;
+  const pooja = (data.byResponsibility && data.byResponsibility['Pooja']) || (data.byPaidBy && data.byPaidBy['Pooja']) || 0;
+  const kunal = (data.byResponsibility && data.byResponsibility['Kunal']) || (data.byPaidBy && data.byPaidBy['Kunal']) || 0;
   document.getElementById('kpiSplit').innerHTML =
     `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
     `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
