@@ -903,12 +903,12 @@ function toggleTxTable() {
 }
 
 function renderKPIs(data) {
-  document.getElementById('kpiTotal').textContent = formatCurrency(data.totalSpend);
   document.getElementById('kpiCount').textContent = data.transactionCount;
 
   const pooja = (data.byResponsibility && data.byResponsibility['Pooja']) || (data.byPaidBy && data.byPaidBy['Pooja']) || 0;
   const kunal = (data.byResponsibility && data.byResponsibility['Kunal']) || (data.byPaidBy && data.byPaidBy['Kunal']) || 0;
   document.getElementById('kpiSplit').innerHTML =
+    `<span class="split-label">Total</span> ${formatCurrency(data.totalSpend)}<br>` +
     `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
     `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
 
@@ -945,9 +945,10 @@ function renderSalaryKPIs(data) {
   const combined = pooja + kunal;
   const grid = document.getElementById('kpiSalaryGrid');
   if (!pooja && !kunal) { grid.style.display = 'none'; return; }
-  document.getElementById('kpiSalaryPooja').textContent = pooja ? formatCurrency(pooja) : '—';
-  document.getElementById('kpiSalaryKunal').textContent = kunal ? formatCurrency(kunal) : '—';
-  document.getElementById('kpiSalaryCombined').textContent = combined ? formatCurrency(combined) : '—';
+  document.getElementById('kpiSalaryAll').innerHTML =
+    `<span class="split-label">Total</span> ${formatCurrency(combined)}<br>` +
+    `<span class="split-label">Pooja</span> ${pooja ? formatCurrency(pooja) : '—'}<br>` +
+    `<span class="split-label">Kunal</span> ${kunal ? formatCurrency(kunal) : '—'}`;
   grid.style.display = '';
 }
 
