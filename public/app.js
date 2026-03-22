@@ -902,15 +902,17 @@ function toggleTxTable() {
   document.getElementById('txTableToggleIcon').textContent = txTableVisible ? '▲' : '▼';
 }
 
-function renderKPIs(data) {
-  document.getElementById('kpiCount').textContent = data.transactionCount;
+function kpiRow(label, val) {
+  return `<div class="kpi-row"><span class="split-label">${label}</span><span class="kpi-row-val">${val}</span></div>`;
+}
 
+function renderKPIs(data) {
   const pooja = (data.byResponsibility && data.byResponsibility['Pooja']) || (data.byPaidBy && data.byPaidBy['Pooja']) || 0;
   const kunal = (data.byResponsibility && data.byResponsibility['Kunal']) || (data.byPaidBy && data.byPaidBy['Kunal']) || 0;
   document.getElementById('kpiSplit').innerHTML =
-    `<span class="split-label">Total</span> ${formatCurrency(data.totalSpend)}<br>` +
-    `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
-    `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
+    kpiRow('Total', formatCurrency(data.totalSpend)) +
+    kpiRow('Pooja', formatCurrency(pooja)) +
+    kpiRow('Kunal', formatCurrency(kunal));
 
   if (data.settlement === null) {
     document.getElementById('kpiSettlement').innerHTML =
@@ -943,13 +945,13 @@ function renderSalaryKPIs(data) {
   const pooja = data.Pooja || 0;
   const kunal = data.Kunal || 0;
   const combined = pooja + kunal;
-  const grid = document.getElementById('kpiSalaryGrid');
-  if (!pooja && !kunal) { grid.style.display = 'none'; return; }
+  const card = document.getElementById('kpiSalaryCard');
+  if (!pooja && !kunal) { card.style.display = 'none'; return; }
   document.getElementById('kpiSalaryAll').innerHTML =
-    `<span class="split-label">Total</span> ${formatCurrency(combined)}<br>` +
-    `<span class="split-label">Pooja</span> ${pooja ? formatCurrency(pooja) : '—'}<br>` +
-    `<span class="split-label">Kunal</span> ${kunal ? formatCurrency(kunal) : '—'}`;
-  grid.style.display = '';
+    kpiRow('Total', formatCurrency(combined)) +
+    kpiRow('Pooja', pooja ? formatCurrency(pooja) : '—') +
+    kpiRow('Kunal', kunal ? formatCurrency(kunal) : '—');
+  document.getElementById('kpiSalaryCard').style.display = '';
 }
 
 const CHART_COLORS = [
