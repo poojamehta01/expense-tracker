@@ -407,6 +407,28 @@ app.get('/api/trends', (req, res) => {
   }
   const allCategories = Object.keys(allCatTotals).sort((a, b) => allCatTotals[b] - allCatTotals[a]);
 
+  // Responsibility split: Personal + Common/2 per person per month (no person filter — always all-data)
+  const respRows = db.prepare(
+    `SELECT month, expense_type, COALESCE(SUM(amount),0) AS total
+     FROM transactions
+     WHERE expense_type IN ('Pooja_Personal','Kunal_Personal','Common_50_50','Pooja_for_Kunal','Kunal_for_Pooja')
+     GROUP BY month, expense_type ORDER BY ${MONTH_SORT}`
+  ).all();
+  const respMap = {};
+  for (const r of respRows) {
+    if (!respMap[r.month]) respMap[r.month] = {};
+    respMap[r.month][r.expense_type] = r.total;
+  }
+  const monthlyResponsibility = months.map(m => {
+    const et = respMap[m] || {};
+    const commonHalf = (et['Common_50_50'] || 0) / 2;
+    return {
+      month: m,
+      Pooja: (et['Pooja_Personal'] || 0) + (et['Kunal_for_Pooja'] || 0) + commonHalf,
+      Kunal: (et['Kunal_Personal'] || 0) + (et['Pooja_for_Kunal'] || 0) + commonHalf,
+    };
+  });
+
   // Credit card payments (separate — not counted as expense)
   const ccRows = db.prepare(
     `SELECT month, COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
@@ -432,7 +454,7 @@ app.get('/api/trends', (req, res) => {
   const allMethods = Object.keys(pmTotals).sort((a, b) => pmTotals[b] - pmTotals[a]);
 
   res.json({
-    months, monthlyTotals, monthlySplit, topCategories: { categories: top5, byMonth },
+    months, monthlyTotals, monthlySplit, monthlyResponsibility, topCategories: { categories: top5, byMonth },
     categoryBreakdown: { categories: allCategories, byMonth: allCatByMonth, totals: allCatTotals },
     creditCardPayments,
     byPaymentMethod: { methods: allMethods, byMonth: pmByMonth, totals: pmTotals }

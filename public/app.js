@@ -2545,7 +2545,7 @@ async function loadSalaryHistory() {
     });
 
     const splitByMonth = {};
-    trendsData.monthlySplit?.forEach(r => {
+    (trendsData.monthlyResponsibility || trendsData.monthlySplit)?.forEach(r => {
       splitByMonth[r.month] = { Pooja: r.Pooja || 0, Kunal: r.Kunal || 0 };
     });
 
