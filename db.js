@@ -58,6 +58,20 @@ db.exec(`
     snapshot   TEXT NOT NULL,
     changed_at TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS merchant_patterns (
+    description    TEXT PRIMARY KEY,
+    category       TEXT,
+    expense_type   TEXT,
+    payment_method TEXT,
+    frequency      INTEGER,
+    last_rebuilt   TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  );
 `);
 
 db.pragma('incremental_vacuum(100)');   // reclaim up to 100 free pages on each startup

@@ -212,6 +212,7 @@ app.post('/api/transactions', (req, res) => {
 
   try {
     const { ids, skipped } = insertMany(transactions);
+    if (ids.length > 0) rebuildMerchantPatterns();
     res.json({ saved: ids.length, skipped, ids });
   } catch (err) {
     console.error('Insert error:', err.message);
@@ -323,6 +324,26 @@ app.post('/api/audit/:id/restore', (req, res) => {
   // Remove audit entry — it's been consumed
   db.prepare('DELETE FROM transaction_audit WHERE id = ?').run(auditRow.id);
   res.json({ restored: true, transaction: snap });
+});
+
+// GET /api/ai-memory — status for UI widget
+app.get('/api/ai-memory', requireAuth, (req, res) => {
+  const count = db.prepare('SELECT COUNT(*) AS cnt FROM merchant_patterns').get()?.cnt || 0;
+  const row = db.prepare(`SELECT value FROM settings WHERE key='patterns_last_rebuilt'`).get();
+  const rows = db.prepare('SELECT description, category, expense_type, payment_method, frequency FROM merchant_patterns ORDER BY frequency DESC').all();
+  res.json({ patterns: count, last_rebuilt: row?.value || null, rows });
+});
+
+// POST /api/ai-train — manual retrain trigger
+app.post('/api/ai-train', requireAuth, (req, res) => {
+  try {
+    const count = rebuildMerchantPatterns();
+    const rebuilt_at = db.prepare(`SELECT value FROM settings WHERE key='patterns_last_rebuilt'`).get()?.value;
+    res.json({ patterns: count, rebuilt_at });
+  } catch (err) {
+    console.error('ai-train error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/trends — multi-month aggregated data
@@ -595,7 +616,76 @@ const PAYMENT_METHODS = [
   'HDFC_Credit_Card', 'ABFL_Credit_Card', 'HDFC_Debit_Card', 'Zaggle'
 ];
 
+function rebuildMerchantPatterns() {
+  // For each description, find most-frequent (category, expense_type, payment_method) tuple
+  const rows = db.prepare(`
+    SELECT description, category, expense_type, payment_method, COUNT(*) AS freq
+    FROM transactions
+    WHERE description != '' AND description IS NOT NULL
+      AND category != '' AND category IS NOT NULL
+    GROUP BY description, category, expense_type, payment_method
+    ORDER BY description, freq DESC
+  `).all();
+
+  // Keep only top row per description — case-insensitive deduplication
+  // e.g. "uber" (×17) and "Uber" (×3) merge under the same key; highest-freq variant wins
+  const best = {};
+  for (const r of rows) {
+    const key = r.description.toLowerCase();
+    if (!best[key]) {
+      best[key] = r;
+    } else {
+      // Accumulate frequency across case variants; keep label from highest-freq variant
+      best[key].freq += r.freq;
+    }
+  }
+
+  // Min 2 occurrences, top 40 by frequency
+  const patterns = Object.values(best)
+    .filter(r => r.freq >= 2)
+    .sort((a, b) => b.freq - a.freq)
+    .slice(0, 40);
+
+  const now = new Date().toISOString();
+
+  // Full replace (this is a derived cache, not source of truth)
+  db.prepare('DELETE FROM merchant_patterns').run();
+  const insert = db.prepare(`
+    INSERT INTO merchant_patterns (description, category, expense_type, payment_method, frequency, last_rebuilt)
+    VALUES (@description, @category, @expense_type, @payment_method, @frequency, @last_rebuilt)
+  `);
+  db.transaction(ps => ps.forEach(p => insert.run({
+    description: p.description, category: p.category,
+    expense_type: p.expense_type, payment_method: p.payment_method,
+    frequency: p.freq, last_rebuilt: now
+  })))(patterns);
+
+  db.prepare(`INSERT INTO settings (key,value) VALUES ('patterns_last_rebuilt',?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(now);
+
+  return patterns.length;
+}
+
 function buildExtractionPrompt() {
+  // Lazy rebuild: rebuild if never built or older than 7 days
+  const lastBuilt = db.prepare(`SELECT value FROM settings WHERE key='patterns_last_rebuilt'`).get();
+  if (!lastBuilt || Date.now() - new Date(lastBuilt.value).getTime() > 7 * 24 * 60 * 60 * 1000) {
+    rebuildMerchantPatterns();
+  }
+
+  // Load patterns for prompt injection
+  const patterns = db.prepare('SELECT * FROM merchant_patterns ORDER BY frequency DESC').all();
+  let learnedBlock = '';
+  if (patterns.length > 0) {
+    const lines = patterns.map(p => {
+      const parts = [`category: ${p.category}`];
+      if (p.expense_type) parts.push(`expense_type: ${p.expense_type}`);
+      if (p.payment_method) parts.push(`payment_method: ${p.payment_method}`);
+      return `${p.description} → ${parts.join(', ')} (seen ${p.frequency}×)`;
+    });
+    learnedBlock = `\n\nYour learned patterns from this user's past transactions (use with HIGH confidence):\n${lines.join('\n')}`;
+  }
+
   const customRows = db.prepare('SELECT list_name, value FROM lists').all();
   const cats = [...CATEGORIES];
   const expTypes = [...EXPENSE_TYPES];
@@ -635,7 +725,7 @@ Category hints:
 
 Return ONLY a valid JSON array. No explanation, no markdown, no code blocks.
 Example: [{"date":"21 March 2026","amount":358,"description":"Uber","category":"Ola/Uber","expense_type":"Pooja_Personal","payment_method":"HDFC_Credit_Card","paid_by":"Pooja"}]
-If no transactions found, return: []`;
+If no transactions found, return: []${learnedBlock}`;
 }
 
 app.post('/api/extract', upload.single('file'), async (req, res) => {

@@ -63,7 +63,24 @@ Full list of transactions for the selected month with:
 ## Add Expenses Tab
 
 ### Upload
-Drop or select image files (PNG, JPG, HEIC) or PDFs (up to 20MB each). Gemini AI extracts all transactions from the screenshots.
+Drop or select files (up to 20MB each):
+- **Images** (PNG, JPG, HEIC) or **PDFs** — Gemini AI extracts transactions from the screenshot/statement
+- **CSV / XLSX / XLS** — parsed directly in the browser (no AI); rows map to transaction fields automatically
+
+For spreadsheets, columns are matched by name (case-insensitive). Supported aliases:
+
+| Field | Accepted column names |
+|---|---|
+| date | `date` |
+| amount | `amount`, `amt`, `value`, `debit`, `credit` |
+| description | `description`, `desc`, `merchant`, `narration`, `particulars`, `note`, `detail` |
+| payment_method | `payment_method`, `method`, `mode`, `instrument` |
+| paid_by | `paid_by`, `who`, `person` |
+| expense_type | `expense_type`, `type` |
+| category | `category`, `cat` |
+| mood / impulse / remarks | exact match |
+
+Rows with no amount (or amount ≤ 0) are skipped. All other fields default the same way as image uploads.
 
 ### Paste SMS / Bank Messages
 Expandable card to paste raw SMS or bank notification text. Gemini extracts transactions from the text.
