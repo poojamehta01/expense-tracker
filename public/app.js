@@ -582,6 +582,24 @@ function mapSpreadsheetRow(rawRow) {
     dateVal = `${dateVal.getDate()} ${MN[dateVal.getMonth()]} ${dateVal.getFullYear()}`;
   } else {
     dateVal = String(dateVal).trim();
+    // Normalize common date formats → "D Month YYYY"
+    const MN2 = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    // DD/MM/YY or DD/MM/YYYY (Indian bank format)
+    const dmy = dateVal.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (dmy) {
+      let [, d, m, y] = dmy;
+      if (y.length === 2) y = '20' + y;
+      const mon = MN2[parseInt(m, 10) - 1];
+      if (mon) dateVal = `${parseInt(d)} ${mon} ${y}`;
+    } else {
+      // YYYY-MM-DD (ISO)
+      const iso = dateVal.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      if (iso) {
+        const [, y, m, d] = iso;
+        const mon = MN2[parseInt(m, 10) - 1];
+        if (mon) dateVal = `${parseInt(d)} ${mon} ${y}`;
+      }
+    }
   }
 
   const amount = parseFloat(String(find('amount','amt','value','debit','credit','debit amount','credit amount','withdrawal amount','deposit amount','dr amount','cr amount')).replace(/[^0-9.]/g, '')) || 0;
