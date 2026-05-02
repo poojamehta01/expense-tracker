@@ -20,7 +20,7 @@ Invoke the matching skill automatically — user does NOT need to type the slash
 - **Frontend:** Vanilla HTML/CSS/JS in `public/` — no build step
 - **Auth:** Google OAuth via Passport.js — allowed emails in `ALLOWED_EMAILS` env var
 - **AI:** Gemini Flash (`gemini-flash-latest`) for transaction extraction AND financial Q&A
-- **Charts:** Chart.js 4.x via CDN
+- **Charts:** Chart.js 4.x via CDN; SheetJS 0.18.5 via CDN (client-side CSV/XLSX parsing)
 - **Deploy:** Fly.io (`fly deploy`) — app name `expense-tracker-pooja`
 
 ## File Map
@@ -132,9 +132,10 @@ POST /api/audit/:id/restore      restore a snapshot
 **Paid by:** Pooja, Kunal
 
 ## Frontend Flow
-1. **Add Expenses tab:** upload file → `/api/extract` (Gemini) → review table → `saveToTracker()` → `POST /api/transactions`
-   - `paid_by` auto-set to logged-in user's first name; `expense_type` defaults to `{User}_Personal`
-   - Month selector at top — defaults to current month; date fields fall back to selected month if not found in screenshot
+1. **Add Expenses tab:** upload file → (if image/PDF: `/api/extract` via Gemini; if CSV/XLSX/XLS: parsed client-side via SheetJS/vanilla JS) → review table → `saveToTracker()` → `POST /api/transactions`
+   - `paid_by` preserved from spreadsheet if set; otherwise auto-set to logged-in user's first name; `expense_type` defaults to `{User}_Personal`
+   - Month selector at top — defaults to current month; date fields fall back to selected month if missing
+   - Spreadsheet column mapping (case-insensitive): `date`, `amount/amt/value/debit/credit`, `description/desc/merchant/narration/particulars`, `payment_method/method/mode`, `paid_by/who/person`, `expense_type/type`, `category/cat`, `mood`, `impulse`, `remarks/notes`; rows with `amount ≤ 0` are filtered out
 2. **Dashboard tab (default):** `loadMonths()` → `loadDashboard(month)` → renders KPIs + salary KPIs + 4 charts (collapsible "Trends" section) + merchants table + transactions list
    - Global person filter (All/Pooja/Kunal/Common) in top-right nav filters all data
    - Dashboard toolbar: Month picker on left, "Edit History" + "Export to Google Sheets" grouped on right
@@ -191,6 +192,11 @@ POST /api/audit/:id/restore      restore a snapshot
 - `loadSalaryForMonth()` — fetches salary for selected month, populates inputs
 - `saveSalary()` — POST salary, refresh history
 - `loadSalaryHistory()` — fetches `/api/salary` + `/api/trends`; computes 9-cell summary (salary/spend/savings × pooja/kunal/combined) + history table
+- `isSpreadsheetFile(file)` — returns true for .csv/.xlsx/.xls by name or MIME type
+- `parseSpreadsheetFile(file)` — async; CSV → `parseCSVToObjects`; XLSX/XLS → SheetJS; returns mapped tx array (rows with amount ≤ 0 filtered)
+- `parseCSVToObjects(text)` — splits CSV text into array of objects keyed by header row
+- `parseCSVLine(line)` — RFC-4180 CSV line parser (handles quoted fields, escaped quotes)
+- `mapSpreadsheetRow(rawRow)` — normalises column names (lowercase) and maps aliases to tx fields; handles SheetJS Date objects for date column
 - `askChip(btn)` — fills AI input with chip text + submits
 - `submitAsk()` — POST to `/api/ask`, renders markdown-ish response
 - `makeChipCombo(options, current, index, field)` — chip-based searchable dropdown

@@ -1,7 +1,7 @@
 // Service Worker for Expense Tracker PWA
 // Handles install prompt and basic caching of static assets
 
-const CACHE_NAME = 'kharcha-v1';
+const CACHE_NAME = 'kharcha-v2';
 const STATIC_ASSETS = [
   '/',
   '/style.css',
@@ -36,8 +36,21 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache-first for static assets (CSS, JS, Chart.js CDN)
+  // Network-first for local assets — always get latest after deploy, cache as offline fallback
+  // Cache-first only for external CDN (Chart.js never changes at a fixed version URL)
+  if (url.hostname !== location.hostname) {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request))
+    );
+    return;
+  }
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(event.request)
+      .then(res => {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

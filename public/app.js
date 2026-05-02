@@ -70,6 +70,8 @@ function chipHtml(val) {
 // ─── State ──────────────────────────────────────────────────────────────────
 
 let transactions = [];
+let reviewSelected = new Set();
+let reviewBulkVal = '';
 let chartCategory = null;
 let chartDaily = null;
 let chartExpenseType = null;
@@ -96,7 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupUpload();
   initUploadMonthPicker();
   loadUser();
-  switchTab('dashboard');
+  switchTab('add');
+  renderMotdQuote();
   loadMonths();
 
   // Close column panel when clicking outside
@@ -142,8 +145,7 @@ function initUploadMonthPicker() {
   const endYear = now.getFullYear();
   picker.innerHTML = '';
   for (let year = 2026; year <= endYear; year++) {
-    const maxMonth = (year === endYear) ? now.getMonth() : 11;
-    for (let mi = 0; mi <= maxMonth; mi++) {
+    for (let mi = 0; mi <= 11; mi++) {
       const opt = document.createElement('option');
       opt.value = `${MONTHS[mi]}_${year}`;
       opt.textContent = `${MONTHS[mi]} ${year}`;
@@ -159,12 +161,13 @@ function initUploadMonthPicker() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  ['dashboard', 'add', 'trends', 'salary', 'ask'].forEach(t => {
+  ['dashboard', 'add', 'trends', 'salary', 'ask', 'ai-memory'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('hidden', name !== t);
     document.getElementById('tab-btn-' + t).classList.toggle('active', name === t);
   });
   if (name === 'trends' && !trendsLoaded) loadTrends();
   if (name === 'salary') initSalaryTab();
+  if (name === 'ai-memory') loadAIMemoryStatus();
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -183,6 +186,7 @@ async function loadLists() {
     CATEGORIES = [...DEFAULT_CATEGORIES, ...data.categories.map(x => x.value)];
     EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...data.expense_types.map(x => x.value)];
     PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...data.payment_methods.map(x => x.value)];
+    syncColOpts();
   } catch (e) { console.error('loadLists error:', e); }
 }
 
@@ -319,6 +323,7 @@ async function addListItem(listName) {
     if (listName === 'categories') CATEGORIES = [...DEFAULT_CATEGORIES, ...customLists.categories.map(x => x.value)];
     if (listName === 'expense_types') EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...customLists.expense_types.map(x => x.value)];
     if (listName === 'payment_methods') PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...customLists.payment_methods.map(x => x.value)];
+    syncColOpts();
     input.value = '';
     renderManageModal();
   } catch (e) { alert('Error adding item'); }
@@ -331,6 +336,7 @@ async function removeListItem(id, listName) {
     if (listName === 'categories') CATEGORIES = [...DEFAULT_CATEGORIES, ...customLists.categories.map(x => x.value)];
     if (listName === 'expense_types') EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...customLists.expense_types.map(x => x.value)];
     if (listName === 'payment_methods') PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...customLists.payment_methods.map(x => x.value)];
+    syncColOpts();
     renderManageModal();
   } catch (e) { alert('Error removing item'); }
 }
@@ -359,7 +365,7 @@ function setupUpload() {
     e.preventDefault();
     area.classList.remove('dragover');
     const files = Array.from(e.dataTransfer.files).filter(f =>
-      f.type.startsWith('image/') || f.type === 'application/pdf'
+      f.type.startsWith('image/') || f.type === 'application/pdf' || isSpreadsheetFile(f)
     );
     if (files.length) handleFiles(files);
   });
@@ -374,13 +380,15 @@ async function handleFiles(files) {
   for (let i = 0; i < files.length; i++) {
     setLoadingText(`Processing file ${i + 1} of ${files.length}: ${files[i].name}…`);
     try {
-      const extracted = await extractFromFile(files[i]);
+      const extracted = isSpreadsheetFile(files[i])
+        ? await parseSpreadsheetFile(files[i])
+        : await extractFromFile(files[i]);
       const uploadMonth = getUploadMonth(); // e.g. "March_2026"
       const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
       extracted.forEach(tx => {
-        tx.paid_by = currentUserName;
+        if (!tx.paid_by) tx.paid_by = currentUserName;
         if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
-          tx.expense_type = currentUserName + '_Personal';
+          tx.expense_type = (tx.paid_by || currentUserName) + '_Personal';
         }
         // if date is missing or has no month/year, pin it to selected month
         if (uMon && uYr && tx.date) {
@@ -399,7 +407,7 @@ async function handleFiles(files) {
   showLoading(false);
 
   if (newTx.length === 0 && transactions.length === 0) {
-    showError('No transactions found. Try a clearer screenshot.');
+    showError('No transactions found. For images/PDFs, try a clearer screenshot. For CSV/XLSX, ensure the file has columns like date, amount, description.');
     return;
   }
 
@@ -493,9 +501,111 @@ async function extractFromFile(file) {
   return data.transactions || [];
 }
 
+// ─── CSV / XLSX Parsing ───────────────────────────────────────────────────────
+
+function isSpreadsheetFile(file) {
+  const name = file.name.toLowerCase();
+  return name.endsWith('.csv') || name.endsWith('.xlsx') || name.endsWith('.xls')
+    || file.type === 'text/csv'
+    || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    || file.type === 'application/vnd.ms-excel';
+}
+
+async function parseSpreadsheetFile(file) {
+  const name = file.name.toLowerCase();
+  let rawRows;
+
+  if (name.endsWith('.csv') || file.type === 'text/csv') {
+    const text = await file.text();
+    rawRows = parseCSVToObjects(text);
+  } else {
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  }
+
+  return rawRows.map(mapSpreadsheetRow).filter(tx => tx.amount > 0);
+}
+
+function parseCSVToObjects(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+  const result = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = parseCSVLine(lines[i]);
+    if (vals.every(v => !v.trim())) continue;
+    const obj = {};
+    headers.forEach((h, j) => { obj[h] = (vals[j] ?? '').trim(); });
+    result.push(obj);
+  }
+  return result;
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) {
+      result.push(cur); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function mapSpreadsheetRow(rawRow) {
+  // normalise keys to lowercase
+  const row = {};
+  for (const k of Object.keys(rawRow)) row[k.toLowerCase().trim()] = rawRow[k];
+
+  const find = (...aliases) => {
+    for (const a of aliases) {
+      const v = row[a];
+      if (v !== undefined && v !== null && v !== '') return v;
+    }
+    return '';
+  };
+
+  // Date: handle JS Date objects (from SheetJS cellDates) or strings
+  let dateVal = find('date');
+  if (dateVal instanceof Date) {
+    const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    dateVal = `${dateVal.getDate()} ${MN[dateVal.getMonth()]} ${dateVal.getFullYear()}`;
+  } else {
+    dateVal = String(dateVal).trim();
+  }
+
+  const amount = parseFloat(String(find('amount','amt','value','debit','credit','debit amount','credit amount','withdrawal amount','deposit amount','dr amount','cr amount')).replace(/[^0-9.]/g, '')) || 0;
+  const str = v => String(v ?? '').trim();
+
+  return {
+    date: dateVal,
+    amount,
+    description: str(find('description','desc','merchant','narration','particulars','note','detail','details','transaction')),
+    payment_method: str(find('payment_method','payment method','method','mode','instrument')),
+    paid_by: str(find('paid_by','paid by','paidby','who','person')),
+    expense_type: str(find('expense_type','expense type','type')),
+    category: str(find('category','cat')),
+    mood: str(find('mood')),
+    impulse: str(find('impulse')),
+    remarks: str(find('remarks','notes','comment','comments')),
+  };
+}
+
 // ─── Review Table ─────────────────────────────────────────────────────────────
 
-function renderTable() {
+function renderTable(preserveSelection) {
+  reviewSelected = preserveSelection instanceof Set ? preserveSelection : new Set();
+
   const section = document.getElementById('tableSection');
   const body = document.getElementById('txBody');
   const count = document.getElementById('txCount');
@@ -508,13 +618,22 @@ function renderTable() {
   count.textContent = `${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}`;
   section.classList.remove('hidden');
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const sa = document.getElementById('txSelectAll');
+  if (sa) {
+    sa.checked = reviewSelected.size > 0 && reviewSelected.size === transactions.length;
+    sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
+  }
+  updateReviewBulkBar();
 }
 
 function buildRow(tx, index) {
   const tr = document.createElement('tr');
   tr.dataset.index = index;
+  if (reviewSelected.has(index)) tr.classList.add('row-selected');
 
   tr.innerHTML = `
+    <td><input type="checkbox" class="review-cb" ${reviewSelected.has(index) ? 'checked' : ''} onchange="reviewToggleRow(${index}, this.checked)" /></td>
     <td><input type="date" value="${appDateToISO(tx.date || '')}" onchange="updateTx(${index},'date',isoToAppDate(this.value))" /></td>
     <td><input type="number" value="${tx.amount || ''}" step="0.01" onchange="updateTx(${index},'amount',parseFloat(this.value))" /></td>
     <td><input type="text" value="${esc(tx.description || '')}" onchange="updateTx(${index},'description',this.value)" /></td>
@@ -674,6 +793,209 @@ function updateTx(index, field, value) {
   transactions[index][field] = value;
 }
 
+// ─── Review table bulk / fill ─────────────────────────────────────────────────
+
+function getReviewFieldOpts(field) {
+  if (field === 'payment_method') return PAYMENT_METHODS;
+  if (field === 'paid_by') return ['Pooja', 'Kunal'];
+  if (field === 'expense_type') return EXPENSE_TYPES;
+  if (field === 'category') return CATEGORIES;
+  if (field === 'mood') return MOODS;
+  if (field === 'impulse') return IMPULSE_OPTIONS;
+  return [];
+}
+
+function reviewSelectAll(checked) {
+  reviewSelected = checked ? new Set(transactions.map((_, i) => i)) : new Set();
+  document.querySelectorAll('#txBody .review-cb').forEach((cb, i) => {
+    cb.checked = checked;
+    cb.closest('tr').classList.toggle('row-selected', checked);
+  });
+  updateReviewBulkBar();
+}
+
+function reviewToggleRow(index, checked) {
+  if (checked) reviewSelected.add(index);
+  else reviewSelected.delete(index);
+  document.querySelector(`#txBody tr[data-index="${index}"]`)?.classList.toggle('row-selected', checked);
+  const sa = document.getElementById('txSelectAll');
+  if (sa) {
+    sa.checked = reviewSelected.size === transactions.length && transactions.length > 0;
+    sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
+  }
+  updateReviewBulkBar();
+}
+
+function reviewClearSelection() {
+  document.querySelectorAll('#txBody .review-cb').forEach(cb => { cb.checked = false; cb.closest('tr').classList.remove('row-selected'); });
+  const sa = document.getElementById('txSelectAll');
+  if (sa) { sa.checked = false; sa.indeterminate = false; }
+  reviewSelected = new Set();
+  updateReviewBulkBar();
+}
+
+function updateReviewBulkBar() {
+  const bar = document.getElementById('reviewBulkBar');
+  if (!bar) return;
+  const n = reviewSelected.size;
+  const wasHidden = bar.classList.contains('hidden');
+  if (n === 0) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  document.getElementById('reviewBulkCount').textContent = `${n} row${n !== 1 ? 's' : ''} selected`;
+  if (wasHidden) updateReviewBulkValue(); // init value picker only when bar first appears
+}
+
+function updateReviewBulkValue() {
+  const field = document.getElementById('reviewBulkField')?.value;
+  const wrap = document.getElementById('reviewBulkValue');
+  if (!wrap || !field) return;
+  wrap.innerHTML = '';
+  const opts = getReviewFieldOpts(field);
+  if (opts.length) {
+    wrap.appendChild(makeReviewBulkCombo(opts));
+  } else {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.id = 'reviewBulkText';
+    inp.className = 'arm-input';
+    inp.placeholder = 'Value…';
+    wrap.appendChild(inp);
+  }
+}
+
+function applyReviewBulk() {
+  const field = document.getElementById('reviewBulkField')?.value;
+  if (!field || reviewSelected.size === 0) return;
+  const opts = getReviewFieldOpts(field);
+  const val = opts.length ? reviewBulkVal : (document.getElementById('reviewBulkText')?.value ?? '');
+  const saved = new Set(reviewSelected);
+  saved.forEach(i => { transactions[i][field] = val; });
+  renderTable(saved); // re-render preserving selection
+}
+
+// Chip combo that writes to reviewBulkVal (for bulk bar value picker)
+function makeReviewBulkCombo(options) {
+  const searchable = options.length > 6;
+  const wrap = document.createElement('div');
+  wrap.className = 'rv-combo';
+  reviewBulkVal = options[0] || '';
+  let current = reviewBulkVal;
+
+  const trigger = document.createElement('div');
+  trigger.className = 'rv-combo-trigger';
+  trigger.innerHTML = chipHtml(current) + '<span class="rv-arrow">▾</span>';
+
+  const panel = document.createElement('div');
+  panel.className = 'rv-combo-panel hidden';
+
+  let searchInput = null;
+  if (searchable) {
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'rv-combo-search';
+    searchInput.placeholder = 'Search…';
+    panel.appendChild(searchInput);
+  }
+  const list = document.createElement('div');
+  list.className = 'rv-combo-list';
+  panel.appendChild(list);
+
+  let highlighted = 0;
+  const renderOpts = (q) => {
+    const qlo = (q || '').toLowerCase();
+    const filtered = options.filter(o => !qlo || String(o).replace(/_/g, ' ').toLowerCase().includes(qlo));
+    highlighted = 0;
+    list.innerHTML = filtered.map((o, i) =>
+      `<div class="rv-opt${i === 0 ? ' hi' : ''}${o === current ? ' cur' : ''}" data-val="${esc(o)}">${chipHtml(o)}</div>`
+    ).join('');
+  };
+  const pick = (val) => {
+    current = val;
+    reviewBulkVal = val;
+    trigger.innerHTML = chipHtml(val) + '<span class="rv-arrow">▾</span>';
+    panel.classList.add('hidden');
+  };
+  const highlight = (delta) => {
+    const opts2 = [...list.querySelectorAll('.rv-opt')];
+    if (!opts2.length) return;
+    opts2[highlighted]?.classList.remove('hi');
+    highlighted = Math.max(0, Math.min(opts2.length - 1, highlighted + delta));
+    opts2[highlighted]?.classList.add('hi');
+    opts2[highlighted]?.scrollIntoView({ block: 'nearest' });
+  };
+  _attachPortalCombo(wrap, trigger, panel, searchInput, renderOpts, pick, highlight);
+  return wrap;
+}
+
+// Fill-column dropdown (↓ button in table header — fills ALL rows for that field)
+function openFillCol(event, field) {
+  event.stopPropagation();
+  const opts = getReviewFieldOpts(field);
+  if (!opts.length || !transactions.length) return;
+
+  document.querySelectorAll('.rv-combo-panel:not(.hidden)').forEach(p => p.classList.add('hidden'));
+  const existing = document.getElementById('_fillColPanel');
+  if (existing) existing.remove();
+
+  const panel = document.createElement('div');
+  panel.id = '_fillColPanel';
+  panel.className = 'rv-combo-panel';
+  panel.style.position = 'fixed';
+  panel.style.zIndex = '9999';
+
+  const searchable = opts.length > 6;
+  let searchInput = null;
+  if (searchable) {
+    searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'rv-combo-search';
+    searchInput.placeholder = 'Search…';
+    panel.appendChild(searchInput);
+  }
+  const list = document.createElement('div');
+  list.className = 'rv-combo-list';
+  panel.appendChild(list);
+
+  let highlighted = 0;
+  const renderOpts = (q) => {
+    const qlo = (q || '').toLowerCase();
+    const filtered = opts.filter(o => !qlo || String(o).replace(/_/g, ' ').toLowerCase().includes(qlo));
+    highlighted = 0;
+    list.innerHTML = filtered.map((o, i) =>
+      `<div class="rv-opt${i === 0 ? ' hi' : ''}" data-val="${esc(o)}">${chipHtml(o)}</div>`
+    ).join('');
+  };
+  const pick = (val) => { panel.remove(); fillCol(field, val); };
+
+  document.body.appendChild(panel);
+  const r = event.currentTarget.getBoundingClientRect();
+  panel.style.top = (r.bottom + 4) + 'px';
+  panel.style.left = Math.min(r.left, window.innerWidth - 200) + 'px';
+  panel.style.minWidth = '180px';
+  renderOpts('');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => renderOpts(searchInput.value));
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { panel.remove(); return; }
+      const rows = [...list.querySelectorAll('.rv-opt')];
+      if (e.key === 'ArrowDown') { e.preventDefault(); rows[highlighted]?.classList.remove('hi'); highlighted = Math.min(rows.length - 1, highlighted + 1); rows[highlighted]?.classList.add('hi'); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); rows[highlighted]?.classList.remove('hi'); highlighted = Math.max(0, highlighted - 1); rows[highlighted]?.classList.add('hi'); }
+      if (e.key === 'Enter')     { e.preventDefault(); const hi = list.querySelector('.rv-opt.hi'); if (hi) pick(hi.dataset.val); }
+    });
+    searchInput.focus();
+  }
+  panel.addEventListener('mousedown', e => e.preventDefault());
+  panel.addEventListener('click', e => { const opt = e.target.closest('.rv-opt'); if (opt) pick(opt.dataset.val); });
+  setTimeout(() => document.addEventListener('click', () => panel.remove(), { once: true }), 0);
+}
+
+function fillCol(field, val) {
+  const saved = new Set(reviewSelected);
+  transactions.forEach(tx => { tx[field] = val; });
+  renderTable(saved);
+}
+
 function deleteRow(index) {
   transactions.splice(index, 1);
   if (transactions.length === 0) {
@@ -755,6 +1077,84 @@ async function saveToTracker() {
   saveBtn2.disabled = false; saveBtn2.textContent = 'Save to Tracker →';
 }
 
+const MONEY_QUOTES = [
+  { text: "Do not save what is left after spending, but spend what is left after saving.", author: "Warren Buffett" },
+  { text: "A budget is telling your money where to go instead of wondering where it went.", author: "Dave Ramsey" },
+  { text: "The secret to wealth is simple: find a way to do more for others than anyone else does. Become more valuable. Do more. Give more. Be more. Serve more.", author: "Tony Robbins" },
+  { text: "Financial freedom is available to those who learn about it and work for it.", author: "Robert Kiyosaki" },
+  { text: "It's not how much money you make, but how much money you keep.", author: "Robert Kiyosaki" },
+  { text: "Beware of little expenses; a small leak will sink a great ship.", author: "Benjamin Franklin" },
+  { text: "The goal is not to be rich. The goal is to be legend.", author: "Jay-Z" },
+  { text: "Every rupee you track today is a step toward the life you want tomorrow.", author: "" },
+  { text: "Wealth is not about having a lot of money; it's about having a lot of options.", author: "Chris Rock" },
+  { text: "You must gain control over your money or the lack of it will forever control you.", author: "Dave Ramsey" },
+  { text: "The best investment you can make is in yourself.", author: "Warren Buffett" },
+  { text: "Stop buying things you don't need, to impress people you don't like, with money you don't have.", author: "Dave Ramsey" },
+  { text: "Tracking your money is the first step to owning it.", author: "" },
+  { text: "Small disciplines repeated with consistency every day lead to great achievements gained slowly over time.", author: "John Maxwell" },
+];
+
+function renderMotdQuote() {
+  const el = document.getElementById('motd-quote');
+  if (!el) return;
+  const q = MONEY_QUOTES[new Date().getDate() % MONEY_QUOTES.length];
+  el.innerHTML = `<span class="motd-text">"${esc(q.text)}"</span>${q.author ? `<span class="motd-author">— ${esc(q.author)}</span>` : ''}`;
+}
+
+async function loadAIMemoryStatus() {
+  const text = document.getElementById('aiMemoryText');
+  const badge = document.getElementById('aiMemoryBadge');
+  const tbody = document.getElementById('aiMemoryTableBody');
+  if (!text) return;
+  try {
+    const res = await fetch('/api/ai-memory');
+    const data = await res.json();
+    const count = data.patterns || 0;
+    let age = 'never';
+    if (data.last_rebuilt) {
+      const days = Math.floor((Date.now() - new Date(data.last_rebuilt).getTime()) / 86400000);
+      age = days === 0 ? 'today' : `${days}d ago`;
+    }
+    text.textContent = `${count} pattern${count !== 1 ? 's' : ''} · last updated ${age}`;
+    if (badge) badge.textContent = count;
+    if (tbody && data.rows) {
+      if (data.rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No patterns yet — save some transactions first</td></tr>';
+      } else {
+        tbody.innerHTML = data.rows.map(r => `
+          <tr>
+            <td>${esc(r.description)}</td>
+            <td>${esc(r.category)}</td>
+            <td>${esc(r.expense_type || '—')}</td>
+            <td>${esc(r.payment_method || '—')}</td>
+            <td style="text-align:right">×${r.frequency}</td>
+          </tr>`).join('');
+      }
+    }
+  } catch {
+    text.textContent = 'AI memory: unavailable';
+  }
+}
+
+async function retrainAIMemory() {
+  const btn = document.getElementById('aiRetrainBtn');
+  const text = document.getElementById('aiMemoryText');
+  btn.disabled = true; btn.textContent = 'Training…';
+  try {
+    const res = await fetch('/api/ai-train', { method: 'POST' });
+    const data = await res.json();
+    text.textContent = `${data.patterns} pattern${data.patterns !== 1 ? 's' : ''} · just retrained`;
+    const badge = document.getElementById('aiMemoryBadge');
+    if (badge) badge.textContent = data.patterns;
+    // Refresh table
+    await loadAIMemoryStatus();
+  } catch {
+    text.textContent = 'Retrain failed';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Retrain';
+  }
+}
+
 // ─── Export to Sheets (optional) ─────────────────────────────────────────────
 
 async function exportToSheets() {
@@ -810,8 +1210,7 @@ async function loadMonths() {
     const endYear = now.getFullYear();
 
     for (let year = 2026; year <= endYear; year++) {
-      const maxMonth = (year === endYear) ? now.getMonth() : 11; // 0-indexed
-      for (let mi = 0; mi <= maxMonth; mi++) {
+      for (let mi = 0; mi <= 11; mi++) {
         const key = `${MONTHS[mi]}_${year}`;
         const opt = document.createElement('option');
         opt.value = key;
@@ -902,15 +1301,17 @@ function toggleTxTable() {
   document.getElementById('txTableToggleIcon').textContent = txTableVisible ? '▲' : '▼';
 }
 
-function renderKPIs(data) {
-  document.getElementById('kpiTotal').textContent = formatCurrency(data.totalSpend);
-  document.getElementById('kpiCount').textContent = data.transactionCount;
+function kpiRow(label, val) {
+  return `<div class="kpi-row"><span class="split-label">${label}</span><span class="kpi-row-val">${val}</span></div>`;
+}
 
-  const pooja = (data.byPaidBy && data.byPaidBy['Pooja']) || 0;
-  const kunal = (data.byPaidBy && data.byPaidBy['Kunal']) || 0;
+function renderKPIs(data) {
+  const pooja = (data.byResponsibility && data.byResponsibility['Pooja']) || (data.byPaidBy && data.byPaidBy['Pooja']) || 0;
+  const kunal = (data.byResponsibility && data.byResponsibility['Kunal']) || (data.byPaidBy && data.byPaidBy['Kunal']) || 0;
   document.getElementById('kpiSplit').innerHTML =
-    `<span class="split-label">Pooja</span> ${formatCurrency(pooja)}<br>` +
-    `<span class="split-label">Kunal</span> ${formatCurrency(kunal)}`;
+    kpiRow('Total', formatCurrency(data.totalSpend)) +
+    kpiRow('Pooja', formatCurrency(pooja)) +
+    kpiRow('Kunal', formatCurrency(kunal));
 
   if (data.settlement === null) {
     document.getElementById('kpiSettlement').innerHTML =
@@ -943,12 +1344,13 @@ function renderSalaryKPIs(data) {
   const pooja = data.Pooja || 0;
   const kunal = data.Kunal || 0;
   const combined = pooja + kunal;
-  const grid = document.getElementById('kpiSalaryGrid');
-  if (!pooja && !kunal) { grid.style.display = 'none'; return; }
-  document.getElementById('kpiSalaryPooja').textContent = pooja ? formatCurrency(pooja) : '—';
-  document.getElementById('kpiSalaryKunal').textContent = kunal ? formatCurrency(kunal) : '—';
-  document.getElementById('kpiSalaryCombined').textContent = combined ? formatCurrency(combined) : '—';
-  grid.style.display = '';
+  const card = document.getElementById('kpiSalaryCard');
+  if (!pooja && !kunal) { card.style.display = 'none'; return; }
+  document.getElementById('kpiSalaryAll').innerHTML =
+    kpiRow('Total', formatCurrency(combined)) +
+    kpiRow('Pooja', pooja ? formatCurrency(pooja) : '—') +
+    kpiRow('Kunal', kunal ? formatCurrency(kunal) : '—');
+  document.getElementById('kpiSalaryCard').style.display = '';
 }
 
 const CHART_COLORS = [
@@ -1237,6 +1639,15 @@ const TX_COLS = [
   { key: 'mood',           label: 'Mood',           type: 'select', opts: MOODS },
   { key: 'remarks',        label: 'Remarks',        type: 'text'   },
 ];
+
+// Keep TX_COLS opts in sync whenever CATEGORIES/EXPENSE_TYPES/PAYMENT_METHODS are reassigned
+function syncColOpts() {
+  TX_COLS.forEach(c => {
+    if (c.key === 'category') c.opts = CATEGORIES;
+    else if (c.key === 'expense_type') c.opts = EXPENSE_TYPES;
+    else if (c.key === 'payment_method') c.opts = PAYMENT_METHODS;
+  });
+}
 
 let savedTxList = [];
 let txSort = { col: 'date', dir: 'asc' };
@@ -1913,7 +2324,13 @@ async function submitAddRowModal() {
   addRowData.remarks = document.getElementById('arm-remarks').value.trim();
 
   if (!dateISO) { document.getElementById('arm-date').focus(); return; }
-  if (!amount || amount <= 0) { document.getElementById('arm-amount').focus(); return; }
+  const amountEl = document.getElementById('arm-amount');
+  if (!amount || amount <= 0) {
+    amountEl.classList.add('arm-input-error');
+    amountEl.focus();
+    return;
+  }
+  amountEl.classList.remove('arm-input-error');
 
   addRowData.date = isoToAppDate(dateISO);
   addRowData.amount = amount;
@@ -2545,7 +2962,7 @@ async function loadSalaryHistory() {
     });
 
     const splitByMonth = {};
-    trendsData.monthlySplit?.forEach(r => {
+    (trendsData.monthlyResponsibility || trendsData.monthlySplit)?.forEach(r => {
       splitByMonth[r.month] = { Pooja: r.Pooja || 0, Kunal: r.Kunal || 0 };
     });
 

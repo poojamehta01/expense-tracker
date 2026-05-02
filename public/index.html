@@ -14,6 +14,7 @@
   <title>💰 Expense Tracker</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -34,11 +35,12 @@
 
     <!-- Tab nav -->
     <nav class="tab-nav">
-      <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
-      <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
+      <button class="tab-btn active" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
+      <button class="tab-btn" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
       <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
       <button class="tab-btn" onclick="switchTab('salary')" id="tab-btn-salary">Salary</button>
       <button class="tab-btn" onclick="switchTab('ask')" id="tab-btn-ask">Ask AI</button>
+      <button class="tab-btn" onclick="switchTab('ai-memory')" id="tab-btn-ai-memory">🧠 AI Memory</button>
       <div class="tab-nav-spacer"></div>
       <div class="global-filter-group">
         <button class="global-filter-btn active" data-person="all"    onclick="setGlobalFilter('all')">All</button>
@@ -68,36 +70,16 @@
         <!-- KPI cards -->
         <div class="kpi-grid" id="kpiGrid">
           <div class="kpi-card">
-            <div class="kpi-label">Total Spend</div>
-            <div class="kpi-value" id="kpiTotal">—</div>
+            <div class="kpi-label">Spend</div>
+            <div id="kpiSplit">—</div>
           </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Transactions</div>
-            <div class="kpi-value" id="kpiCount">—</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Pooja vs Kunal</div>
-            <div class="kpi-value small" id="kpiSplit">—</div>
+          <div class="kpi-card kpi-salary-combined" id="kpiSalaryCard" style="display:none">
+            <div class="kpi-label">Salary</div>
+            <div id="kpiSalaryAll">—</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Settlement</div>
             <div class="kpi-value small" id="kpiSettlement">—</div>
-          </div>
-        </div>
-
-        <!-- Salary KPI row -->
-        <div class="kpi-grid kpi-salary-grid" id="kpiSalaryGrid" style="display:none">
-          <div class="kpi-card kpi-salary-pooja">
-            <div class="kpi-label">Pooja Salary</div>
-            <div class="kpi-value" id="kpiSalaryPooja">—</div>
-          </div>
-          <div class="kpi-card kpi-salary-kunal">
-            <div class="kpi-label">Kunal Salary</div>
-            <div class="kpi-value" id="kpiSalaryKunal">—</div>
-          </div>
-          <div class="kpi-card kpi-salary-combined">
-            <div class="kpi-label">Combined Salary</div>
-            <div class="kpi-value" id="kpiSalaryCombined">—</div>
           </div>
         </div>
 
@@ -207,12 +189,15 @@
         <!-- Upload area -->
         <div class="upload-card" id="uploadArea">
           <div class="upload-icon">⬆</div>
-          <p class="upload-title">Drop your screenshots or PDFs here</p>
-          <p class="upload-sub">PhonePe · GPay · CRED · AmazonPay · Bank statements</p>
+          <p class="upload-title">Drop your screenshots, PDFs, or spreadsheets here</p>
+          <p class="upload-sub">PhonePe · GPay · CRED · AmazonPay · Bank statements · CSV · XLSX</p>
           <label for="fileInput" class="btn-upload">Choose files</label>
-          <input type="file" id="fileInput" multiple accept="image/*,.pdf" hidden />
-          <p class="upload-hint">PNG, JPG, HEIC, PDF — up to 20MB per file</p>
+          <input type="file" id="fileInput" multiple accept="image/*,.pdf,.csv,.xlsx,.xls" hidden />
+          <p class="upload-hint">PNG, JPG, HEIC, PDF, CSV, XLSX — up to 20MB per file</p>
         </div>
+
+        <!-- Motivational quote -->
+        <div id="motd-quote" class="motd-quote"></div>
 
         <!-- Paste messages card -->
         <div class="paste-card">
@@ -254,19 +239,39 @@
             </div>
           </div>
 
+          <!-- Bulk edit bar (shown when rows are checked) -->
+          <div id="reviewBulkBar" class="bulk-bar hidden">
+            <span class="bulk-count" id="reviewBulkCount">0 selected</span>
+            <div class="bulk-actions">
+              <select id="reviewBulkField" onchange="updateReviewBulkValue()">
+                <option value="payment_method">Payment Method</option>
+                <option value="paid_by">Paid By</option>
+                <option value="expense_type">Expense Type</option>
+                <option value="category">Category</option>
+                <option value="mood">Mood</option>
+                <option value="impulse">Impulse</option>
+                <option value="remarks">Remarks</option>
+              </select>
+              <div id="reviewBulkValue"></div>
+              <button class="btn-primary small" onclick="applyReviewBulk()">Apply to selected</button>
+            </div>
+            <button class="bulk-clear" onclick="reviewClearSelection()" title="Clear selection">×</button>
+          </div>
+
           <div class="table-wrapper">
             <table id="txTable">
               <thead>
                 <tr>
+                  <th><input type="checkbox" id="txSelectAll" onchange="reviewSelectAll(this.checked)" title="Select all" /></th>
                   <th>Date</th>
                   <th>Amount (₹)</th>
                   <th>Description</th>
-                  <th>Payment Method</th>
-                  <th>Paid by</th>
-                  <th>Expense Type</th>
-                  <th>Category</th>
-                  <th>Mood</th>
-                  <th>Impulse/Int.</th>
+                  <th>Payment Method <button class="btn-fill-col" onclick="openFillCol(event,'payment_method')" title="Fill all rows">↓</button></th>
+                  <th>Paid by <button class="btn-fill-col" onclick="openFillCol(event,'paid_by')" title="Fill all rows">↓</button></th>
+                  <th>Expense Type <button class="btn-fill-col" onclick="openFillCol(event,'expense_type')" title="Fill all rows">↓</button></th>
+                  <th>Category <button class="btn-fill-col" onclick="openFillCol(event,'category')" title="Fill all rows">↓</button></th>
+                  <th>Mood <button class="btn-fill-col" onclick="openFillCol(event,'mood')" title="Fill all rows">↓</button></th>
+                  <th>Impulse/Int. <button class="btn-fill-col" onclick="openFillCol(event,'impulse')" title="Fill all rows">↓</button></th>
                   <th>Remarks</th>
                   <th></th>
                 </tr>
@@ -514,6 +519,36 @@
         </div>
       </div><!-- /tab-ask -->
 
+      <!-- AI Memory tab -->
+      <div id="tab-ai-memory" class="hidden">
+        <div class="ai-memory-tab-header">
+          <div>
+            <h2 class="ai-memory-tab-title">🧠 AI Memory</h2>
+            <p class="ai-memory-tab-sub">Learned merchant patterns injected into every Gemini extraction</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="aiMemoryText" style="font-size:13px;color:var(--text-muted)">Loading…</span>
+            <button class="btn-secondary small" id="aiRetrainBtn" onclick="retrainAIMemory()">Retrain</button>
+          </div>
+        </div>
+        <div class="table-wrapper" style="max-height:calc(100vh - 220px);overflow-y:auto;margin-top:12px">
+          <table class="data-table" id="aiMemoryTable">
+            <thead>
+              <tr>
+                <th>Merchant</th>
+                <th>Category</th>
+                <th>Expense Type</th>
+                <th>Payment Method</th>
+                <th style="text-align:right">Seen</th>
+              </tr>
+            </thead>
+            <tbody id="aiMemoryTableBody">
+              <tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /tab-ai-memory -->
+
     </main>
   </div>
 
@@ -572,8 +607,8 @@
             <input class="arm-input" id="arm-date" type="date" />
           </div>
           <div class="arm-field">
-            <label class="arm-label">Amount (₹)</label>
-            <input class="arm-input" id="arm-amount" type="number" min="0" step="0.01" placeholder="0" />
+            <label class="arm-label">Amount (₹) <span style="color:#ef4444">*</span></label>
+            <input class="arm-input" id="arm-amount" type="number" min="0" step="0.01" placeholder="0" oninput="this.classList.remove('arm-input-error')" />
           </div>
           <div class="arm-field arm-full">
             <label class="arm-label">Description</label>
