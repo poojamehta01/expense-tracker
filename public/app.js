@@ -387,8 +387,9 @@ async function handleFiles(files) {
       const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
       extracted.forEach(tx => {
         if (!tx.paid_by) tx.paid_by = currentUserName;
+        smartCategorize(tx); // apply pattern-based defaults before expense_type fallback
         if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
-          tx.expense_type = (tx.paid_by || currentUserName) + '_Personal';
+          tx.expense_type = tx.expense_type || (tx.paid_by || currentUserName) + '_Personal';
         }
         // if date is missing or has no month/year, pin it to selected month
         if (uMon && uYr && tx.date) {
@@ -619,6 +620,31 @@ function mapSpreadsheetRow(rawRow) {
   };
 }
 
+// ─── Smart Categorization ─────────────────────────────────────────────────────
+
+const SMART_PATTERNS = [
+  { match: /INDMONEY|INDMONEY1X/i,                        category: 'Investment',    personal: true },
+  { match: /GROWW|GROWWSTOCKS/i,                          category: 'Investment',    personal: true },
+  { match: /\bFD\b.*MOBILE|MOBILE.*\bFD\b|FD THROUGH/i,  category: 'Investment',    personal: true },
+  { match: /ZEPTO|ZEPTOMARKET/i,                          category: 'Zepto/Blinkit', expense_type: 'Common_50_50' },
+  { match: /SWIGGY|ZOMATO/i,                              category: 'Outside Food',  expense_type: 'Common_50_50' },
+  { match: /BLINKIT/i,                                    category: 'Zepto/Blinkit', expense_type: 'Common_50_50' },
+];
+
+function smartCategorize(tx) {
+  if (tx.category && tx.expense_type) return; // already set, skip
+  const desc = (tx.description || '').toUpperCase();
+  for (const p of SMART_PATTERNS) {
+    if (p.match.test(desc)) {
+      if (!tx.category)     tx.category = p.category;
+      if (!tx.expense_type) tx.expense_type = p.personal
+        ? (tx.paid_by || 'Pooja') + '_Personal'
+        : p.expense_type;
+      return;
+    }
+  }
+}
+
 // ─── Review Table ─────────────────────────────────────────────────────────────
 
 function renderTable(preserveSelection) {
@@ -645,9 +671,17 @@ function renderTable(preserveSelection) {
   updateReviewBulkBar();
 }
 
+function filterReviewTable() {
+  const q = (document.getElementById('reviewFilter')?.value || '').toLowerCase();
+  document.querySelectorAll('#txBody tr').forEach(tr => {
+    tr.style.display = (!q || (tr.dataset.desc || '').toLowerCase().includes(q)) ? '' : 'none';
+  });
+}
+
 function buildRow(tx, index) {
   const tr = document.createElement('tr');
   tr.dataset.index = index;
+  tr.dataset.desc = (tx.description || '').toLowerCase();
   if (reviewSelected.has(index)) tr.classList.add('row-selected');
 
   tr.innerHTML = `

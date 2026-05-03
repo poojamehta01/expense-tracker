@@ -347,6 +347,7 @@ body.dark .paste-textarea { background: #0f172a; color: #f1f5f9; border-color: #
 .table-note { font-size: 12px; color: #64748b; font-style: italic; }
 body.dark .table-note { color: #94a3b8; }
 .cat-search-input { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; width: 180px; outline: none; }
+.review-filter-input { width: 220px; flex-shrink: 0; }
 .cat-search-input:focus { border-color: var(--primary); }
 body.dark .cat-search-input { background: #0f172a; color: #f1f5f9; border-color: #334155; }
 #trendsCategorySection .table-wrapper { max-height: 540px; overflow-y: auto; }
