@@ -624,12 +624,46 @@ function mapSpreadsheetRow(rawRow) {
 // ─── Smart Categorization ─────────────────────────────────────────────────────
 
 const SMART_PATTERNS = [
-  { match: /INDMONEY|INDMONEY1X/i,                        category: 'Investment',    personal: true },
-  { match: /GROWW|GROWWSTOCKS/i,                          category: 'Investment',    personal: true },
-  { match: /\bFD\b.*MOBILE|MOBILE.*\bFD\b|FD THROUGH/i,  category: 'Investment',    personal: true },
-  { match: /ZEPTO|ZEPTOMARKET/i,                          category: 'Zepto/Blinkit', expense_type: 'Common_50_50' },
-  { match: /SWIGGY|ZOMATO/i,                              category: 'Outside Food',  expense_type: 'Common_50_50' },
-  { match: /BLINKIT/i,                                    category: 'Zepto/Blinkit', expense_type: 'Common_50_50' },
+  // Investments
+  { match: /INDMONEY|INDMONEY1X/i,                         category: 'Investment',          personal: true },
+  { match: /GROWW|GROWWSTOCKS/i,                           category: 'Investment',          personal: true },
+  { match: /FD THROUGH|FD.*MOBILE|MOBILE.*\bFD\b/i,       category: 'Investment',          personal: true },
+  { match: /RD INSTALL|\bRD INSTALL/i,                     category: 'Investment',          personal: true },
+
+  // Credit card payments
+  { match: /CRED[. ]CLUB|PAYMENT ON CRED/i,               category: 'Credit Card Payment', creditcard: true },
+
+  // Groceries / food delivery (common)
+  { match: /ZEPTO|ZEPTOMARKET/i,                           category: 'Zepto/Blinkit',       expense_type: 'Common_50_50' },
+  { match: /BLINKIT/i,                                     category: 'Zepto/Blinkit',       expense_type: 'Common_50_50' },
+  { match: /SWIGGY|ZOMATO/i,                               category: 'Outside Food',        expense_type: 'Common_50_50' },
+
+  // Fruits & Veggies (common)
+  { match: /\bFRUITS?\b/i,                                 category: 'Fruits & Veggies',    expense_type: 'Common_50_50' },
+  { match: /\bVEGGIES?\b|\bVEGETABLE/i,                   category: 'Fruits & Veggies',    expense_type: 'Common_50_50' },
+  { match: /\bCOCONUT\b/i,                                 category: 'Fruits & Veggies',    expense_type: 'Common_50_50' },
+
+  // Outside food (keyword in UPI description)
+  { match: /\bCOCONUT WATER\b|\bJUICE\b/i,                category: 'Outside Food',        expense_type: 'Common_50_50' },
+
+  // Medical / medicines
+  { match: /\bMEDICAL\b|\bMEDICINE\b|\bPHARMA(CY)?\b/i,  category: 'Medicines',           personal: true },
+  { match: /\bINJECTION\b/i,                               category: 'Medicines',           personal: true },
+  { match: /PRIDE FOREVER/i,                               category: 'Medicines',           personal: true },
+
+  // Transport
+  { match: /\bPORTER\b/i,                                  category: 'Porter/Rapido',       personal: true },
+  { match: /\bRAPIDO\b/i,                                  category: 'Porter/Rapido',       personal: true },
+
+  // Home
+  { match: /LIVPURE/i,                                     category: 'Home stuff',          expense_type: 'Common_50_50' },
+
+  // Salon / beauty
+  { match: /\bNAIL\b/i,                                    category: 'Salon',               personal: true },
+  { match: /\bSALON\b|\bSPA\b|\bBEAUTY\b/i,              category: 'Salon',               personal: true },
+
+  // Flowers
+  { match: /FLORIST|FLOWRIST|\bFLOWER|\bBOUQUET\b|\bBOQUET\b/i, category: 'Flowers',      personal: true },
 ];
 
 function smartCategorize(tx) {
@@ -638,9 +672,12 @@ function smartCategorize(tx) {
   for (const p of SMART_PATTERNS) {
     if (p.match.test(desc)) {
       if (!tx.category)     tx.category = p.category;
-      if (!tx.expense_type) tx.expense_type = p.personal
-        ? (tx.paid_by || 'Pooja') + '_Personal'
-        : p.expense_type;
+      if (!tx.expense_type) {
+        const person = tx.paid_by || 'Pooja';
+        tx.expense_type = p.creditcard ? person + '_CreditCard_Bill'
+          : p.personal   ? person + '_Personal'
+          : p.expense_type;
+      }
       return;
     }
   }
