@@ -617,6 +617,7 @@ function mapSpreadsheetRow(rawRow) {
     mood: str(find('mood')),
     impulse: str(find('impulse')),
     remarks: str(find('remarks','notes','comment','comments')),
+    reviewed: false,
   };
 }
 
@@ -658,6 +659,8 @@ function renderTable(preserveSelection) {
   transactions.forEach((tx, i) => {
     body.appendChild(buildRow(tx, i));
   });
+  buildFilterRow();
+  filterReviewTable();
 
   count.textContent = `${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}`;
   section.classList.remove('hidden');
@@ -671,11 +674,94 @@ function renderTable(preserveSelection) {
   updateReviewBulkBar();
 }
 
+let reviewFilters = { date:'', amount:'', description:'', payment_method:'', paid_by:'', expense_type:'', category:'', mood:'', impulse:'', remarks:'', reviewed:'all' };
+
 function filterReviewTable() {
-  const q = (document.getElementById('reviewFilter')?.value || '').toLowerCase();
+  const f = reviewFilters;
   document.querySelectorAll('#txBody tr').forEach(tr => {
-    tr.style.display = (!q || (tr.dataset.desc || '').toLowerCase().includes(q)) ? '' : 'none';
+    const i = parseInt(tr.dataset.index);
+    if (isNaN(i)) { tr.style.display = ''; return; }
+    const tx = transactions[i];
+    const match =
+      (!f.date           || (tx.date           || '').toLowerCase().includes(f.date.toLowerCase())) &&
+      (!f.amount         || String(tx.amount || '').includes(f.amount)) &&
+      (!f.description    || (tx.description    || '').toLowerCase().includes(f.description.toLowerCase())) &&
+      (!f.payment_method || tx.payment_method === f.payment_method) &&
+      (!f.paid_by        || tx.paid_by         === f.paid_by) &&
+      (!f.expense_type   || tx.expense_type    === f.expense_type) &&
+      (!f.category       || tx.category        === f.category) &&
+      (!f.mood           || tx.mood            === f.mood) &&
+      (!f.impulse        || tx.impulse         === f.impulse) &&
+      (!f.remarks        || (tx.remarks        || '').toLowerCase().includes(f.remarks.toLowerCase())) &&
+      (f.reviewed === 'all' || (f.reviewed === 'reviewed' ? tx.reviewed : !tx.reviewed));
+    tr.style.display = match ? '' : 'none';
   });
+}
+
+function buildFilterRow() {
+  const tr = document.getElementById('txFilterRow');
+  if (!tr) return;
+  tr.innerHTML = '';
+  const mkText = key => {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'rv-filter-input'; inp.placeholder = '…';
+    inp.value = reviewFilters[key] || '';
+    inp.oninput = () => { reviewFilters[key] = inp.value; filterReviewTable(); };
+    return inp;
+  };
+  const mkSelect = (key, opts) => {
+    const sel = document.createElement('select');
+    sel.className = 'rv-filter-select';
+    [['','All'], ...opts.map(o => [o, o.replace(/_/g,' ')])].forEach(([v,l]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o);
+    });
+    sel.value = reviewFilters[key] || '';
+    sel.onchange = () => { reviewFilters[key] = sel.value; filterReviewTable(); };
+    return sel;
+  };
+  const mkReviewedSelect = () => {
+    const sel = document.createElement('select');
+    sel.className = 'rv-filter-select';
+    [['all','All'],['unreviewed','Unreviewed'],['reviewed','Reviewed']].forEach(([v,l]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o);
+    });
+    sel.value = reviewFilters.reviewed || 'all';
+    sel.onchange = () => { reviewFilters.reviewed = sel.value; filterReviewTable(); };
+    return sel;
+  };
+  const cols = [
+    null,                                                             // checkbox
+    mkText('date'),
+    mkText('amount'),
+    mkText('description'),
+    mkSelect('payment_method', PAYMENT_METHODS),
+    mkSelect('paid_by', ['Pooja','Kunal']),
+    mkSelect('expense_type', EXPENSE_TYPES),
+    mkSelect('category', CATEGORIES),
+    mkSelect('mood', MOODS.filter(Boolean)),
+    mkSelect('impulse', IMPULSE_OPTIONS.filter(Boolean)),
+    mkText('remarks'),
+    mkReviewedSelect(),
+    null,                                                             // delete
+  ];
+  cols.forEach(el => {
+    const td = document.createElement('td');
+    td.className = 'rv-filter-cell';
+    if (el) td.appendChild(el);
+    tr.appendChild(td);
+  });
+}
+
+function toggleReviewed(index) {
+  transactions[index].reviewed = !transactions[index].reviewed;
+  const tr = document.querySelector(`#txBody tr[data-index="${index}"]`);
+  if (tr) {
+    tr.classList.toggle('row-reviewed', transactions[index].reviewed);
+    tr.classList.toggle('row-unreviewed', !transactions[index].reviewed);
+    const btn = tr.querySelector('.rv-reviewed-btn');
+    if (btn) { btn.textContent = transactions[index].reviewed ? '✓' : '○'; btn.title = transactions[index].reviewed ? 'Reviewed — click to undo' : 'Mark as reviewed'; }
+  }
+  filterReviewTable();
 }
 
 function buildRow(tx, index) {
@@ -683,6 +769,7 @@ function buildRow(tx, index) {
   tr.dataset.index = index;
   tr.dataset.desc = (tx.description || '').toLowerCase();
   if (reviewSelected.has(index)) tr.classList.add('row-selected');
+  tr.classList.add(tx.reviewed ? 'row-reviewed' : 'row-unreviewed');
 
   tr.innerHTML = `
     <td><input type="checkbox" class="review-cb" ${reviewSelected.has(index) ? 'checked' : ''} onchange="reviewToggleRow(${index}, this.checked)" /></td>
@@ -696,6 +783,7 @@ function buildRow(tx, index) {
     <td class="rv-td"></td>
     <td class="rv-td"></td>
     <td><input type="text" value="${esc(tx.remarks || '')}" onchange="updateTx(${index},'remarks',this.value)" /></td>
+    <td><button class="rv-reviewed-btn" onclick="toggleReviewed(${index})" title="${tx.reviewed ? 'Reviewed — click to undo' : 'Mark as reviewed'}">${tx.reviewed ? '✓' : '○'}</button></td>
     <td><button class="btn-delete" onclick="deleteRow(${index})" title="Delete">×</button></td>
   `;
 
@@ -1076,7 +1164,8 @@ function addEmptyRow() {
     category: 'Others',
     mood: '',
     impulse: '',
-    remarks: ''
+    remarks: '',
+    reviewed: false,
   });
   renderTable();
   const rows = document.querySelectorAll('#txBody tr');

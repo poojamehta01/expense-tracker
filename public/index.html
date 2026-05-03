@@ -233,7 +233,6 @@
               <h2>Review Transactions</h2>
               <span id="txCount" class="tx-count"></span>
             </div>
-            <input type="text" id="reviewFilter" class="cat-search-input review-filter-input" placeholder="Filter by description…" oninput="filterReviewTable()" />
             <div class="table-actions">
               <button class="btn-secondary" onclick="addEmptyRow()">+ Add row</button>
               <button class="btn-primary" onclick="saveToTracker()" id="saveBtn">Save to Tracker</button>
@@ -274,8 +273,10 @@
                   <th>Mood <button class="btn-fill-col" onclick="openFillCol(event,'mood')" title="Fill all rows">↓</button></th>
                   <th>Impulse/Int. <button class="btn-fill-col" onclick="openFillCol(event,'impulse')" title="Fill all rows">↓</button></th>
                   <th>Remarks</th>
+                  <th>Reviewed</th>
                   <th></th>
                 </tr>
+                <tr id="txFilterRow" class="rv-filter-row"></tr>
               </thead>
               <tbody id="txBody"></tbody>
             </table>
