@@ -623,12 +623,12 @@ function mapSpreadsheetRow(rawRow) {
 // ─── Smart Categorization ─────────────────────────────────────────────────────
 
 const SMART_PATTERNS = [
-  { match: /INDMONEY|INDMONEY1X/i,           category: 'Investment',     expense_type: 'Pooja_Personal' },
-  { match: /GROWW|GROWWSTOCKS/i,             category: 'Investment',     expense_type: 'Pooja_Personal' },
-  { match: /\bFD\b.*MOBILE|MOBILE.*\bFD\b|FD THROUGH/i, category: 'Investment', expense_type: 'Pooja_Personal' },
-  { match: /ZEPTO|ZEPTOMARKET/i,             category: 'Zepto/Blinkit',  expense_type: 'Common_50_50' },
-  { match: /SWIGGY|ZOMATO/i,                 category: 'Outside Food',   expense_type: 'Common_50_50' },
-  { match: /BLINKIT/i,                       category: 'Zepto/Blinkit',  expense_type: 'Common_50_50' },
+  { match: /INDMONEY|INDMONEY1X/i,                        category: 'Investment',    personal: true },
+  { match: /GROWW|GROWWSTOCKS/i,                          category: 'Investment',    personal: true },
+  { match: /\bFD\b.*MOBILE|MOBILE.*\bFD\b|FD THROUGH/i,  category: 'Investment',    personal: true },
+  { match: /ZEPTO|ZEPTOMARKET/i,                          category: 'Zepto/Blinkit', expense_type: 'Common_50_50' },
+  { match: /SWIGGY|ZOMATO/i,                              category: 'Outside Food',  expense_type: 'Common_50_50' },
+  { match: /BLINKIT/i,                                    category: 'Zepto/Blinkit', expense_type: 'Common_50_50' },
 ];
 
 function smartCategorize(tx) {
@@ -636,8 +636,10 @@ function smartCategorize(tx) {
   const desc = (tx.description || '').toUpperCase();
   for (const p of SMART_PATTERNS) {
     if (p.match.test(desc)) {
-      if (!tx.category)      tx.category = p.category;
-      if (!tx.expense_type)  tx.expense_type = p.expense_type;
+      if (!tx.category)     tx.category = p.category;
+      if (!tx.expense_type) tx.expense_type = p.personal
+        ? (tx.paid_by || 'Pooja') + '_Personal'
+        : p.expense_type;
       return;
     }
   }
