@@ -643,7 +643,10 @@ const SMART_PATTERNS = [
   { match: /\bVEGGIES?\b|\bVEGETABLE/i,                   category: 'Fruits & Veggies',    expense_type: 'Common_50_50' },
   { match: /\bCOCONUT\b/i,                                 category: 'Fruits & Veggies',    expense_type: 'Common_50_50' },
 
-  // Outside food (keyword in UPI description)
+  // Outside food (keyword in UPI description / bank narration)
+  { match: /OUTSIDEFOOD|OUTSIDE[\s_-]?FOOD/i,             category: 'Outside Food',        expense_type: 'Common_50_50' },
+  { match: /\bRESTAURANT\b|\bCAFE\b|\bCAFÉ\b|\bDHABA\b/i,category: 'Outside Food',        expense_type: 'Common_50_50' },
+  { match: /\bBIRYANI\b|\bPIZZA\b|\bBURGER\b|\bICE.?CREAM\b/i, category: 'Outside Food', expense_type: 'Common_50_50' },
   { match: /\bCOCONUT WATER\b|\bJUICE\b/i,                category: 'Outside Food',        expense_type: 'Common_50_50' },
 
   // Medical / medicines
@@ -654,9 +657,21 @@ const SMART_PATTERNS = [
   // Transport
   { match: /\bPORTER\b/i,                                  category: 'Porter/Rapido',       personal: true },
   { match: /\bRAPIDO\b/i,                                  category: 'Porter/Rapido',       personal: true },
+  { match: /\bOLA\b|\bOLA.?CAB/i,                          category: 'Ola/Uber',            personal: true },
+  { match: /\bUBER\b/i,                                    category: 'Ola/Uber',            personal: true },
+  { match: /\bPETROL\b|\bDIESEL\b|\bFUEL\b/i,             category: 'Petrol',              personal: true },
+  { match: /HPCL|BPCL|IOCL|INDIANOIL|HP.?PETROL/i,        category: 'Petrol',              personal: true },
+
+  // Subscriptions
+  { match: /NETFLIX|HOTSTAR|DISNEYPLUS|DISNEY\+/i,         category: 'Subscriptions',       personal: true },
+  { match: /SPOTIFY|APPLE.?MUSIC|JIOSAAVN/i,               category: 'Subscriptions',       personal: true },
+  { match: /PRIMEVIDEO|PRIME.?VIDEO|AMAZON.?PRIME/i,       category: 'Subscriptions',       personal: true },
+  { match: /YOUTUBE.?PREMIUM|GOOGLE.?ONE/i,                category: 'Subscriptions',       personal: true },
 
   // Home
   { match: /LIVPURE/i,                                     category: 'Home stuff',          expense_type: 'Common_50_50' },
+  { match: /\bELECTRICITY\b|\bBESCOM\b|\bBBMP\b/i,        category: 'Monthly Home bills',  expense_type: 'Common_50_50' },
+  { match: /\bGAS\b.*\bCYLINDER\b|\bINDIANGAS\b|\bBHARATGAS\b|\bHPGAS\b/i, category: 'Monthly Home bills', expense_type: 'Common_50_50' },
 
   // Salon / beauty
   { match: /\bNAIL\b/i,                                    category: 'Salon',               personal: true },
