@@ -1,0 +1,86 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+function loadSmartCategorize() {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const start = source.indexOf('const SMART_PATTERNS = [');
+  const end = source.indexOf('// ─── Review Table', start);
+
+  assert.notEqual(start, -1, 'smart categorization patterns must exist');
+  assert.notEqual(end, -1, 'smart categorization section must have an end marker');
+
+  const context = vm.createContext({});
+  vm.runInContext(
+    `${source.slice(start, end)}\nglobalThis.smartCategorizeForTest = smartCategorize;`,
+    context
+  );
+  return context.smartCategorizeForTest;
+}
+
+const smartCategorize = loadSmartCategorize();
+
+const approvedMappings = [
+  ['UPI-AUTOPAY-FINZOOMERS SERVICES -FINZOOMERS.CF@ICICI-SUBSCHARGE', 'Investment'],
+  ['UPI-AUTOPAY-GROWW-GROWWSTOCKS.ELEMENTS@ICICI-DEBIT FOR STOCKS', 'Investment'],
+  ['UPI-AUTOPAY-AMAZON INDIA-AUDIBLE RECURRING', 'Subscriptions'],
+  ['UPI-AUTOPAY-APPLE MEDIA SERVICES-EXECUTION TEST', 'Subscriptions'],
+  ['UPI-PROLEVEL PERSONAL TRAINING-GYM', 'Fitness'],
+  ['UPI-KUNAL-CAR EMI', 'Car downpayment/ emi'],
+  ['UPI-KUNAL-RENT', 'Rent'],
+  ['UPI-KUNAL-JUNE SETTLEMENT', 'Settlement'],
+  ['UPI-DEVAKKI-COOKUTENSILS', 'Home stuff'],
+  ['UPI-NYKAA ON TREND-PAYMENT FROM PHONE', 'Shopping - skin/hair care'],
+  ['UPI-PRONTO-PAYMENT FOR UPI', 'Pronto'],
+  ['UPI-SHOP-WATER', 'Outside Food'],
+];
+
+for (const [description, expectedCategory] of approvedMappings) {
+  test(`categorizes ${description} as ${expectedCategory}`, () => {
+    const transaction = { description, paid_by: 'Pooja' };
+
+    smartCategorize(transaction);
+
+    assert.equal(transaction.category, expectedCategory);
+  });
+}
+
+test('uses the payer for a FinZoomers personal expense type', () => {
+  const transaction = {
+    description: 'UPI-AUTOPAY-FINZOOMERS SERVICES-SUBSCHARGE',
+    paid_by: 'Kunal',
+  };
+
+  smartCategorize(transaction);
+
+  assert.equal(transaction.expense_type, 'Kunal_Personal');
+});
+
+test('leaves ambiguous merchant descriptions uncategorized', () => {
+  for (const description of [
+    'UPI-AMAZON-PAYMENT FROM PHONE',
+    'UPI-WATERFALL RESORT-PAYMENT',
+  ]) {
+    const transaction = { description, paid_by: 'Pooja' };
+
+    smartCategorize(transaction);
+
+    assert.equal(transaction.category, undefined);
+  }
+});
+
+test('does not overwrite a reviewed category and expense type', () => {
+  const transaction = {
+    description: 'UPI-AUTOPAY-FINZOOMERS SERVICES-SUBSCHARGE',
+    paid_by: 'Pooja',
+    category: 'Others',
+    expense_type: 'Common_50_50',
+  };
+
+  smartCategorize(transaction);
+
+  assert.equal(transaction.category, 'Others');
+  assert.equal(transaction.expense_type, 'Common_50_50');
+});
