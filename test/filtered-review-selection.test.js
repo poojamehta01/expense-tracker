@@ -104,3 +104,98 @@ test('derives header selection state from visible indexes', () => {
     { checked: false, indeterminate: false }
   );
 });
+
+function createClassList() {
+  const classes = new Set();
+  return {
+    add: name => classes.add(name),
+    remove: name => classes.delete(name),
+    toggle: (name, enabled) => {
+      if (enabled) classes.add(name);
+      else classes.delete(name);
+    },
+    contains: name => classes.has(name),
+  };
+}
+
+function createReviewWorkflow(initialSelection = []) {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+  const helpersStart = source.indexOf('// ─── Review Filter Helpers');
+  const helpersEnd = source.indexOf('// ─── Review Table', helpersStart);
+  const filterStart = source.indexOf('function filterReviewTable()');
+  const filterEnd = source.indexOf('\nfunction buildFilterRow()', filterStart);
+  const selectAllStart = source.indexOf('function reviewSelectAll(checked)');
+  const selectAllEnd = source.indexOf('\nfunction reviewClearSelection()', selectAllStart);
+
+  assert.notEqual(helpersStart, -1, 'review filter helpers must exist');
+  assert.notEqual(helpersEnd, -1, 'review filter helpers must have an end marker');
+  assert.notEqual(filterStart, -1, 'filterReviewTable must exist');
+  assert.notEqual(selectAllStart, -1, 'reviewSelectAll must exist');
+
+  const transactions = [
+    { category: 'Investment' },
+    { category: 'Outside Food' },
+    { category: 'Investment' },
+  ];
+  const rows = transactions.map((_, index) => {
+    const row = { dataset: { index: String(index) }, style: { display: '' }, classList: createClassList() };
+    row.checkbox = { checked: initialSelection.includes(index), closest: () => row };
+    return row;
+  });
+  const elements = {
+    txCount: { textContent: '' },
+    txSelectAll: { checked: false, indeterminate: false },
+  };
+  const document = {
+    getElementById: id => elements[id] || null,
+    querySelectorAll: selector => {
+      if (selector === '#txBody tr') return rows;
+      if (selector === '#txBody .review-cb') return rows.map(row => row.checkbox);
+      return [];
+    },
+    querySelector: selector => {
+      const match = selector.match(/^#txBody tr\[data-index="(\d+)"\]$/);
+      return match ? rows[Number(match[1])] || null : null;
+    },
+  };
+  const context = vm.createContext({ document });
+  vm.runInContext(
+    `let transactions = ${JSON.stringify(transactions)};
+     let reviewSelected = new Set(${JSON.stringify(initialSelection)});
+     let reviewFilters = ${JSON.stringify(EMPTY_FILTERS)};
+     function updateReviewBulkBar() {}
+     ${source.slice(helpersStart, helpersEnd)}
+     ${source.slice(filterStart, filterEnd)}
+     ${source.slice(selectAllStart, selectAllEnd)}
+     globalThis.workflowForTest = {
+       filterReviewTable,
+       reviewSelectAll,
+       setFilters: filters => { reviewFilters = { ...reviewFilters, ...filters }; },
+       getSelection: () => reviewSelected,
+     };`,
+    context
+  );
+
+  return { workflow: context.workflowForTest, rows, elements };
+}
+
+test('filtered select-all changes only visible review rows and reports their count', () => {
+  const { workflow, rows, elements } = createReviewWorkflow();
+
+  workflow.setFilters({ category: 'Investment' });
+  workflow.filterReviewTable();
+  workflow.reviewSelectAll(true);
+
+  assert.equal(elements.txCount.textContent, '2 of 3 transactions');
+  assert.deepEqual(Array.from(workflow.getSelection()).sort((a, b) => a - b), [0, 2]);
+  assert.equal(rows[1].style.display, 'none');
+  assert.equal(elements.txSelectAll.checked, true);
+
+  const hiddenSelection = createReviewWorkflow([1]);
+  hiddenSelection.workflow.setFilters({ category: 'Investment' });
+  hiddenSelection.workflow.filterReviewTable();
+  hiddenSelection.workflow.reviewSelectAll(true);
+  hiddenSelection.workflow.reviewSelectAll(false);
+
+  assert.deepEqual(Array.from(hiddenSelection.workflow.getSelection()), [1]);
+});

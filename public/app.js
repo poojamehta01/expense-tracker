@@ -772,7 +772,6 @@ function renderTable(preserveSelection) {
 
   const section = document.getElementById('tableSection');
   const body = document.getElementById('txBody');
-  const count = document.getElementById('txCount');
 
   body.innerHTML = '';
   transactions.forEach((tx, i) => {
@@ -780,16 +779,10 @@ function renderTable(preserveSelection) {
   });
   buildFilterRow();
   filterReviewTable();
-
-  count.textContent = `${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}`;
+  updateReviewSelectAllState(getVisibleReviewIndexes(transactions, reviewFilters));
   section.classList.remove('hidden');
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  const sa = document.getElementById('txSelectAll');
-  if (sa) {
-    sa.checked = reviewSelected.size > 0 && reviewSelected.size === transactions.length;
-    sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
-  }
   updateReviewBulkBar();
   updateSaveControls();
 }
@@ -797,14 +790,27 @@ function renderTable(preserveSelection) {
 let reviewFilters = { date:'', amount:'', description:'', payment_method:'', paid_by:'', expense_type:'', category:'', mood:'', impulse:'', remarks:'', reviewed:'all' };
 
 function filterReviewTable() {
-  const f = reviewFilters;
+  const visibleIndexes = getVisibleReviewIndexes(transactions, reviewFilters);
+  const visibleIndexSet = new Set(visibleIndexes);
   document.querySelectorAll('#txBody tr').forEach(tr => {
     const i = parseInt(tr.dataset.index);
     if (isNaN(i)) { tr.style.display = ''; return; }
-    const tx = transactions[i];
-    const match = transactionMatchesReviewFilters(tx, f);
-    tr.style.display = match ? '' : 'none';
+    tr.style.display = visibleIndexSet.has(i) ? '' : 'none';
   });
+  document.getElementById('txCount').textContent = formatReviewTransactionCount(
+    visibleIndexes.length,
+    transactions.length,
+    hasActiveReviewFilters(reviewFilters)
+  );
+  updateReviewSelectAllState(visibleIndexes);
+}
+
+function updateReviewSelectAllState(visibleIndexes) {
+  const sa = document.getElementById('txSelectAll');
+  if (!sa) return;
+  const state = getVisibleReviewSelectionState(reviewSelected, visibleIndexes);
+  sa.checked = state.checked;
+  sa.indeterminate = state.indeterminate;
 }
 
 function buildFilterRow() {
@@ -1055,11 +1061,17 @@ function getReviewFieldOpts(field) {
 }
 
 function reviewSelectAll(checked) {
-  reviewSelected = checked ? new Set(transactions.map((_, i) => i)) : new Set();
-  document.querySelectorAll('#txBody .review-cb').forEach((cb, i) => {
-    cb.checked = checked;
-    cb.closest('tr').classList.toggle('row-selected', checked);
+  const visibleIndexes = getVisibleReviewIndexes(transactions, reviewFilters);
+  const visibleIndexSet = new Set(visibleIndexes);
+  reviewSelected = updateVisibleReviewSelection(reviewSelected, visibleIndexes, checked);
+  document.querySelectorAll('#txBody .review-cb').forEach(cb => {
+    const row = cb.closest('tr');
+    const index = parseInt(row.dataset.index);
+    if (!visibleIndexSet.has(index)) return;
+    cb.checked = reviewSelected.has(index);
+    row.classList.toggle('row-selected', reviewSelected.has(index));
   });
+  updateReviewSelectAllState(visibleIndexes);
   updateReviewBulkBar();
 }
 
@@ -1067,11 +1079,7 @@ function reviewToggleRow(index, checked) {
   if (checked) reviewSelected.add(index);
   else reviewSelected.delete(index);
   document.querySelector(`#txBody tr[data-index="${index}"]`)?.classList.toggle('row-selected', checked);
-  const sa = document.getElementById('txSelectAll');
-  if (sa) {
-    sa.checked = reviewSelected.size === transactions.length && transactions.length > 0;
-    sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
-  }
+  updateReviewSelectAllState(getVisibleReviewIndexes(transactions, reviewFilters));
   updateReviewBulkBar();
 }
 
