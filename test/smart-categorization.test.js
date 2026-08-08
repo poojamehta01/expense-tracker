@@ -39,29 +39,39 @@ function loadArray(relativePath, declaration) {
 const smartCategorize = loadSmartCategorize();
 
 const approvedMappings = [
-  ['UPI-AUTOPAY-FINZOOMERS SERVICES -FINZOOMERS.CF@ICICI-SUBSCHARGE', 'Investment'],
-  ['UPI-AUTOPAY-GROWW-GROWWSTOCKS.ELEMENTS@ICICI-DEBIT FOR STOCKS', 'Investment'],
-  ['UPI-AUTOPAY-AMAZON INDIA-AUDIBLE RECURRING', 'Subscriptions'],
-  ['UPI-AUTOPAY-APPLE MEDIA SERVICES-EXECUTION TEST', 'Subscriptions'],
-  ['UPI-PROLEVEL PERSONAL TRAINING-GYM', 'Fitness'],
-  ['UPI-KUNAL-CAR EMI', 'Car downpayment/ emi'],
-  ['UPI-KUNAL-RENT', 'Rent'],
-  ['UPI-KUNAL-JUNE SETTLEMENT', 'Settlement'],
-  ['UPI-DEVAKKI-COOKUTENSILS', 'Home stuff'],
-  ['UPI-NYKAA ON TREND-PAYMENT FROM PHONE', 'Shopping - skin/hair care'],
-  ['UPI-PRONTO-PAYMENT FOR UPI', 'Pronto'],
-  ['UPI-SHOP-WATER', 'Outside Food'],
+  ['UPI-AUTOPAY-FINZOOMERS SERVICES -FINZOOMERS.CF@ICICI-SUBSCHARGE', 'Investment', 'Pooja_Personal'],
+  ['UPI-AUTOPAY-GROWW-GROWWSTOCKS.ELEMENTS@ICICI-DEBIT FOR STOCKS', 'Investment', 'Pooja_Personal'],
+  ['UPI-AUTOPAY-AMAZON INDIA-AUDIBLE RECURRING', 'Subscriptions', 'Pooja_Personal'],
+  ['UPI-AUTOPAY-APPLE MEDIA SERVICES-EXECUTION TEST', 'Subscriptions', 'Pooja_Personal'],
+  ['UPI-PROLEVEL PERSONAL TRAINING-GYM', 'Fitness', 'Pooja_Personal'],
+  ['UPI-KUNAL-CAR EMI', 'Car downpayment/ emi', 'Pooja_Personal'],
+  ['UPI-KUNAL-RENT', 'Rent', 'Pooja_Personal'],
+  ['UPI-KUNAL-JUNE SETTLEMENT', 'Settlement', undefined],
+  ['UPI-DEVAKKI-COOKUTENSILS', 'Home stuff', 'Pooja_Personal'],
+  ['UPI-NYKAA ON TREND-PAYMENT FROM PHONE', 'Shopping - skin/hair care', 'Pooja_Personal'],
+  ['UPI-PRONTO-PAYMENT FOR UPI', 'Pronto', 'Pooja_Personal'],
+  ['UPI-SHOP-WATER', 'Outside Food', 'Common_50_50'],
 ];
 
-for (const [description, expectedCategory] of approvedMappings) {
+for (const [description, expectedCategory, expectedExpenseType] of approvedMappings) {
   test(`categorizes ${description} as ${expectedCategory}`, () => {
     const transaction = { description, paid_by: 'Pooja' };
 
     smartCategorize(transaction);
 
     assert.equal(transaction.category, expectedCategory);
+    assert.equal(transaction.expense_type, expectedExpenseType);
   });
 }
+
+test('categorizes the exact cafe water fixture as Outside Food', () => {
+  const transaction = { description: 'UPI-CAFE-WATER', paid_by: 'Pooja' };
+
+  smartCategorize(transaction);
+
+  assert.equal(transaction.category, 'Outside Food');
+  assert.equal(transaction.expense_type, 'Common_50_50');
+});
 
 test('uses the payer for a FinZoomers personal expense type', () => {
   const transaction = {
@@ -107,5 +117,7 @@ test('keeps the Pronto category available in frontend and backend category lists
 
   assert.ok(frontendCategories.includes('Pronto'));
   assert.ok(backendCategories.includes('Pronto'));
+  assert.equal(new Set(frontendCategories).size, frontendCategories.length);
+  assert.equal(new Set(backendCategories).size, backendCategories.length);
   assert.deepEqual(new Set(frontendCategories), new Set(backendCategories));
 });
