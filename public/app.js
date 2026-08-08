@@ -71,6 +71,7 @@ function chipHtml(val) {
 
 let transactions = [];
 let reviewSelected = new Set();
+let saveInFlight = false;
 let reviewBulkVal = '';
 let chartCategory = null;
 let chartDaily = null;
@@ -735,6 +736,7 @@ function renderTable(preserveSelection) {
     sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
   }
   updateReviewBulkBar();
+  updateSaveControls();
 }
 
 let reviewFilters = { date:'', amount:'', description:'', payment_method:'', paid_by:'', expense_type:'', category:'', mood:'', impulse:'', remarks:'', reviewed:'all' };
@@ -1039,8 +1041,9 @@ function reviewClearSelection() {
 
 function updateReviewBulkBar() {
   const bar = document.getElementById('reviewBulkBar');
-  if (!bar) return;
   const n = reviewSelected.size;
+  updateSaveControls();
+  if (!bar) return;
   const wasHidden = bar.classList.contains('hidden');
   if (n === 0) { bar.classList.add('hidden'); return; }
   bar.classList.remove('hidden');
@@ -1242,24 +1245,63 @@ function clearAll() {
   hideResult();
 }
 
+// ─── Selective Save Helpers ──────────────────────────────────────────────────
+
+function resolveSavePlan(allTransactions, selectedIndexes, mode) {
+  const sourceIndexes = mode === 'all'
+    ? allTransactions.map((_, index) => index)
+    : [...selectedIndexes]
+      .filter(index => Number.isInteger(index) && index >= 0 && index < allTransactions.length)
+      .sort((a, b) => a - b);
+  const indexes = [...new Set(sourceIndexes)];
+  return {
+    rows: indexes.map(index => allTransactions[index]),
+    indexes,
+  };
+}
+
+function removeSubmittedRows(allTransactions, submittedRows) {
+  const submitted = new Set(submittedRows);
+  return allTransactions.filter(transaction => !submitted.has(transaction));
+}
+
 // ─── Save to Tracker ──────────────────────────────────────────────────────────
 
-async function saveToTracker() {
+function updateSaveControls() {
+  const controls = [
+    [document.getElementById('saveBtn'), `Save all (${transactions.length})`],
+    [document.getElementById('saveBtn2'), `Save all (${transactions.length}) →`],
+    [document.getElementById('saveSelectedBtn'), `Save ${reviewSelected.size} selected`],
+  ];
+
+  controls.forEach(([button, label], index) => {
+    if (!button) return;
+    button.disabled = saveInFlight || (index === 2 && reviewSelected.size === 0);
+    button.textContent = saveInFlight ? 'Saving…' : label;
+  });
+}
+
+async function saveToTracker(mode = 'all') {
+  if (saveInFlight) return;
   if (transactions.length === 0) {
     alert('No transactions to save.');
     return;
   }
 
-  const saveBtn = document.getElementById('saveBtn');
-  const saveBtn2 = document.getElementById('saveBtn2');
-  saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
-  saveBtn2.disabled = true; saveBtn2.textContent = 'Saving…';
+  const plan = resolveSavePlan(transactions, reviewSelected, mode);
+  if (plan.rows.length === 0) {
+    alert('Select at least one transaction to save.');
+    return;
+  }
+
+  saveInFlight = true;
+  updateSaveControls();
 
   try {
     const res = await fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transactions })
+      body: JSON.stringify({ transactions: plan.rows })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1267,18 +1309,26 @@ async function saveToTracker() {
     }
     const data = await res.json();
     const skipNote = data.skipped > 0 ? ` (${data.skipped} duplicate${data.skipped !== 1 ? 's' : ''} skipped)` : '';
-    showResult(`✓ ${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!${skipNote}`, 'success');
+    const scopeNote = mode === 'selected'
+      ? `${plan.rows.length} selected transaction${plan.rows.length !== 1 ? 's' : ''} processed: `
+      : '';
+    showResult(`✓ ${scopeNote}${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!${skipNote}`, 'success');
     trendsLoaded = false; // refresh trends next time tab is opened
-    transactions = [];
-    document.getElementById('tableSection').classList.add('hidden');
+    transactions = removeSubmittedRows(transactions, plan.rows);
+    reviewSelected = new Set();
+    if (transactions.length === 0) {
+      document.getElementById('tableSection').classList.add('hidden');
+    } else {
+      renderTable();
+    }
     // Refresh months list in dashboard
     loadMonths();
   } catch (err) {
     showResult(`Failed to save: ${err.message}`, 'error');
+  } finally {
+    saveInFlight = false;
+    updateSaveControls();
   }
-
-  saveBtn.disabled = false; saveBtn.textContent = 'Save to Tracker';
-  saveBtn2.disabled = false; saveBtn2.textContent = 'Save to Tracker →';
 }
 
 const MONEY_QUOTES = [
