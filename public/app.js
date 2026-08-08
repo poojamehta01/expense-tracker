@@ -710,6 +710,61 @@ function smartCategorize(tx) {
   }
 }
 
+// ─── Review Filter Helpers ────────────────────────────────────────────────────
+
+function transactionMatchesReviewFilters(tx, f) {
+  return (
+    (!f.date || (tx.date || '').toLowerCase().includes(f.date.toLowerCase())) &&
+    (!f.amount || String(tx.amount || '').includes(f.amount)) &&
+    (!f.description || (tx.description || '').toLowerCase().includes(f.description.toLowerCase())) &&
+    (!f.payment_method || tx.payment_method === f.payment_method) &&
+    (!f.paid_by || tx.paid_by === f.paid_by) &&
+    (!f.expense_type || tx.expense_type === f.expense_type) &&
+    (!f.category || tx.category === f.category) &&
+    (!f.mood || tx.mood === f.mood) &&
+    (!f.impulse || tx.impulse === f.impulse) &&
+    (!f.remarks || (tx.remarks || '').toLowerCase().includes(f.remarks.toLowerCase())) &&
+    (f.reviewed === 'all' || (f.reviewed === 'reviewed' ? tx.reviewed : !tx.reviewed))
+  );
+}
+
+function getVisibleReviewIndexes(allTransactions, filters) {
+  return allTransactions.flatMap((transaction, index) =>
+    transactionMatchesReviewFilters(transaction, filters) ? [index] : []
+  );
+}
+
+function hasActiveReviewFilters(filters) {
+  return Object.entries(filters).some(([key, value]) =>
+    key === 'reviewed' ? value && value !== 'all' : Boolean(value)
+  );
+}
+
+function formatReviewTransactionCount(visibleCount, totalCount, filtersActive) {
+  return filtersActive
+    ? `${visibleCount} of ${totalCount} transactions`
+    : `${totalCount} transactions`;
+}
+
+function updateVisibleReviewSelection(selectedIndexes, visibleIndexes, checked) {
+  const nextSelected = new Set(selectedIndexes);
+  visibleIndexes.forEach(index => {
+    if (checked) nextSelected.add(index);
+    else nextSelected.delete(index);
+  });
+  return nextSelected;
+}
+
+function getVisibleReviewSelectionState(selectedIndexes, visibleIndexes) {
+  if (visibleIndexes.length === 0) return { checked: false, indeterminate: false };
+
+  const selectedVisibleCount = visibleIndexes.filter(index => selectedIndexes.has(index)).length;
+  return {
+    checked: selectedVisibleCount === visibleIndexes.length,
+    indeterminate: selectedVisibleCount > 0 && selectedVisibleCount < visibleIndexes.length,
+  };
+}
+
 // ─── Review Table ─────────────────────────────────────────────────────────────
 
 function renderTable(preserveSelection) {
@@ -747,18 +802,7 @@ function filterReviewTable() {
     const i = parseInt(tr.dataset.index);
     if (isNaN(i)) { tr.style.display = ''; return; }
     const tx = transactions[i];
-    const match =
-      (!f.date           || (tx.date           || '').toLowerCase().includes(f.date.toLowerCase())) &&
-      (!f.amount         || String(tx.amount || '').includes(f.amount)) &&
-      (!f.description    || (tx.description    || '').toLowerCase().includes(f.description.toLowerCase())) &&
-      (!f.payment_method || tx.payment_method === f.payment_method) &&
-      (!f.paid_by        || tx.paid_by         === f.paid_by) &&
-      (!f.expense_type   || tx.expense_type    === f.expense_type) &&
-      (!f.category       || tx.category        === f.category) &&
-      (!f.mood           || tx.mood            === f.mood) &&
-      (!f.impulse        || tx.impulse         === f.impulse) &&
-      (!f.remarks        || (tx.remarks        || '').toLowerCase().includes(f.remarks.toLowerCase())) &&
-      (f.reviewed === 'all' || (f.reviewed === 'reviewed' ? tx.reviewed : !tx.reviewed));
+    const match = transactionMatchesReviewFilters(tx, f);
     tr.style.display = match ? '' : 'none';
   });
 }
