@@ -235,7 +235,7 @@
             </div>
             <div class="table-actions">
               <button class="btn-secondary" onclick="addEmptyRow()">+ Add row</button>
-              <button class="btn-primary" onclick="saveToTracker()" id="saveBtn">Save to Tracker</button>
+              <button class="btn-primary" id="saveBtn" onclick="saveToTracker('all')">Save all</button>
             </div>
           </div>
 
@@ -254,6 +254,7 @@
               </select>
               <div id="reviewBulkValue"></div>
               <button class="btn-primary small" onclick="applyReviewBulk()">Apply to selected</button>
+              <button class="btn-primary small" id="saveSelectedBtn" onclick="saveToTracker('selected')">Save selected</button>
             </div>
             <button class="bulk-clear" onclick="reviewClearSelection()" title="Clear selection">×</button>
           </div>
@@ -284,7 +285,7 @@
 
           <div class="table-footer">
             <button class="btn-secondary small" onclick="clearAll()">Clear all</button>
-            <button class="btn-primary large" onclick="saveToTracker()" id="saveBtn2">Save to Tracker →</button>
+            <button class="btn-primary large" id="saveBtn2" onclick="saveToTracker('all')">Save all →</button>
           </div>
         </div>
 

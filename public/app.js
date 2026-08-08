@@ -735,6 +735,7 @@ function renderTable(preserveSelection) {
     sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
   }
   updateReviewBulkBar();
+  updateSaveControls();
 }
 
 let reviewFilters = { date:'', amount:'', description:'', payment_method:'', paid_by:'', expense_type:'', category:'', mood:'', impulse:'', remarks:'', reviewed:'all' };
@@ -1039,8 +1040,9 @@ function reviewClearSelection() {
 
 function updateReviewBulkBar() {
   const bar = document.getElementById('reviewBulkBar');
-  if (!bar) return;
   const n = reviewSelected.size;
+  updateSaveControls();
+  if (!bar) return;
   const wasHidden = bar.classList.contains('hidden');
   if (n === 0) { bar.classList.add('hidden'); return; }
   bar.classList.remove('hidden');
@@ -1264,22 +1266,39 @@ function removeSubmittedRows(allTransactions, submittedIndexes) {
 
 // ─── Save to Tracker ──────────────────────────────────────────────────────────
 
-async function saveToTracker() {
+function updateSaveControls(isSaving = false) {
+  const controls = [
+    [document.getElementById('saveBtn'), `Save all (${transactions.length})`],
+    [document.getElementById('saveBtn2'), `Save all (${transactions.length}) →`],
+    [document.getElementById('saveSelectedBtn'), `Save ${reviewSelected.size} selected`],
+  ];
+
+  controls.forEach(([button, label], index) => {
+    if (!button) return;
+    button.disabled = isSaving || (index === 2 && reviewSelected.size === 0);
+    button.textContent = isSaving ? 'Saving…' : label;
+  });
+}
+
+async function saveToTracker(mode = 'all') {
   if (transactions.length === 0) {
     alert('No transactions to save.');
     return;
   }
 
-  const saveBtn = document.getElementById('saveBtn');
-  const saveBtn2 = document.getElementById('saveBtn2');
-  saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
-  saveBtn2.disabled = true; saveBtn2.textContent = 'Saving…';
+  const plan = resolveSavePlan(transactions, reviewSelected, mode);
+  if (plan.rows.length === 0) {
+    alert('Select at least one transaction to save.');
+    return;
+  }
+
+  updateSaveControls(true);
 
   try {
     const res = await fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transactions })
+      body: JSON.stringify({ transactions: plan.rows })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1289,16 +1308,20 @@ async function saveToTracker() {
     const skipNote = data.skipped > 0 ? ` (${data.skipped} duplicate${data.skipped !== 1 ? 's' : ''} skipped)` : '';
     showResult(`✓ ${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!${skipNote}`, 'success');
     trendsLoaded = false; // refresh trends next time tab is opened
-    transactions = [];
-    document.getElementById('tableSection').classList.add('hidden');
+    transactions = mode === 'all' ? [] : removeSubmittedRows(transactions, plan.indexes);
+    reviewSelected = new Set();
+    if (transactions.length === 0) {
+      document.getElementById('tableSection').classList.add('hidden');
+    } else {
+      renderTable();
+    }
     // Refresh months list in dashboard
     loadMonths();
   } catch (err) {
     showResult(`Failed to save: ${err.message}`, 'error');
+  } finally {
+    updateSaveControls();
   }
-
-  saveBtn.disabled = false; saveBtn.textContent = 'Save to Tracker';
-  saveBtn2.disabled = false; saveBtn2.textContent = 'Save to Tracker →';
 }
 
 const MONEY_QUOTES = [
