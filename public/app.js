@@ -710,6 +710,61 @@ function smartCategorize(tx) {
   }
 }
 
+// ─── Review Filter Helpers ────────────────────────────────────────────────────
+
+function transactionMatchesReviewFilters(tx, f) {
+  return (
+    (!f.date || (tx.date || '').toLowerCase().includes(f.date.toLowerCase())) &&
+    (!f.amount || String(tx.amount || '').includes(f.amount)) &&
+    (!f.description || (tx.description || '').toLowerCase().includes(f.description.toLowerCase())) &&
+    (!f.payment_method || tx.payment_method === f.payment_method) &&
+    (!f.paid_by || tx.paid_by === f.paid_by) &&
+    (!f.expense_type || tx.expense_type === f.expense_type) &&
+    (!f.category || tx.category === f.category) &&
+    (!f.mood || tx.mood === f.mood) &&
+    (!f.impulse || tx.impulse === f.impulse) &&
+    (!f.remarks || (tx.remarks || '').toLowerCase().includes(f.remarks.toLowerCase())) &&
+    (f.reviewed === 'all' || (f.reviewed === 'reviewed' ? tx.reviewed : !tx.reviewed))
+  );
+}
+
+function getVisibleReviewIndexes(allTransactions, filters) {
+  return allTransactions.flatMap((transaction, index) =>
+    transactionMatchesReviewFilters(transaction, filters) ? [index] : []
+  );
+}
+
+function hasActiveReviewFilters(filters) {
+  return Object.entries(filters).some(([key, value]) =>
+    key === 'reviewed' ? value && value !== 'all' : Boolean(value)
+  );
+}
+
+function formatReviewTransactionCount(visibleCount, totalCount, filtersActive) {
+  return filtersActive
+    ? `${visibleCount} of ${totalCount} transactions`
+    : `${totalCount} transaction${totalCount !== 1 ? 's' : ''}`;
+}
+
+function updateVisibleReviewSelection(selectedIndexes, visibleIndexes, checked) {
+  const nextSelected = new Set(selectedIndexes);
+  visibleIndexes.forEach(index => {
+    if (checked) nextSelected.add(index);
+    else nextSelected.delete(index);
+  });
+  return nextSelected;
+}
+
+function getVisibleReviewSelectionState(selectedIndexes, visibleIndexes) {
+  if (visibleIndexes.length === 0) return { checked: false, indeterminate: false };
+
+  const selectedVisibleCount = visibleIndexes.filter(index => selectedIndexes.has(index)).length;
+  return {
+    checked: selectedVisibleCount === visibleIndexes.length,
+    indeterminate: selectedVisibleCount > 0 && selectedVisibleCount < visibleIndexes.length,
+  };
+}
+
 // ─── Review Table ─────────────────────────────────────────────────────────────
 
 function renderTable(preserveSelection) {
@@ -717,7 +772,6 @@ function renderTable(preserveSelection) {
 
   const section = document.getElementById('tableSection');
   const body = document.getElementById('txBody');
-  const count = document.getElementById('txCount');
 
   body.innerHTML = '';
   transactions.forEach((tx, i) => {
@@ -725,16 +779,10 @@ function renderTable(preserveSelection) {
   });
   buildFilterRow();
   filterReviewTable();
-
-  count.textContent = `${transactions.length} transaction${transactions.length !== 1 ? 's' : ''}`;
+  updateReviewSelectAllState(getVisibleReviewIndexes(transactions, reviewFilters));
   section.classList.remove('hidden');
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  const sa = document.getElementById('txSelectAll');
-  if (sa) {
-    sa.checked = reviewSelected.size > 0 && reviewSelected.size === transactions.length;
-    sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
-  }
   updateReviewBulkBar();
   updateSaveControls();
 }
@@ -742,25 +790,27 @@ function renderTable(preserveSelection) {
 let reviewFilters = { date:'', amount:'', description:'', payment_method:'', paid_by:'', expense_type:'', category:'', mood:'', impulse:'', remarks:'', reviewed:'all' };
 
 function filterReviewTable() {
-  const f = reviewFilters;
+  const visibleIndexes = getVisibleReviewIndexes(transactions, reviewFilters);
+  const visibleIndexSet = new Set(visibleIndexes);
   document.querySelectorAll('#txBody tr').forEach(tr => {
     const i = parseInt(tr.dataset.index);
     if (isNaN(i)) { tr.style.display = ''; return; }
-    const tx = transactions[i];
-    const match =
-      (!f.date           || (tx.date           || '').toLowerCase().includes(f.date.toLowerCase())) &&
-      (!f.amount         || String(tx.amount || '').includes(f.amount)) &&
-      (!f.description    || (tx.description    || '').toLowerCase().includes(f.description.toLowerCase())) &&
-      (!f.payment_method || tx.payment_method === f.payment_method) &&
-      (!f.paid_by        || tx.paid_by         === f.paid_by) &&
-      (!f.expense_type   || tx.expense_type    === f.expense_type) &&
-      (!f.category       || tx.category        === f.category) &&
-      (!f.mood           || tx.mood            === f.mood) &&
-      (!f.impulse        || tx.impulse         === f.impulse) &&
-      (!f.remarks        || (tx.remarks        || '').toLowerCase().includes(f.remarks.toLowerCase())) &&
-      (f.reviewed === 'all' || (f.reviewed === 'reviewed' ? tx.reviewed : !tx.reviewed));
-    tr.style.display = match ? '' : 'none';
+    tr.style.display = visibleIndexSet.has(i) ? '' : 'none';
   });
+  document.getElementById('txCount').textContent = formatReviewTransactionCount(
+    visibleIndexes.length,
+    transactions.length,
+    hasActiveReviewFilters(reviewFilters)
+  );
+  updateReviewSelectAllState(visibleIndexes);
+}
+
+function updateReviewSelectAllState(visibleIndexes) {
+  const sa = document.getElementById('txSelectAll');
+  if (!sa) return;
+  const state = getVisibleReviewSelectionState(reviewSelected, visibleIndexes);
+  sa.checked = state.checked;
+  sa.indeterminate = state.indeterminate;
 }
 
 function buildFilterRow() {
@@ -1011,11 +1061,17 @@ function getReviewFieldOpts(field) {
 }
 
 function reviewSelectAll(checked) {
-  reviewSelected = checked ? new Set(transactions.map((_, i) => i)) : new Set();
-  document.querySelectorAll('#txBody .review-cb').forEach((cb, i) => {
-    cb.checked = checked;
-    cb.closest('tr').classList.toggle('row-selected', checked);
+  const visibleIndexes = getVisibleReviewIndexes(transactions, reviewFilters);
+  const visibleIndexSet = new Set(visibleIndexes);
+  reviewSelected = updateVisibleReviewSelection(reviewSelected, visibleIndexes, checked);
+  document.querySelectorAll('#txBody .review-cb').forEach(cb => {
+    const row = cb.closest('tr');
+    const index = parseInt(row.dataset.index);
+    if (!visibleIndexSet.has(index)) return;
+    cb.checked = reviewSelected.has(index);
+    row.classList.toggle('row-selected', reviewSelected.has(index));
   });
+  updateReviewSelectAllState(visibleIndexes);
   updateReviewBulkBar();
 }
 
@@ -1023,11 +1079,7 @@ function reviewToggleRow(index, checked) {
   if (checked) reviewSelected.add(index);
   else reviewSelected.delete(index);
   document.querySelector(`#txBody tr[data-index="${index}"]`)?.classList.toggle('row-selected', checked);
-  const sa = document.getElementById('txSelectAll');
-  if (sa) {
-    sa.checked = reviewSelected.size === transactions.length && transactions.length > 0;
-    sa.indeterminate = reviewSelected.size > 0 && reviewSelected.size < transactions.length;
-  }
+  updateReviewSelectAllState(getVisibleReviewIndexes(transactions, reviewFilters));
   updateReviewBulkBar();
 }
 
