@@ -68,6 +68,7 @@ test('formats a filtered count differently from an unfiltered count', () => {
 
   assert.equal(formatReviewTransactionCount(12, 175, true), '12 of 175 transactions');
   assert.equal(formatReviewTransactionCount(175, 175, false), '175 transactions');
+  assert.equal(formatReviewTransactionCount(1, 1, false), '1 transaction');
 });
 
 test('detects active filters while treating reviewed all as inactive', () => {

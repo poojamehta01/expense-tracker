@@ -743,7 +743,7 @@ function hasActiveReviewFilters(filters) {
 function formatReviewTransactionCount(visibleCount, totalCount, filtersActive) {
   return filtersActive
     ? `${visibleCount} of ${totalCount} transactions`
-    : `${totalCount} transactions`;
+    : `${totalCount} transaction${totalCount !== 1 ? 's' : ''}`;
 }
 
 function updateVisibleReviewSelection(selectedIndexes, visibleIndexes, checked) {
