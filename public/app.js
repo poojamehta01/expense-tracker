@@ -1242,6 +1242,26 @@ function clearAll() {
   hideResult();
 }
 
+// ─── Selective Save Helpers ──────────────────────────────────────────────────
+
+function resolveSavePlan(allTransactions, selectedIndexes, mode) {
+  const sourceIndexes = mode === 'all'
+    ? allTransactions.map((_, index) => index)
+    : [...selectedIndexes]
+      .filter(index => Number.isInteger(index) && index >= 0 && index < allTransactions.length)
+      .sort((a, b) => a - b);
+  const indexes = [...new Set(sourceIndexes)];
+  return {
+    rows: indexes.map(index => allTransactions[index]),
+    indexes,
+  };
+}
+
+function removeSubmittedRows(allTransactions, submittedIndexes) {
+  const submitted = new Set(submittedIndexes);
+  return allTransactions.filter((_, index) => !submitted.has(index));
+}
+
 // ─── Save to Tracker ──────────────────────────────────────────────────────────
 
 async function saveToTracker() {
