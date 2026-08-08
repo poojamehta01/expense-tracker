@@ -20,6 +20,22 @@ function loadSmartCategorize() {
   return context.smartCategorizeForTest;
 }
 
+function loadArray(relativePath, declaration) {
+  const source = fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
+  const start = source.indexOf(`const ${declaration} = [`);
+  const end = source.indexOf('];', start);
+
+  assert.notEqual(start, -1, `${declaration} must exist in ${relativePath}`);
+  assert.notEqual(end, -1, `${declaration} must be a complete array`);
+
+  const context = vm.createContext({});
+  vm.runInContext(
+    `${source.slice(start, end + 2)}\nglobalThis.arrayForTest = ${declaration};`,
+    context
+  );
+  return Array.from(context.arrayForTest);
+}
+
 const smartCategorize = loadSmartCategorize();
 
 const approvedMappings = [
@@ -83,4 +99,13 @@ test('does not overwrite a reviewed category and expense type', () => {
 
   assert.equal(transaction.category, 'Others');
   assert.equal(transaction.expense_type, 'Common_50_50');
+});
+
+test('keeps the Pronto category available in frontend and backend category lists', () => {
+  const frontendCategories = loadArray('public/app.js', 'DEFAULT_CATEGORIES');
+  const backendCategories = loadArray('server.js', 'CATEGORIES');
+
+  assert.ok(frontendCategories.includes('Pronto'));
+  assert.ok(backendCategories.includes('Pronto'));
+  assert.deepEqual(new Set(frontendCategories), new Set(backendCategories));
 });
