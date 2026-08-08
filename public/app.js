@@ -71,6 +71,7 @@ function chipHtml(val) {
 
 let transactions = [];
 let reviewSelected = new Set();
+let saveInFlight = false;
 let reviewBulkVal = '';
 let chartCategory = null;
 let chartDaily = null;
@@ -1259,14 +1260,14 @@ function resolveSavePlan(allTransactions, selectedIndexes, mode) {
   };
 }
 
-function removeSubmittedRows(allTransactions, submittedIndexes) {
-  const submitted = new Set(submittedIndexes);
-  return allTransactions.filter((_, index) => !submitted.has(index));
+function removeSubmittedRows(allTransactions, submittedRows) {
+  const submitted = new Set(submittedRows);
+  return allTransactions.filter(transaction => !submitted.has(transaction));
 }
 
 // ─── Save to Tracker ──────────────────────────────────────────────────────────
 
-function updateSaveControls(isSaving = false) {
+function updateSaveControls() {
   const controls = [
     [document.getElementById('saveBtn'), `Save all (${transactions.length})`],
     [document.getElementById('saveBtn2'), `Save all (${transactions.length}) →`],
@@ -1275,12 +1276,13 @@ function updateSaveControls(isSaving = false) {
 
   controls.forEach(([button, label], index) => {
     if (!button) return;
-    button.disabled = isSaving || (index === 2 && reviewSelected.size === 0);
-    button.textContent = isSaving ? 'Saving…' : label;
+    button.disabled = saveInFlight || (index === 2 && reviewSelected.size === 0);
+    button.textContent = saveInFlight ? 'Saving…' : label;
   });
 }
 
 async function saveToTracker(mode = 'all') {
+  if (saveInFlight) return;
   if (transactions.length === 0) {
     alert('No transactions to save.');
     return;
@@ -1292,7 +1294,8 @@ async function saveToTracker(mode = 'all') {
     return;
   }
 
-  updateSaveControls(true);
+  saveInFlight = true;
+  updateSaveControls();
 
   try {
     const res = await fetch('/api/transactions', {
@@ -1306,9 +1309,12 @@ async function saveToTracker(mode = 'all') {
     }
     const data = await res.json();
     const skipNote = data.skipped > 0 ? ` (${data.skipped} duplicate${data.skipped !== 1 ? 's' : ''} skipped)` : '';
-    showResult(`✓ ${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!${skipNote}`, 'success');
+    const scopeNote = mode === 'selected'
+      ? `${plan.rows.length} selected transaction${plan.rows.length !== 1 ? 's' : ''} processed: `
+      : '';
+    showResult(`✓ ${scopeNote}${data.saved} transaction${data.saved !== 1 ? 's' : ''} saved to Tracker!${skipNote}`, 'success');
     trendsLoaded = false; // refresh trends next time tab is opened
-    transactions = mode === 'all' ? [] : removeSubmittedRows(transactions, plan.indexes);
+    transactions = removeSubmittedRows(transactions, plan.rows);
     reviewSelected = new Set();
     if (transactions.length === 0) {
       document.getElementById('tableSection').classList.add('hidden');
@@ -1320,6 +1326,7 @@ async function saveToTracker(mode = 'all') {
   } catch (err) {
     showResult(`Failed to save: ${err.message}`, 'error');
   } finally {
+    saveInFlight = false;
     updateSaveControls();
   }
 }

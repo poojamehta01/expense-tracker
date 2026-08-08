@@ -64,18 +64,18 @@ test('ignores invalid selected indexes and supports an empty selection', () => {
   assert.deepEqual(Array.from(emptyPlan.rows), []);
 });
 
-test('removes submitted rows without mutating the source list', () => {
+test('removes submitted row objects without mutating the source list', () => {
   const { removeSubmittedRows } = loadSelectiveSaveHelpers();
   const rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
-  const remaining = removeSubmittedRows(rows, [0, 2]);
+  const remaining = removeSubmittedRows(rows, [rows[0], rows[2]]);
 
   assert.deepEqual(Array.from(remaining, row => row.id), ['b']);
   assert.deepEqual(rows.map(row => row.id), ['a', 'b', 'c']);
   assert.notEqual(remaining, rows);
 });
 
-function createSaveWorkflow({ responseOk = true } = {}) {
+function createSaveWorkflow({ responseOk = true, deferred = false } = {}) {
   const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
   const start = source.indexOf('// ─── Selective Save Helpers');
   const end = source.indexOf('const MONEY_QUOTES = [', start);
@@ -86,10 +86,13 @@ function createSaveWorkflow({ responseOk = true } = {}) {
     tableSection: { classList: { add() {}, remove() {} } },
   };
   const requests = [];
+  let releaseFetch;
+  const fetchGate = deferred ? new Promise(resolve => { releaseFetch = resolve; }) : null;
   const context = vm.createContext({
     document: { getElementById: id => elements[id] || null },
     fetch: async (_url, options) => {
       requests.push(JSON.parse(options.body));
+      if (fetchGate) await fetchGate;
       return {
         ok: responseOk,
         json: async () => responseOk
@@ -102,6 +105,7 @@ function createSaveWorkflow({ responseOk = true } = {}) {
   vm.runInContext(
     `let transactions = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
      let reviewSelected = new Set([1]);
+     let saveInFlight = false;
      let trendsLoaded = true;
      let renderCount = 0;
      function renderTable() { renderCount += 1; }
@@ -113,10 +117,11 @@ function createSaveWorkflow({ responseOk = true } = {}) {
        getTransactions: () => transactions,
        getSelection: () => reviewSelected,
        getRenderCount: () => renderCount,
+       updateSaveControls,
      };`,
     context
   );
-  return { workflow: context.workflowForTest, requests, elements };
+  return { workflow: context.workflowForTest, requests, elements, releaseFetch };
 }
 
 test('review UI offers save-all and save-selected controls', () => {
@@ -147,4 +152,32 @@ test('failed selected save keeps rows and selection intact', async () => {
   assert.deepEqual(Array.from(workflow.getTransactions(), row => row.id), ['a', 'b', 'c']);
   assert.deepEqual(Array.from(workflow.getSelection()), [1]);
   assert.equal(workflow.getRenderCount(), 0);
+});
+
+test('save controls stay disabled during a request and overlapping saves are ignored', async () => {
+  const { workflow, requests, elements, releaseFetch } = createSaveWorkflow({ deferred: true });
+
+  const pendingSave = workflow.saveToTracker('selected');
+  workflow.updateSaveControls();
+  const overlappingSave = workflow.saveToTracker('selected');
+
+  assert.equal(requests.length, 1);
+  for (const id of ['saveBtn', 'saveBtn2', 'saveSelectedBtn']) {
+    assert.equal(elements[id].disabled, true);
+    assert.equal(elements[id].textContent, 'Saving…');
+  }
+
+  releaseFetch();
+  await Promise.all([pendingSave, overlappingSave]);
+});
+
+test('save all preserves rows added while the request is pending', async () => {
+  const { workflow, releaseFetch } = createSaveWorkflow({ deferred: true });
+
+  const pendingSave = workflow.saveToTracker('all');
+  workflow.getTransactions().push({ id: 'new' });
+  releaseFetch();
+  await pendingSave;
+
+  assert.deepEqual(Array.from(workflow.getTransactions(), row => row.id), ['new']);
 });
