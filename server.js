@@ -597,7 +597,7 @@ const CATEGORIES = [
   'Zepto/Blinkit', 'Credit Card Payment', 'Doctor', 'Donation', 'Entertainment',
   'Fitness', 'Fruits & Veggies', 'Furlenco', 'Gifts', 'Home stuff', 'House Help',
   'Investment', 'Laundry', 'Loan EMI', 'Medicines', 'Monthly Home bills', 'Ola/Uber',
-  'Others', 'Outside Food', 'Parking', 'Petrol', 'Porter/Rapido', 'Refunded', 'Rent',
+  'Others', 'Outside Food', 'Parking', 'Petrol', 'Porter/Rapido', 'Pronto', 'Refunded', 'Rent',
   'Salon', 'Settlement', 'Shopping - bag', 'Shopping - clothes', 'Shopping - electronics',
   'Shopping - gold', 'Shopping - home', 'Shopping - jwellery', 'Shopping - shoes',
   'Shopping - silver', 'Shopping - skin/hair care', 'Subscriptions', 'Unexpected',

@@ -4,7 +4,7 @@ const DEFAULT_CATEGORIES = [
   'Zepto/Blinkit','Credit Card Payment','Doctor','Donation','Entertainment',
   'Fitness','Fruits & Veggies','Furlenco','Gifts','Home stuff','House Help',
   'Investment','Laundry','Loan EMI','Medicines','Monthly Home bills','Ola/Uber',
-  'Others','Outside Food','Parking','Petrol','Porter/Rapido','Refunded','Rent',
+  'Others','Outside Food','Parking','Petrol','Porter/Rapido','Pronto','Refunded','Rent',
   'Salon','Settlement','Shopping - bag','Shopping - clothes','Shopping - electronics',
   'Shopping - gold','Shopping - home','Shopping - jwellery','Shopping - shoes',
   'Shopping - silver','Shopping - skin/hair care','Subscriptions','Unexpected',
@@ -626,6 +626,7 @@ function mapSpreadsheetRow(rawRow) {
 const SMART_PATTERNS = [
   // Investments
   { match: /INDMONEY|INDMONEY1X/i,                         category: 'Investment',          personal: true },
+  { match: /FINZOOMERS/i,                                  category: 'Investment',          personal: true },
   { match: /GROWW|GROWWSTOCKS/i,                           category: 'Investment',          personal: true },
   { match: /FD THROUGH|FD.*MOBILE|MOBILE.*\bFD\b/i,       category: 'Investment',          personal: true },
   { match: /RD INSTALL|\bRD INSTALL/i,                     category: 'Investment',          personal: true },
@@ -647,7 +648,7 @@ const SMART_PATTERNS = [
   { match: /OUTSIDEFOOD|OUTSIDE[\s_-]?FOOD/i,             category: 'Outside Food',        expense_type: 'Common_50_50' },
   { match: /\bRESTAURANT\b|\bCAFE\b|\bCAFÉ\b|\bDHABA\b/i,category: 'Outside Food',        expense_type: 'Common_50_50' },
   { match: /\bBIRYANI\b|\bPIZZA\b|\bBURGER\b|\bICE.?CREAM\b/i, category: 'Outside Food', expense_type: 'Common_50_50' },
-  { match: /\bCOCONUT WATER\b|\bJUICE\b/i,                category: 'Outside Food',        expense_type: 'Common_50_50' },
+  { match: /\bWATER\b|\bJUICE\b/i,                        category: 'Outside Food',        expense_type: 'Common_50_50' },
 
   // Medical / medicines
   { match: /\bMEDICAL\b|\bMEDICINE\b|\bPHARMA(CY)?\b/i,  category: 'Medicines',           personal: true },
@@ -667,6 +668,16 @@ const SMART_PATTERNS = [
   { match: /SPOTIFY|APPLE.?MUSIC|JIOSAAVN/i,               category: 'Subscriptions',       personal: true },
   { match: /PRIMEVIDEO|PRIME.?VIDEO|AMAZON.?PRIME/i,       category: 'Subscriptions',       personal: true },
   { match: /YOUTUBE.?PREMIUM|GOOGLE.?ONE/i,                category: 'Subscriptions',       personal: true },
+  { match: /AUDIBLE RECURRING|APPLE MEDIA SERVICES/i,      category: 'Subscriptions',       personal: true },
+
+  // Personal and household narration keywords
+  { match: /PROLEVEL PERSONAL TRAINING|\bGYM\b/i,          category: 'Fitness',             personal: true },
+  { match: /\bCAR EMI\b/i,                                 category: 'Car downpayment/ emi', personal: true },
+  { match: /\bRENT\b/i,                                    category: 'Rent',                personal: true },
+  { match: /\bSETTLEMENT\b/i,                              category: 'Settlement' },
+  { match: /COOKUTENSILS/i,                                category: 'Home stuff',          personal: true },
+  { match: /NYKAA/i,                                       category: 'Shopping - skin/hair care', personal: true },
+  { match: /PRONTO/i,                                      category: 'Pronto',              personal: true },
 
   // Home
   { match: /LIVPURE/i,                                     category: 'Home stuff',          expense_type: 'Common_50_50' },
