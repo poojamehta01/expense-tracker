@@ -564,14 +564,24 @@ function parseCSVLine(line) {
   return result;
 }
 
+function normalizeSpreadsheetHeader(header) {
+  return String(header ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\bamt\b/g, 'amount')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function mapSpreadsheetRow(rawRow) {
-  // normalise keys to lowercase
+  // normalise spreadsheet column names before looking up aliases
   const row = {};
-  for (const k of Object.keys(rawRow)) row[k.toLowerCase().trim()] = rawRow[k];
+  for (const k of Object.keys(rawRow)) row[normalizeSpreadsheetHeader(k)] = rawRow[k];
 
   const find = (...aliases) => {
     for (const a of aliases) {
-      const v = row[a];
+      const v = row[normalizeSpreadsheetHeader(a)];
       if (v !== undefined && v !== null && v !== '') return v;
     }
     return '';
