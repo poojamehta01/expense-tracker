@@ -575,14 +575,24 @@ function normalizeSpreadsheetHeader(header) {
 }
 
 function mapSpreadsheetRow(rawRow) {
-  // normalise spreadsheet column names before looking up aliases
+  // Keep original normalized keys as well as canonical header groups. This lets
+  // aliases retain their declared precedence even when canonical headers collide.
   const row = {};
-  for (const k of Object.keys(rawRow)) row[normalizeSpreadsheetHeader(k)] = rawRow[k];
+  const canonicalRow = {};
+  for (const k of Object.keys(rawRow)) {
+    const exactKey = String(k).trim().toLowerCase();
+    const canonicalKey = normalizeSpreadsheetHeader(k);
+    row[exactKey] = rawRow[k];
+    (canonicalRow[canonicalKey] ||= []).push(rawRow[k]);
+  }
 
   const find = (...aliases) => {
     for (const a of aliases) {
-      const v = row[normalizeSpreadsheetHeader(a)];
+      const v = row[String(a).trim().toLowerCase()];
       if (v !== undefined && v !== null && v !== '') return v;
+      for (const canonicalValue of canonicalRow[normalizeSpreadsheetHeader(a)] || []) {
+        if (canonicalValue !== undefined && canonicalValue !== null && canonicalValue !== '') return canonicalValue;
+      }
     }
     return '';
   };
