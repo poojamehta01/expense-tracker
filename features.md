@@ -67,6 +67,8 @@ Drop or select files (up to 20MB each):
 - **Images** (PNG, JPG, HEIC) or **PDFs** — Gemini AI extracts transactions from the screenshot/statement
 - **CSV / XLSX / XLS** — parsed directly in the browser (no AI); rows map to transaction fields automatically
 
+Choose an inclusive **From** and **To** date before uploading. Only transactions dated within that range reach the review table; transactions outside the range or with missing/invalid dates are excluded. After processing, the app reports how many transactions were included and excluded.
+
 For spreadsheets, columns are matched by name (case-insensitive). Supported aliases:
 
 | Field | Accepted column names |
@@ -86,7 +88,7 @@ Rows with no amount (or amount ≤ 0) are skipped. All other fields default the 
 Expandable card to paste raw SMS or bank notification text. Gemini extracts transactions from the text.
 
 ### Month Selector
-Choose which month the transactions belong to. Defaults to current month. Used as fallback date if no date is found in the screenshot.
+Choose which month the transactions belong to. Defaults to current month and initializes the upload date range (today for the current month, or the full month for another month). It remains the fallback month for pasted bank messages.
 
 ### Review Table
 After extraction, transactions appear in an editable table:

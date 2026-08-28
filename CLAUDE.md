@@ -134,7 +134,8 @@ POST /api/audit/:id/restore      restore a snapshot
 ## Frontend Flow
 1. **Add Expenses tab:** upload file → (if image/PDF: `/api/extract` via Gemini; if CSV/XLSX/XLS: parsed client-side via SheetJS/vanilla JS) → review table → `saveToTracker()` → `POST /api/transactions`
    - `paid_by` preserved from spreadsheet if set; otherwise auto-set to logged-in user's first name; `expense_type` defaults to `{User}_Personal`
-   - Month selector at top — defaults to current month; date fields fall back to selected month if missing
+   - Month selector at top — defaults to current month and initializes an inclusive From/To upload range (today for the current month, full month otherwise)
+   - All uploaded file types are filtered before review; only valid transaction dates within the selected range are included, and an included/excluded count is shown
    - Spreadsheet column mapping (case-insensitive): `date`, `amount/amt/value/debit/credit`, `description/desc/merchant/narration/particulars`, `payment_method/method/mode`, `paid_by/who/person`, `expense_type/type`, `category/cat`, `mood`, `impulse`, `remarks/notes`; rows with `amount ≤ 0` are filtered out
 2. **Dashboard tab (default):** `loadMonths()` → `loadDashboard(month)` → renders KPIs + salary KPIs + 4 charts (collapsible "Trends" section) + merchants table + transactions list
    - Global person filter (All/Pooja/Kunal/Common) in top-right nav filters all data
@@ -197,6 +198,8 @@ POST /api/audit/:id/restore      restore a snapshot
 - `parseCSVToObjects(text)` — splits CSV text into array of objects keyed by header row
 - `parseCSVLine(line)` — RFC-4180 CSV line parser (handles quoted fields, escaped quotes)
 - `mapSpreadsheetRow(rawRow)` — normalises column names (lowercase) and maps aliases to tx fields; handles SheetJS Date objects for date column
+- `validateUploadDateRange(fromISO, toISO)` — requires both inclusive range boundaries and rejects reversed ranges
+- `filterTransactionsByDateRange(rows, fromISO, toISO)` — excludes out-of-range transactions and missing/invalid dates before review
 - `askChip(btn)` — fills AI input with chip text + submits
 - `submitAsk()` — POST to `/api/ask`, renders markdown-ish response
 - `makeChipCombo(options, current, index, field)` — chip-based searchable dropdown
@@ -216,6 +219,7 @@ POST /api/audit/:id/restore      restore a snapshot
 ## CSS Patterns
 - Dark mode: `body.dark` class with CSS custom property overrides (`--bg`, `--white`, `--border`, `--text`)
 - `.btn-primary.small` — `padding: 6px 12px; font-size: 12px`
+- `.upload-date-range` — responsive From/To date controls in the upload month bar; stacks across the mobile width
 - `body.dark .btn-primary` — explicit rule ensures correct blue rendering in dark mode
 - Chip combo: `.rv-combo-trigger`, `.rv-combo-panel`, `.rv-combo-search`, `.rv-combo-list`, `.rv-opt`
 - Inline edit panel: `.rv-combo-panel.rv-inline` — `position: absolute; z-index: 200`

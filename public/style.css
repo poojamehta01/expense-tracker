@@ -210,8 +210,26 @@ body {
   outline: none;
 }
 .upload-month-bar select:focus { border-color: var(--primary); }
+.upload-date-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.upload-date-range input {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+}
+.upload-date-range input:focus { border-color: var(--primary); }
 body.dark .upload-month-bar { background: #1e293b; border-color: #334155; }
 body.dark .upload-month-bar select { background: #0f172a; color: #f1f5f9; border-color: #334155; }
+body.dark .upload-date-range input { background: #0f172a; color: #f1f5f9; border-color: #334155; }
 
 /* Upload */
 .upload-card {
@@ -1481,6 +1499,9 @@ body.dark .ai-response { background: #0f172a; border-color: #334155; }
   .gc { padding: 5px 6px; max-width: 130px; }
 
   /* Upload card */
+  .upload-month-bar { align-items: stretch; flex-wrap: wrap; }
+  .upload-date-range { width: 100%; margin-left: 0; }
+  .upload-date-range input { flex: 1; min-width: 0; }
   .upload-card { padding: 28px 16px; }
   .upload-icon { font-size: 26px; }
   .upload-title { font-size: 14px; }

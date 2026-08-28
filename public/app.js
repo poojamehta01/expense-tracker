@@ -136,7 +136,22 @@ function getUploadMonth() {
   return document.getElementById('uploadMonthPicker').value;
 }
 
-function onUploadMonthChange() {}
+function onUploadMonthChange() {
+  const uploadMonth = getUploadMonth();
+  const [monthName, yearText] = uploadMonth ? uploadMonth.split('_') : [];
+  const monthIndex = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'].indexOf(monthName);
+  const year = Number(yearText);
+  if (monthIndex < 0 || !Number.isInteger(year)) return;
+
+  const now = new Date();
+  const isCurrentMonth = year === now.getFullYear() && monthIndex === now.getMonth();
+  const fromDay = isCurrentMonth ? now.getDate() : 1;
+  const toDay = isCurrentMonth ? fromDay : new Date(year, monthIndex + 1, 0).getDate();
+  const toISO = day => `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  document.getElementById('uploadDateFrom').value = toISO(fromDay);
+  document.getElementById('uploadDateTo').value = toISO(toDay);
+}
 
 function initUploadMonthPicker() {
   const picker = document.getElementById('uploadMonthPicker');
@@ -344,6 +359,45 @@ async function removeListItem(id, listName) {
 
 // ─── Upload ──────────────────────────────────────────────────────────────────
 
+// ─── Upload Date Range Helpers ───────────────────────────────────────────────
+
+function validateUploadDateRange(fromISO, toISO) {
+  if (!fromISO || !toISO) {
+    return { valid: false, error: 'Choose both a From date and a To date before uploading.' };
+  }
+  if (fromISO > toISO) {
+    return { valid: false, error: 'The From date must be on or before the To date.' };
+  }
+  return { valid: true, error: '' };
+}
+
+function transactionDateToISO(dateText) {
+  const match = String(dateText || '').trim().match(/^(\d{1,2})[\s-]+([A-Za-z]+)[\s-]+(\d{4})$/);
+  if (!match) return '';
+  const months = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const day = Number(match[1]);
+  const monthText = match[2].toLowerCase();
+  const monthIndex = monthText.length >= 3
+    ? months.findIndex(month => month.toLowerCase().startsWith(monthText))
+    : -1;
+  const year = Number(match[3]);
+  if (monthIndex < 0 || day < 1) return '';
+  const parsed = new Date(Date.UTC(year, monthIndex, day));
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== monthIndex || parsed.getUTCDate() !== day) return '';
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function filterTransactionsByDateRange(rows, fromISO, toISO) {
+  const included = rows.filter(tx => {
+    const dateISO = transactionDateToISO(tx.date);
+    return dateISO && dateISO >= fromISO && dateISO <= toISO;
+  });
+  return { included, excludedCount: rows.length - included.length };
+}
+
+// ─── Upload Processing ─────────────────────────────────────────────────────
+
 function setupUpload() {
   const area = document.getElementById('uploadArea');
   const input = document.getElementById('fileInput');
@@ -373,20 +427,31 @@ function setupUpload() {
 }
 
 async function handleFiles(files) {
+  hideResult();
+  const fromISO = document.getElementById('uploadDateFrom').value;
+  const toISO = document.getElementById('uploadDateTo').value;
+  const rangeValidation = validateUploadDateRange(fromISO, toISO);
+  if (!rangeValidation.valid) {
+    showError(rangeValidation.error);
+    return;
+  }
+
   showLoading(true);
   showError('');
-  hideResult();
 
   const newTx = [];
+  let excludedCount = 0;
   for (let i = 0; i < files.length; i++) {
     setLoadingText(`Processing file ${i + 1} of ${files.length}: ${files[i].name}…`);
     try {
       const extracted = isSpreadsheetFile(files[i])
         ? await parseSpreadsheetFile(files[i])
         : await extractFromFile(files[i]);
+      const filtered = filterTransactionsByDateRange(extracted, fromISO, toISO);
+      excludedCount += filtered.excludedCount;
       const uploadMonth = getUploadMonth(); // e.g. "March_2026"
       const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
-      extracted.forEach(tx => {
+      filtered.included.forEach(tx => {
         if (!tx.paid_by) tx.paid_by = currentUserName;
         smartCategorize(tx); // apply pattern-based defaults before expense_type fallback
         if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
@@ -400,7 +465,7 @@ async function handleFiles(files) {
           tx.date = `1 ${uMon} ${uYr}`;
         }
       });
-      newTx.push(...extracted);
+      newTx.push(...filtered.included);
     } catch (err) {
       showError(`Failed to process "${files[i].name}": ${err.message}`);
     }
@@ -409,12 +474,17 @@ async function handleFiles(files) {
   showLoading(false);
 
   if (newTx.length === 0 && transactions.length === 0) {
-    showError('No transactions found. For images/PDFs, try a clearer screenshot. For CSV/XLSX, ensure the file has columns like date, amount, description.');
+    if (excludedCount > 0) {
+      showError(`No transactions fall within the selected date range. ${excludedCount} transaction${excludedCount !== 1 ? 's were' : ' was'} excluded.`);
+    } else {
+      showError('No transactions found. For images/PDFs, try a clearer screenshot. For CSV/XLSX, ensure the file has columns like date, amount, description.');
+    }
     return;
   }
 
   transactions.push(...newTx);
   renderTable();
+  showResult(`${newTx.length} transaction${newTx.length !== 1 ? 's' : ''} included; ${excludedCount} excluded.`, 'success');
 }
 
 // ─── SMS / text paste ─────────────────────────────────────────────────────────

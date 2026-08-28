@@ -184,6 +184,12 @@
         <div class="upload-month-bar">
           <label for="uploadMonthPicker">Adding expenses for</label>
           <select id="uploadMonthPicker" onchange="onUploadMonthChange()"></select>
+          <div class="upload-date-range" aria-label="Transaction date range">
+            <label for="uploadDateFrom">From</label>
+            <input id="uploadDateFrom" type="date" required />
+            <label for="uploadDateTo">To</label>
+            <input id="uploadDateTo" type="date" required />
+          </div>
         </div>
 
         <!-- Upload area -->
