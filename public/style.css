@@ -22,6 +22,7 @@
   --budget-muted-bg: #f5f5f7;
   --budget-unbudgeted-text: #991b1b;
   --budget-unbudgeted-bg: #fff1f2;
+  --budget-negative-text: #991b1b;
   --budget-mapping-text: #854d0e;
   --budget-mapping-bg: #fefce8;
   --header-bg: #1e293b;
@@ -47,6 +48,7 @@ body.dark {
   --budget-muted-bg: #0f172a;
   --budget-unbudgeted-text: #fecaca;
   --budget-unbudgeted-bg: #450a0a;
+  --budget-negative-text: #fecaca;
   --budget-mapping-text: #fde68a;
   --budget-mapping-bg: #422006;
   --header-bg: #0a0f1e;
@@ -1497,8 +1499,11 @@ body.dark .ai-response { background: #0f172a; border-color: #334155; }
 .dashboard-budget-card__title { font-size: 17px; font-weight: 700; color: var(--text); }
 .dashboard-budget-card__amount { margin-top: 4px; font-size: 22px; font-weight: 700; color: var(--text); }
 .dashboard-budget-card__variance { margin-top: 3px; color: var(--text-muted); }
-.dashboard-budget-card[data-state="over"] .dashboard-budget-card__variance { color: var(--error); font-weight: 600; }
-.dashboard-budget-card[data-state="error"] .dashboard-budget-card__variance { color: var(--error); font-weight: 600; }
+.dashboard-budget-card[data-state="over"] .dashboard-budget-card__variance,
+.dashboard-budget-card[data-state="error"] .dashboard-budget-card__variance {
+  color: var(--budget-negative-text);
+  font-weight: 600;
+}
 .dashboard-budget-card__usage { margin-top: 5px; color: var(--text-muted); font-size: 12px; }
 .dashboard-budget-card > .btn-secondary { flex-shrink: 0; }
 

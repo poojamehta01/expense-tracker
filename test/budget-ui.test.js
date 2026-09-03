@@ -167,7 +167,14 @@ function deferredResponse() {
   return { promise, resolve };
 }
 
-function createBudgetWorkflow({ responses = [], person = 'Pooja', amountValues = ['0', '1000'], checkedCategories = [] } = {}) {
+function createBudgetWorkflow({
+  responses = [],
+  person = 'Pooja',
+  amountValues = ['0', '1000'],
+  checkedCategories = [],
+  monthOptions = null,
+  selectedMonth = 'September_2026',
+} = {}) {
   const source = fs.readFileSync(APP_PATH, 'utf8');
   const start = source.indexOf('// ─── Budget Display Helpers');
   const end = source.indexOf('// ─── Trends Tab', start);
@@ -176,14 +183,14 @@ function createBudgetWorkflow({ responses = [], person = 'Pooja', amountValues =
 
   const amountInputs = amountValues.map(value => element({ value }));
   const mappingInputs = checkedCategories.map(value => element({ value, checked: true }));
-  const dashboardOptions = [
+  const dashboardOptions = monthOptions || [
     { value: 'August_2026', textContent: 'August 2026' },
     { value: 'September_2026', textContent: 'September 2026' },
     { value: 'October_2026', textContent: 'October 2026 —' },
   ];
   const elements = {
-    monthPicker: element({ value: 'September_2026', options: dashboardOptions }),
-    budgetMonthPicker: element({ value: 'September_2026', options: dashboardOptions.map(option => ({ ...option })) }),
+    monthPicker: element({ value: selectedMonth, options: dashboardOptions }),
+    budgetMonthPicker: element({ value: selectedMonth, options: dashboardOptions.map(option => ({ ...option })) }),
     budgetPersonPicker: element({ value: person }),
     budgetEditBtn: element(),
     budgetCopyBtn: element(),
@@ -677,6 +684,8 @@ test('Dashboard budget renders positive totals, remaining variance, and clamped 
   assert.equal(elements.dashboardBudgetVariance.textContent, '₹500 overspent');
   assert.equal(elements.dashboardBudgetProgressFill.style.width, '100%');
   assert.equal(elements.dashboardBudgetUsage.textContent, '150% used');
+  assert.equal(elements.dashboardBudgetProgress.attributes['aria-valuenow'], '100');
+  assert.equal(elements.dashboardBudgetProgress.attributes['aria-valuetext'], '150% used');
 });
 
 test('Dashboard budget offers creation when the selected month has no budget', () => {
@@ -740,37 +749,54 @@ test('opening Dashboard budget details preserves month and normalized person', (
   assert.deepEqual(switchedTabs, ['budget']);
 });
 
-test('a missing Combined budget can copy the previous month with explicit conflict replacement', async () => {
+test('a missing Combined budget skips empty months and copies the latest populated source with conflict confirmation', async () => {
   const missing = budgetFixture('all');
   missing.hasBudget = false;
   missing.sections = [];
+  const julyMissing = { ...missing, month: 'July_2026' };
+  const juneSource = { ...budgetFixture('all'), month: 'June_2026' };
   const copied = budgetFixture('all');
   const { workflow, elements, requests, dashboardLoads } = createBudgetWorkflow({
     person: 'all',
+    monthOptions: [
+      { value: 'June_2026', textContent: 'June 2026' },
+      { value: 'July_2026', textContent: 'July 2026' },
+      { value: 'September_2026', textContent: 'September 2026' },
+      { value: 'October_2026', textContent: 'October 2026' },
+    ],
     responses: [
+      { ok: true, status: 200, body: missing },
+      { ok: true, status: 200, body: julyMissing },
+      { ok: true, status: 200, body: juneSource },
       { ok: false, status: 409, body: { error: 'Target budget already exists' } },
       { ok: true, status: 200, body: { saved: true, count: 4 } },
       { ok: true, status: 200, body: copied },
     ],
   });
-  workflow.setData(missing, 'all');
-  workflow.renderBudget();
+
+  await workflow.loadBudget();
 
   assert.equal(elements.budgetEditBtn.disabled, true);
   assert.equal(elements.budgetCopyBtn.disabled, false);
-  assert.equal(elements.budgetCopyBtn.textContent, 'Copy previous month');
+  assert.equal(elements.budgetCopyBtn.textContent, 'Copy June 2026');
+  assert.equal(workflow.getState().copySourceMonth, 'June_2026');
+  assert.deepEqual(requests.slice(0, 3).map(request => request.url), [
+    '/api/budget?month=September_2026&person=all',
+    '/api/budget?month=July_2026&person=all',
+    '/api/budget?month=June_2026&person=all',
+  ]);
   workflow.openBudgetCopy();
   assert.equal(elements.budgetCopyTargetMonth.value, 'September_2026');
   await workflow.copyBudgetMonth(false);
 
   let posts = requests.filter(request => request.options.method === 'POST');
   assert.equal(posts.length, 1);
-  assert.equal(posts[0].url, '/api/budget/August_2026/copy');
+  assert.equal(posts[0].url, '/api/budget/June_2026/copy');
   assert.deepEqual(JSON.parse(posts[0].options.body), {
     targetMonth: 'September_2026', person: 'all', replace: false,
   });
   assert.equal(elements.budgetCopyReplaceBtn.classList.contains('hidden'), false);
-  assert.match(elements.budgetCopyMessage.textContent, /August 2026.*September 2026/s);
+  assert.match(elements.budgetCopyMessage.textContent, /June 2026.*September 2026/s);
 
   await workflow.copyBudgetMonth(true);
 
@@ -779,6 +805,69 @@ test('a missing Combined budget can copy the previous month with explicit confli
     targetMonth: 'September_2026', person: 'all', replace: true,
   });
   assert.deepEqual(dashboardLoads, ['September_2026']);
+});
+
+test('a missing budget with no populated earlier month disables copy and sends no copy request', async () => {
+  const missing = budgetFixture();
+  missing.hasBudget = false;
+  missing.sections = [];
+  const { workflow, elements, requests } = createBudgetWorkflow({
+    monthOptions: [
+      { value: 'June_2026', textContent: 'June 2026' },
+      { value: 'July_2026', textContent: 'July 2026' },
+      { value: 'September_2026', textContent: 'September 2026' },
+    ],
+    responses: [
+      { ok: true, status: 200, body: missing },
+      { ok: true, status: 200, body: { ...missing, month: 'July_2026' } },
+      { ok: true, status: 200, body: { ...missing, month: 'June_2026' } },
+    ],
+  });
+
+  await workflow.loadBudget();
+
+  assert.equal(workflow.getState().copySourceMonth, '');
+  assert.equal(elements.budgetCopyBtn.disabled, true);
+  assert.equal(elements.budgetCopyBtn.textContent, 'No earlier budget to copy');
+  workflow.openBudgetCopy();
+  await workflow.copyBudgetMonth(false);
+  assert.equal(requests.some(request => request.options.method === 'POST'), false);
+  assert.equal(elements.budgetCopyModal.classList.contains('hidden'), true);
+});
+
+test('earlier-budget discovery cannot publish after month selection changes', async () => {
+  const discovery = deferredResponse();
+  const septemberMissing = budgetFixture();
+  septemberMissing.hasBudget = false;
+  septemberMissing.sections = [];
+  const october = budgetFixture();
+  october.month = 'October_2026';
+  const { workflow, elements, requests } = createBudgetWorkflow({
+    monthOptions: [
+      { value: 'July_2026', textContent: 'July 2026' },
+      { value: 'September_2026', textContent: 'September 2026' },
+      { value: 'October_2026', textContent: 'October 2026' },
+    ],
+    responses: [
+      { ok: true, status: 200, body: septemberMissing },
+      discovery.promise,
+      { ok: true, status: 200, body: october },
+    ],
+  });
+
+  const septemberLoad = workflow.loadBudget();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests[1].url, '/api/budget?month=July_2026&person=Pooja');
+
+  elements.budgetMonthPicker.value = 'October_2026';
+  await workflow.loadBudget();
+  discovery.resolve({ ok: true, status: 200, body: { ...budgetFixture(), month: 'July_2026' } });
+  await septemberLoad;
+
+  assert.equal(workflow.getState().month, 'October_2026');
+  assert.equal(workflow.getState().copySourceMonth, 'October_2026');
+  assert.equal(elements.budgetCopyBtn.disabled, false);
+  assert.equal(elements.budgetCopyBtn.textContent, 'Copy month');
 });
 
 function parseHexColor(hex) {
@@ -820,5 +909,12 @@ test('Budget status tokens meet WCAG AA contrast in light and dark themes', () =
       );
       assert.match(css, new RegExp(`\\.budget-status--${status}[^}]*var\\(--budget-${status}-text\\)[^}]*var\\(--budget-${status}-bg\\)`));
     }
+    assert.ok(theme['--budget-negative-text'], 'Dashboard negative/error text token must exist');
+    assert.ok(
+      contrastRatio(theme['--budget-negative-text'], theme['--white']) >= 4.5,
+      `Dashboard negative/error contrast must be at least 4.5:1, got ${contrastRatio(theme['--budget-negative-text'], theme['--white']).toFixed(2)}:1`
+    );
   }
+  assert.match(css, /dashboard-budget-card\[data-state="over"\][^}]*var\(--budget-negative-text\)/s);
+  assert.match(css, /dashboard-budget-card\[data-state="error"\][^}]*var\(--budget-negative-text\)/s);
 });

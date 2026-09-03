@@ -3149,6 +3149,7 @@ function renderDashboardBudget(data, { unavailable = false } = {}) {
     progress.removeAttribute('aria-valuemin');
     progress.removeAttribute('aria-valuemax');
     progress.removeAttribute('aria-valuenow');
+    progress.removeAttribute('aria-valuetext');
     usageText.textContent = '';
   };
 
@@ -3209,6 +3210,7 @@ function renderDashboardBudget(data, { unavailable = false } = {}) {
   progress.setAttribute('aria-valuemax', '100');
   progress.setAttribute('aria-valuenow', String(usage.width));
   usageText.textContent = usage.label === 'Unbudgeted' ? 'Unbudgeted' : `${usage.label} used`;
+  progress.setAttribute('aria-valuetext', usageText.textContent);
   action.textContent = 'View budget';
 }
 
@@ -3237,6 +3239,7 @@ const budgetState = {
   saving: false,
   mappingLine: null,
   copySourceMonth: '',
+  copySourceStatus: 'idle',
   loadSequence: 0,
 };
 
@@ -3295,6 +3298,8 @@ async function loadBudget() {
   budgetState.data = null;
   budgetState.editing = false;
   budgetState.mappingLine = null;
+  budgetState.copySourceMonth = '';
+  budgetState.copySourceStatus = 'idle';
   showBudgetError('');
   document.getElementById('budgetLoading').classList.remove('hidden');
   document.getElementById('budgetEmpty').classList.add('hidden');
@@ -3317,7 +3322,28 @@ async function loadBudget() {
     if (!isActiveLoad()) return;
     if (!response.ok) throw new Error(data.error || 'Failed to load budget');
     budgetState.data = data;
+    if (data.hasBudget) {
+      budgetState.copySourceMonth = month;
+      budgetState.copySourceStatus = 'available';
+      renderBudget();
+      return;
+    }
+
+    budgetState.copySourceStatus = 'discovering';
     renderBudget();
+    try {
+      const sourceMonth = await findEarlierBudgetSource(month, normalizedPerson, isActiveLoad);
+      if (!isActiveLoad()) return;
+      budgetState.copySourceMonth = sourceMonth;
+      budgetState.copySourceStatus = sourceMonth ? 'available' : 'none';
+      renderBudget();
+    } catch (discoveryError) {
+      if (!isActiveLoad()) return;
+      budgetState.copySourceMonth = '';
+      budgetState.copySourceStatus = 'error';
+      renderBudget();
+      showBudgetError(discoveryError.message || 'Could not check earlier budgets');
+    }
   } catch (error) {
     if (!isActiveLoad()) return;
     budgetState.data = null;
@@ -3339,8 +3365,22 @@ function renderBudget() {
   const readOnly = budgetState.person === 'all';
 
   editButton.disabled = readOnly || budgetState.saving || !data?.hasBudget;
-  copyButton.disabled = budgetState.saving || !data;
-  copyButton.textContent = data?.hasBudget ? 'Copy month' : 'Copy previous month';
+  let canCopy = Boolean(data?.hasBudget);
+  let copyLabel = 'Copy month';
+  if (data && !data.hasBudget) {
+    canCopy = budgetState.copySourceStatus === 'available' && Boolean(budgetState.copySourceMonth);
+    copyLabel = budgetState.copySourceStatus === 'discovering'
+      ? 'Finding earlier budget…'
+      : budgetState.copySourceStatus === 'none'
+        ? 'No earlier budget to copy'
+        : budgetState.copySourceStatus === 'error'
+          ? 'Could not check earlier budgets'
+          : canCopy
+            ? `Copy ${budgetMonthLabel(budgetState.copySourceMonth)}`
+            : 'No earlier budget to copy';
+  }
+  copyButton.disabled = budgetState.saving || !canCopy;
+  copyButton.textContent = copyLabel;
   editButton.textContent = budgetState.saving ? 'Saving…' : budgetState.editing ? 'Save budget' : 'Edit budget';
   if (cancelButton) cancelButton.classList.toggle('hidden', !budgetState.editing);
 
@@ -3550,15 +3590,20 @@ function budgetMonthLabel(month) {
   return String(month || '').replace('_', ' ');
 }
 
-function previousBudgetMonth(month) {
-  const months = ['January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'];
-  const match = /^([A-Za-z]+)_(\d{4})$/.exec(String(month || ''));
-  const index = match ? months.indexOf(match[1]) : -1;
-  if (index < 0) return '';
-  const previousIndex = (index + 11) % 12;
-  const year = Number(match[2]) - (index === 0 ? 1 : 0);
-  return `${months[previousIndex]}_${year}`;
+async function findEarlierBudgetSource(month, person, isActiveLoad) {
+  const monthPicker = document.getElementById('budgetMonthPicker');
+  const months = Array.from(monthPicker.options || [], option => option.value);
+  const currentIndex = months.indexOf(month);
+  const earlierMonths = currentIndex < 0 ? [] : months.slice(0, currentIndex).reverse();
+
+  for (const candidate of earlierMonths) {
+    const response = await fetch(`/api/budget?month=${encodeURIComponent(candidate)}&person=${encodeURIComponent(person)}`);
+    const data = await budgetResponseJson(response);
+    if (!isActiveLoad()) return '';
+    if (!response.ok) throw new Error(data.error || 'Could not check earlier budgets');
+    if (data.hasBudget) return candidate;
+  }
+  return '';
 }
 
 function updateBudgetCopyMessage() {
@@ -3569,17 +3614,19 @@ function updateBudgetCopyMessage() {
 
 function openBudgetCopy() {
   if (!budgetState.data || budgetState.saving) return;
+  if (!budgetState.data.hasBudget &&
+      (budgetState.copySourceStatus !== 'available' || !budgetState.copySourceMonth)) return;
   const targetPicker = document.getElementById('budgetCopyTargetMonth');
   const previous = targetPicker.value;
   copyMonthOptions(document.getElementById('budgetMonthPicker'), targetPicker);
   const values = Array.from(targetPicker.options || [], option => option.value);
   if (budgetState.data.hasBudget) {
     budgetState.copySourceMonth = budgetState.month;
+    budgetState.copySourceStatus = 'available';
     targetPicker.value = values.includes(previous) && previous !== budgetState.month
       ? previous
       : values.find(value => value !== budgetState.month) || '';
   } else {
-    budgetState.copySourceMonth = previousBudgetMonth(budgetState.month);
     targetPicker.value = budgetState.month;
   }
   document.getElementById('budgetCopyConfirmBtn').classList.remove('hidden');
@@ -3596,7 +3643,7 @@ function closeBudgetCopy() {
 
 async function copyBudgetMonth(replace = false) {
   if (budgetState.saving) return;
-  const sourceMonth = budgetState.copySourceMonth || budgetState.month;
+  const sourceMonth = budgetState.copySourceMonth;
   const targetMonth = document.getElementById('budgetCopyTargetMonth').value;
   if (!sourceMonth || !targetMonth || targetMonth === sourceMonth) {
     document.getElementById('budgetCopyMessage').textContent = 'Choose a different target month.';
