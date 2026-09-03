@@ -7,6 +7,7 @@ const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const multer = require('multer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('./db');
+const { createBudgetService } = require('./budget-service');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -18,8 +19,10 @@ app.use(express.json());
 
 // ─── Session ─────────────────────────────────────────────────────────────────
 
+const sessionStore = require.main === module ? new SqliteStore({ client: db }) : undefined;
+
 app.use(session({
-  store: new SqliteStore({ client: db }),
+  store: sessionStore,
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
@@ -119,6 +122,44 @@ app.get('/login', (req, res) => {
 function requireAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect('/login');
+}
+
+function registerBudgetRoutes(app, service) {
+  const sendServiceResult = (res, operation) => {
+    try {
+      res.json(operation());
+    } catch (error) {
+      const statusByCode = { validation: 400, not_found: 404, conflict: 409 };
+      const status = statusByCode[error.code] || 500;
+      res.status(status).json({ error: status === 500 ? 'Budget operation failed' : error.message });
+    }
+  };
+
+  app.get('/api/budget', (req, res) => {
+    sendServiceResult(res, () => service.getBudget({
+      month: req.query.month,
+      person: req.query.person || 'all',
+    }));
+  });
+
+  app.put('/api/budget/:month', (req, res) => {
+    const { person, lines } = req.body || {};
+    sendServiceResult(res, () => service.replaceBudget({ month: req.params.month, person, lines }));
+  });
+
+  app.put('/api/budget-mappings', (req, res) => {
+    sendServiceResult(res, () => service.replaceMappings(req.body || {}));
+  });
+
+  app.post('/api/budget/:month/copy', (req, res) => {
+    const { targetMonth, person, replace } = req.body || {};
+    sendServiceResult(res, () => service.copyBudget({
+      sourceMonth: req.params.month,
+      targetMonth,
+      person,
+      replace,
+    }));
+  });
 }
 
 // ─── App routes (protected) ───────────────────────────────────────────────────
@@ -606,6 +647,8 @@ const CATEGORIES = [
   'Books', 'Flowers', 'ESOPS', 'Movies', 'DryClear'
 ];
 
+registerBudgetRoutes(app, createBudgetService(db, { validCategories: CATEGORIES }));
+
 const EXPENSE_TYPES = [
   'Pooja_Personal', 'Kunal_Personal', 'Common_50_50',
   'Pooja_for_Kunal', 'Kunal_for_Pooja', 'Kunal_CreditCard_Bill', 'Pooja_CreditCard_Bill'
@@ -871,6 +914,10 @@ Question: ${question}`;
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n✅ Expense Tracker running at http://localhost:${PORT}\n`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n✅ Expense Tracker running at http://localhost:${PORT}\n`);
+  });
+}
+
+module.exports = { registerBudgetRoutes };
