@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const { SEPTEMBER_2026_BUDGET_LINES, INITIAL_BUDGET_MAPPINGS } = require('./budget-seed');
 
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'expenses.db');
 const db = new Database(dbPath);
@@ -72,7 +73,46 @@ db.exec(`
     key   TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS budgets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    month      TEXT NOT NULL CHECK(month GLOB '[A-Z]*_[0-9][0-9][0-9][0-9]'),
+    person     TEXT NOT NULL CHECK(person IN ('Pooja','Kunal')),
+    section    TEXT NOT NULL,
+    category   TEXT NOT NULL,
+    kind       TEXT NOT NULL CHECK(kind IN ('expense','investment')),
+    amount     REAL NOT NULL CHECK(amount >= 0),
+    sort_order INTEGER NOT NULL CHECK(sort_order >= 0),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(month, person, section, category)
+  );
+
+  CREATE TABLE IF NOT EXISTS budget_category_mappings (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    section              TEXT NOT NULL,
+    budget_category      TEXT NOT NULL,
+    transaction_category TEXT NOT NULL,
+    kind                 TEXT NOT NULL CHECK(kind IN ('expense','investment')),
+    created_at           TEXT DEFAULT (datetime('now')),
+    UNIQUE(section, budget_category, transaction_category),
+    UNIQUE(kind, transaction_category)
+  );
 `);
+
+const insertBudgetLine = db.prepare(`
+  INSERT OR IGNORE INTO budgets (month, person, section, category, kind, amount, sort_order)
+  VALUES (@month, @person, @section, @category, @kind, @amount, @sort_order)
+`);
+const insertBudgetMapping = db.prepare(`
+  INSERT OR IGNORE INTO budget_category_mappings (section, budget_category, transaction_category, kind)
+  VALUES (@section, @budget_category, @transaction_category, @kind)
+`);
+
+db.transaction(() => {
+  for (const line of SEPTEMBER_2026_BUDGET_LINES) insertBudgetLine.run(line);
+  for (const mapping of INITIAL_BUDGET_MAPPINGS) insertBudgetMapping.run(mapping);
+})();
 
 db.pragma('incremental_vacuum(100)');   // reclaim up to 100 free pages on each startup
 
