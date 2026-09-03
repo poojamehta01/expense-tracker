@@ -84,6 +84,20 @@
           </div>
         </div>
 
+        <section id="dashboardBudgetCard" class="dashboard-budget-card" aria-labelledby="dashboardBudgetTitle">
+          <div class="dashboard-budget-card__main">
+            <div class="kpi-label">Monthly budget</div>
+            <div id="dashboardBudgetTitle" class="dashboard-budget-card__title">Loading budget…</div>
+            <div id="dashboardBudgetAmount" class="dashboard-budget-card__amount"></div>
+            <div id="dashboardBudgetVariance" class="dashboard-budget-card__variance"></div>
+            <div id="dashboardBudgetProgress" class="budget-progress hidden" role="progressbar" aria-label="Monthly budget used">
+              <span id="dashboardBudgetProgressFill" class="budget-progress__fill"></span>
+            </div>
+            <div id="dashboardBudgetUsage" class="dashboard-budget-card__usage"></div>
+          </div>
+          <button id="dashboardBudgetAction" class="btn-secondary" type="button" onclick="openBudgetDetails()">View budget</button>
+        </section>
+
         <!-- Charts grid -->
         <div class="section-header" onclick="toggleCharts()">
           <span class="section-title">Trends</span>
@@ -531,7 +545,7 @@
         <div id="budgetLoading" class="empty-state hidden"><p>Loading budget…</p></div>
         <div id="budgetError" class="error-card hidden"></div>
         <div id="budgetEmpty" class="empty-state hidden"><p>No budget has been set for this month.</p></div>
-        <div id="budgetSummary" class="kpi-grid"></div>
+        <div id="budgetSummary" class="budget-summary-grid"></div>
         <div id="budgetSections"></div>
       </div><!-- /tab-budget -->
 
@@ -592,7 +606,7 @@
   </div>
 
   <!-- Budget Mapping Modal -->
-  <div id="budgetMappingModal" class="modal-overlay hidden" onclick="if(event.target===this)closeBudgetMapping()">
+  <div id="budgetMappingModal" class="modal-overlay budget-modal hidden" onclick="if(event.target===this)closeBudgetMapping()">
     <div class="modal-card modal-card--sm">
       <div class="modal-header">
         <h2>Map tracker categories</h2>
@@ -610,7 +624,7 @@
   </div>
 
   <!-- Budget Copy Modal -->
-  <div id="budgetCopyModal" class="modal-overlay hidden" onclick="if(event.target===this)closeBudgetCopy()">
+  <div id="budgetCopyModal" class="modal-overlay budget-modal hidden" onclick="if(event.target===this)closeBudgetCopy()">
     <div class="modal-card modal-card--sm">
       <div class="modal-header">
         <h2>Copy monthly budget</h2>

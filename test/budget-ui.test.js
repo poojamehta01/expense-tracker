@@ -113,6 +113,8 @@ function element(initial = {}) {
     options: [],
     dataset: {},
     style: {},
+    attributes: {},
+    setAttribute(name, value) { this.attributes[name] = String(value); },
     appendChild(child) { this.options.push(child); },
     ...initial,
   };
@@ -348,7 +350,7 @@ test('a personal budget edit renders numeric inputs without blanking zero', () =
   workflow.beginBudgetEdit();
 
   assert.equal(workflow.getState().editing, true);
-  assert.match(elements.budgetSections.innerHTML, /class="budget-amount-input"[^>]*type="number"[^>]*value="0"/);
+  assert.match(elements.budgetSections.innerHTML, /class="[^"]*budget-amount-input[^"]*"[^>]*type="number"[^>]*value="0"/);
 });
 
 test('saving sends the complete person line set and reloads the affected month', async () => {
@@ -480,4 +482,180 @@ test('Common global filter initializes Budget as Combined and preserves month op
     Array.from(elements.budgetMonthPicker.options, option => option.textContent),
     ['August 2026', 'September 2026', 'October 2026 —']
   );
+});
+
+function createDashboardWorkflow({ person = 'Pooja', transactionCount = 1, budget = budgetFixture(person) } = {}) {
+  const source = fs.readFileSync(APP_PATH, 'utf8');
+  const dashboardStart = source.indexOf('async function loadDashboard(month)');
+  const dashboardEnd = source.indexOf('let chartsVisible', dashboardStart);
+  const helpersStart = source.indexOf('// ─── Budget Display Helpers');
+  const helpersEnd = source.indexOf('// ─── Budget API Workflow', helpersStart);
+  const filterStart = source.indexOf('function setGlobalFilter(person)');
+  const filterEnd = source.indexOf('function applyGlobalFilter()', filterStart);
+  assert.notEqual(dashboardStart, -1, 'dashboard workflow must exist');
+  assert.notEqual(dashboardEnd, -1, 'dashboard workflow must have an end marker');
+  assert.notEqual(helpersStart, -1, 'budget display helpers must exist');
+  assert.notEqual(helpersEnd, -1, 'budget display helpers must have an end marker');
+  assert.notEqual(filterStart, -1, 'global filter workflow must exist');
+  assert.notEqual(filterEnd, -1, 'global filter workflow must have an end marker');
+
+  const monthOptions = [
+    { value: 'August_2026', textContent: 'August 2026' },
+    { value: 'September_2026', textContent: 'September 2026' },
+  ];
+  const elements = {
+    monthPicker: element({ value: 'September_2026', options: monthOptions }),
+    budgetMonthPicker: element({ value: '', options: monthOptions.map(option => ({ ...option })) }),
+    budgetPersonPicker: element({ value: 'all' }),
+    dashboardEmpty: element({ hidden: true }),
+    merchantsSection: element(),
+    savedTxSection: element(),
+    chartsGrid: element(),
+    chartsToggleIcon: element(),
+    dashboardBudgetCard: element(),
+    dashboardBudgetTitle: element(),
+    dashboardBudgetAmount: element(),
+    dashboardBudgetVariance: element(),
+    dashboardBudgetProgress: element(),
+    dashboardBudgetProgressFill: element(),
+    dashboardBudgetUsage: element(),
+    dashboardBudgetAction: element(),
+  };
+  const requests = [];
+  const switchedTabs = [];
+  const context = vm.createContext({
+    document: {
+      getElementById: id => elements[id] || null,
+      querySelectorAll: () => [],
+    },
+    fetch: async url => {
+      requests.push(url);
+      const body = url.startsWith('/api/dashboard')
+        ? { transactionCount }
+        : url.startsWith('/api/transactions')
+          ? { transactions: [] }
+          : url.startsWith('/api/salary')
+            ? {}
+            : budget;
+      return { ok: true, status: 200, json: async () => body };
+    },
+    renderSalaryKPIs() {},
+    renderTransactionsList() {},
+    applyGlobalFilter() {},
+    formatCurrency: value => `₹${Number(value)}`,
+    switchTab: name => switchedTabs.push(name),
+    copyMonthOptions() {},
+    console: { error() {} },
+  });
+  vm.runInContext(
+    `let globalPersonFilter = ${JSON.stringify(person)};
+     let _lastDashData = null;
+     let chartPersonFilter = 'all';
+     let chartsVisible = false;
+     let trendsLoaded = false;
+     const budgetState = { initialized: false };
+     ${source.slice(dashboardStart, dashboardEnd)}
+     ${source.slice(filterStart, filterEnd)}
+     ${source.slice(helpersStart, helpersEnd)}
+     globalThis.dashboardForTest = {
+       loadDashboard, loadDashboardBudget, renderDashboardBudget, openBudgetDetails, setGlobalFilter,
+     };`,
+    context
+  );
+
+  return { workflow: context.dashboardForTest, elements, requests, switchedTabs };
+}
+
+test('Dashboard contains the compact budget card targets', () => {
+  const html = fs.readFileSync(HTML_PATH, 'utf8');
+
+  assert.match(html, /id="dashboardBudgetCard"/);
+  assert.match(html, /id="dashboardBudgetProgress"/);
+  assert.match(html, /id="dashboardBudgetAction"/);
+});
+
+test('Dashboard loads and renders budget in the same refresh even without transactions', async () => {
+  const { workflow, elements, requests } = createDashboardWorkflow({ transactionCount: 0 });
+
+  await workflow.loadDashboard('September_2026');
+
+  assert.deepEqual(requests, [
+    '/api/dashboard?month=September_2026',
+    '/api/transactions?month=September_2026',
+    '/api/salary?month=September_2026',
+    '/api/budget?month=September_2026&person=Pooja',
+  ]);
+  assert.equal(elements.dashboardEmpty.classList.contains('hidden'), false);
+  assert.equal(elements.dashboardBudgetAmount.textContent, '₹250 of ₹1000');
+});
+
+test('Dashboard budget requests Combined data for the Common filter', async () => {
+  const { workflow, requests } = createDashboardWorkflow({ person: 'Common', budget: budgetFixture('all') });
+
+  await workflow.loadDashboard('September_2026');
+
+  assert.equal(requests[3], '/api/budget?month=September_2026&person=all');
+});
+
+test('changing the global person filter refreshes Dashboard budget context', () => {
+  const { workflow, requests } = createDashboardWorkflow();
+
+  workflow.setGlobalFilter('Common');
+
+  assert.deepEqual(requests, ['/api/budget?month=September_2026&person=all']);
+});
+
+test('Dashboard budget renders positive totals, remaining variance, and clamped progress', () => {
+  const data = budgetFixture();
+  data.summary.usage = 1.5;
+  data.summary.variance = -500;
+  const { workflow, elements } = createDashboardWorkflow({ budget: data });
+
+  workflow.renderDashboardBudget(data);
+
+  assert.equal(elements.dashboardBudgetAmount.textContent, '₹250 of ₹1000');
+  assert.equal(elements.dashboardBudgetVariance.textContent, '₹500 overspent');
+  assert.equal(elements.dashboardBudgetProgressFill.style.width, '100%');
+  assert.equal(elements.dashboardBudgetUsage.textContent, '150% used');
+});
+
+test('Dashboard budget offers creation when the selected month has no budget', () => {
+  const { workflow, elements } = createDashboardWorkflow();
+
+  workflow.renderDashboardBudget({ hasBudget: false, summary: {} });
+
+  assert.equal(elements.dashboardBudgetTitle.textContent, 'No budget set');
+  assert.equal(elements.dashboardBudgetAction.textContent, 'Create budget');
+  assert.equal(elements.dashboardBudgetProgress.classList.contains('hidden'), true);
+});
+
+test('Dashboard budget presents zero-budget actuals as unbudgeted without invalid numbers', () => {
+  const data = budgetFixture();
+  data.summary.expenseBudget = 0;
+  data.summary.actualSpending = 250;
+  data.summary.variance = -250;
+  data.summary.usage = null;
+  const { workflow, elements } = createDashboardWorkflow({ budget: data });
+
+  workflow.renderDashboardBudget(data);
+
+  const rendered = [
+    elements.dashboardBudgetTitle.textContent,
+    elements.dashboardBudgetAmount.textContent,
+    elements.dashboardBudgetVariance.textContent,
+    elements.dashboardBudgetUsage.textContent,
+  ].join(' ');
+  assert.match(rendered, /Unbudgeted spending/);
+  assert.doesNotMatch(rendered, /Infinity|NaN/);
+  assert.equal(elements.dashboardBudgetProgressFill.style.width, '100%');
+});
+
+test('opening Dashboard budget details preserves month and normalized person', () => {
+  const { workflow, elements, switchedTabs } = createDashboardWorkflow({ person: 'Common' });
+
+  workflow.openBudgetDetails();
+
+  assert.equal(elements.budgetMonthPicker.value, 'September_2026');
+  assert.equal(elements.budgetPersonPicker.value, 'all');
+  assert.deepEqual(switchedTabs, ['budget']);
 });

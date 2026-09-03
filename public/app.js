@@ -1617,7 +1617,8 @@ async function loadDashboard(month) {
     const [dashRes, txRes, salRes] = await Promise.all([
       fetch(`/api/dashboard?month=${encodeURIComponent(month)}`),
       fetch(`/api/transactions?month=${encodeURIComponent(month)}`),
-      fetch(`/api/salary?month=${encodeURIComponent(month)}`)
+      fetch(`/api/salary?month=${encodeURIComponent(month)}`),
+      loadDashboardBudget(month),
     ]);
 
     const dash = await dashRes.json();
@@ -1979,6 +1980,7 @@ function setGlobalFilter(person) {
   if (trendsTab && !trendsTab.classList.contains('hidden')) {
     loadTrends();
   }
+  loadDashboardBudget(document.getElementById('monthPicker').value);
   if (budgetState.initialized) {
     const budgetPerson = person === 'Pooja' || person === 'Kunal' ? person : 'all';
     document.getElementById('budgetPersonPicker').value = budgetPerson;
@@ -3060,7 +3062,7 @@ const BUDGET_STATUS = {
   watch: ['Watch', 'budget-status--watch'],
   over_budget: ['Over budget', 'budget-status--bad'],
   no_activity: ['No activity', 'budget-status--muted'],
-  unbudgeted: ['Unbudgeted', 'budget-status--bad'],
+  unbudgeted: ['Unbudgeted', 'budget-status--unbudgeted'],
   mapping_needed: ['Mapping needed', 'budget-status--mapping'],
 };
 
@@ -3093,6 +3095,95 @@ function buildBudgetSaveLines(sections) {
       sort_order: line.sort_order ?? index,
     }))
   );
+}
+
+async function loadDashboardBudget(month) {
+  if (!month) return;
+  const person = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'
+    ? globalPersonFilter
+    : 'all';
+
+  try {
+    const response = await fetch(`/api/budget?month=${encodeURIComponent(month)}&person=${encodeURIComponent(person)}`);
+    const data = await response.json();
+    renderDashboardBudget(response.ok ? data : null);
+  } catch (error) {
+    console.error('loadDashboardBudget error:', error);
+    renderDashboardBudget(null);
+  }
+}
+
+function renderDashboardBudget(data) {
+  const card = document.getElementById('dashboardBudgetCard');
+  const title = document.getElementById('dashboardBudgetTitle');
+  const amount = document.getElementById('dashboardBudgetAmount');
+  const variance = document.getElementById('dashboardBudgetVariance');
+  const progress = document.getElementById('dashboardBudgetProgress');
+  const progressFill = document.getElementById('dashboardBudgetProgressFill');
+  const usageText = document.getElementById('dashboardBudgetUsage');
+  const action = document.getElementById('dashboardBudgetAction');
+  if (!card || !title || !amount || !variance || !progress || !progressFill || !usageText || !action) return;
+
+  if (!data?.hasBudget) {
+    card.dataset.state = 'empty';
+    title.textContent = 'No budget set';
+    amount.textContent = '';
+    variance.textContent = 'Plan this month before spending starts.';
+    progress.classList.add('hidden');
+    progressFill.style.width = '0%';
+    progress.setAttribute('aria-valuenow', '0');
+    usageText.textContent = '';
+    action.textContent = 'Create budget';
+    return;
+  }
+
+  const values = data.summary || {};
+  const numberOrZero = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+  const expenseBudget = numberOrZero(values.expenseBudget);
+  const actualSpending = numberOrZero(values.actualSpending);
+  const budgetVariance = Number.isFinite(Number(values.variance))
+    ? Number(values.variance)
+    : expenseBudget - actualSpending;
+  const suppliedUsage = Number.isFinite(Number(values.usage)) ? Number(values.usage) : null;
+  const usage = budgetUsagePresentation({
+    budget: expenseBudget,
+    actual: actualSpending,
+    usage: suppliedUsage ?? (expenseBudget > 0 ? actualSpending / expenseBudget : null),
+  });
+
+  card.dataset.state = budgetVariance < 0 ? 'over' : 'active';
+  title.textContent = expenseBudget === 0 && actualSpending > 0
+    ? 'Unbudgeted spending'
+    : 'Budget health';
+  amount.textContent = expenseBudget === 0 && actualSpending > 0
+    ? formatCurrency(actualSpending)
+    : `${formatCurrency(actualSpending)} of ${formatCurrency(expenseBudget)}`;
+  variance.textContent = budgetVariance < 0
+    ? `${formatCurrency(Math.abs(budgetVariance))} overspent`
+    : budgetVariance > 0
+      ? `${formatCurrency(budgetVariance)} remaining`
+      : 'On budget';
+  progress.classList.remove('hidden');
+  progressFill.style.width = `${usage.width}%`;
+  progress.setAttribute('aria-valuemin', '0');
+  progress.setAttribute('aria-valuemax', '100');
+  progress.setAttribute('aria-valuenow', String(usage.width));
+  usageText.textContent = usage.label === 'Unbudgeted' ? 'Unbudgeted' : `${usage.label} used`;
+  action.textContent = 'View budget';
+}
+
+function openBudgetDetails() {
+  const dashboardPicker = document.getElementById('monthPicker');
+  const budgetMonthPicker = document.getElementById('budgetMonthPicker');
+  const budgetPersonPicker = document.getElementById('budgetPersonPicker');
+  if (!dashboardPicker || !budgetMonthPicker || !budgetPersonPicker) return;
+
+  if (!budgetMonthPicker.options.length) copyMonthOptions(dashboardPicker, budgetMonthPicker);
+  budgetMonthPicker.value = dashboardPicker.value;
+  budgetPersonPicker.value = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'
+    ? globalPersonFilter
+    : 'all';
+  switchTab('budget');
 }
 
 // ─── Budget API Workflow ────────────────────────────────────────────────────
@@ -3243,26 +3334,26 @@ function renderBudget() {
       const status = budgetStatusPresentation(line.status);
       const usage = budgetUsagePresentation(line);
       const amount = budgetState.editing && !readOnly
-        ? `<input class="budget-amount-input" type="number" min="0" step="1" value="${esc(line.budget)}" data-budget-input="${inputIndex++}">`
+        ? `<input class="budget-amount-input budget-edit-input" type="number" min="0" step="1" value="${esc(line.budget)}" data-budget-input="${inputIndex++}">`
         : formatCurrency(line.budget);
       const mappings = (line.mappings || []).length
-        ? (line.mappings || []).map(label => esc(label)).join(', ')
-        : 'No tracker categories mapped';
+        ? (line.mappings || []).map(label => `<span class="budget-mapping-chip">${esc(label)}</span>`).join('')
+        : '<span class="cell-empty">No tracker categories mapped</span>';
       const mappingAction = readOnly
         ? '<span class="cell-empty">—</span>'
         : `<button class="btn-secondary small" data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" onclick="openBudgetMapping(this)">Map</button>`;
       return `
         <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
-          <td><strong>${esc(line.category)}</strong><br><span class="cell-empty">${mappings}</span></td>
-          <td>${amount}</td>
-          <td>${formatCurrency(line.actual)}</td>
-          <td>${formatCurrency(line.variance)}</td>
-          <td>
+          <td class="budget-category-cell" data-label="Category"><strong>${esc(line.category)}</strong><div class="budget-mapping-row">${mappings}</div></td>
+          <td data-label="Budget">${amount}</td>
+          <td data-label="Actual">${formatCurrency(line.actual)}</td>
+          <td data-label="Remaining">${formatCurrency(line.variance)}</td>
+          <td data-label="Status">
             <span class="budget-status ${status.className}">${status.label}</span>
-            <div class="budget-progress"><span style="width:${usage.width}%"></span></div>
+            <div class="budget-progress"><span class="budget-progress__fill" style="width:${usage.width}%"></span></div>
             <span class="cell-empty">${usage.label}</span>
           </td>
-          <td>${mappingAction}</td>
+          <td data-label="Mapping">${mappingAction}</td>
         </tr>`;
     }).join('');
     return `
@@ -3272,7 +3363,7 @@ function renderBudget() {
           <span>${formatCurrency(section.actual)} of ${formatCurrency(section.budget)} · ${sectionUsage.label}</span>
         </div>
         <div class="table-wrapper">
-          <table>
+          <table class="budget-table">
             <thead><tr><th>Category</th><th>Budget</th><th>Actual</th><th>Remaining</th><th>Status</th><th>Mapping</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -3363,7 +3454,7 @@ function openBudgetMapping(target) {
   document.getElementById('budgetMappingLabel').textContent = `${selected.section} · ${selected.category}`;
   const checked = new Set(selected.mappings || []);
   document.getElementById('budgetMappingCategories').innerHTML = CATEGORIES.map(category => `
-    <label class="col-check">
+    <label class="col-check budget-mapping-row">
       <input type="checkbox" value="${esc(category)}" ${checked.has(category) ? 'checked' : ''}>
       ${esc(category)}
     </label>
