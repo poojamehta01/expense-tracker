@@ -3105,6 +3105,7 @@ const budgetState = {
   editing: false,
   saving: false,
   mappingLine: null,
+  loadSequence: 0,
 };
 
 function showBudgetError(message) {
@@ -3155,23 +3156,43 @@ async function loadBudget() {
   const person = document.getElementById('budgetPersonPicker').value || 'all';
   if (!month) return;
 
+  const normalizedPerson = person === 'Common' ? 'all' : person;
+  const loadSequence = ++budgetState.loadSequence;
   budgetState.month = month;
-  budgetState.person = person === 'Common' ? 'all' : person;
+  budgetState.person = normalizedPerson;
+  budgetState.data = null;
   budgetState.editing = false;
+  budgetState.mappingLine = null;
   showBudgetError('');
   document.getElementById('budgetLoading').classList.remove('hidden');
   document.getElementById('budgetEmpty').classList.add('hidden');
+  document.getElementById('budgetSummary').innerHTML = '';
+  document.getElementById('budgetSections').innerHTML = '';
+  document.getElementById('budgetEditBtn').disabled = true;
+  document.getElementById('budgetEditBtn').textContent = 'Edit budget';
+  document.getElementById('budgetCopyBtn').disabled = true;
+  document.getElementById('budgetCancelBtn')?.classList.add('hidden');
+  document.getElementById('budgetMappingModal')?.classList.add('hidden');
+
+  const isActiveLoad = () =>
+    loadSequence === budgetState.loadSequence &&
+    month === budgetState.month &&
+    normalizedPerson === budgetState.person;
 
   try {
-    const response = await fetch(`/api/budget?month=${encodeURIComponent(month)}&person=${encodeURIComponent(budgetState.person)}`);
+    const response = await fetch(`/api/budget?month=${encodeURIComponent(month)}&person=${encodeURIComponent(normalizedPerson)}`);
     const data = await budgetResponseJson(response);
+    if (!isActiveLoad()) return;
     if (!response.ok) throw new Error(data.error || 'Failed to load budget');
     budgetState.data = data;
     renderBudget();
   } catch (error) {
+    if (!isActiveLoad()) return;
+    budgetState.data = null;
+    budgetState.editing = false;
     showBudgetError(error.message || 'Failed to load budget');
   } finally {
-    document.getElementById('budgetLoading').classList.add('hidden');
+    if (isActiveLoad()) document.getElementById('budgetLoading').classList.add('hidden');
   }
 }
 
@@ -3181,10 +3202,12 @@ function renderBudget() {
   const sections = document.getElementById('budgetSections');
   const empty = document.getElementById('budgetEmpty');
   const editButton = document.getElementById('budgetEditBtn');
+  const copyButton = document.getElementById('budgetCopyBtn');
   const cancelButton = document.getElementById('budgetCancelBtn');
   const readOnly = budgetState.person === 'all';
 
   editButton.disabled = readOnly || budgetState.saving || !data?.hasBudget;
+  copyButton.disabled = budgetState.saving || !data?.hasBudget;
   editButton.textContent = budgetState.saving ? 'Saving…' : budgetState.editing ? 'Save budget' : 'Edit budget';
   if (cancelButton) cancelButton.classList.toggle('hidden', !budgetState.editing);
 
@@ -3225,6 +3248,9 @@ function renderBudget() {
       const mappings = (line.mappings || []).length
         ? (line.mappings || []).map(label => esc(label)).join(', ')
         : 'No tracker categories mapped';
+      const mappingAction = readOnly
+        ? '<span class="cell-empty">—</span>'
+        : `<button class="btn-secondary small" data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" onclick="openBudgetMapping(this)">Map</button>`;
       return `
         <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
           <td><strong>${esc(line.category)}</strong><br><span class="cell-empty">${mappings}</span></td>
@@ -3236,7 +3262,7 @@ function renderBudget() {
             <div class="budget-progress"><span style="width:${usage.width}%"></span></div>
             <span class="cell-empty">${usage.label}</span>
           </td>
-          <td><button class="btn-secondary small" data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" onclick="openBudgetMapping(this)">Map</button></td>
+          <td>${mappingAction}</td>
         </tr>`;
     }).join('');
     return `
@@ -3271,7 +3297,7 @@ function cancelBudgetEdit() {
 }
 
 async function saveBudget() {
-  if (!budgetState.editing || budgetState.person === 'all' || budgetState.saving) return;
+  if (!budgetState.editing || budgetState.person === 'all' || budgetState.saving || !budgetState.data?.hasBudget) return;
   const inputs = Array.from(document.querySelectorAll('.budget-amount-input'));
   let offset = 0;
   const editedSections = (budgetState.data.sections || []).map(section => ({
@@ -3307,8 +3333,9 @@ async function saveBudget() {
     showBudgetError(error.message || 'Failed to save budget');
   } finally {
     budgetState.saving = false;
-    editButton.disabled = budgetState.person === 'all';
+    editButton.disabled = budgetState.person === 'all' || !budgetState.data?.hasBudget;
     editButton.textContent = budgetState.editing ? 'Save budget' : 'Edit budget';
+    document.getElementById('budgetCopyBtn').disabled = !budgetState.data?.hasBudget;
   }
 }
 
@@ -3322,6 +3349,7 @@ function findBudgetLine({ section, category, kind }) {
 }
 
 function openBudgetMapping(target) {
+  if (budgetState.person === 'all' || !budgetState.data?.hasBudget) return;
   const selected = target?.dataset
     ? findBudgetLine(target.dataset)
     : target;
@@ -3349,7 +3377,7 @@ function closeBudgetMapping() {
 }
 
 async function saveBudgetMapping() {
-  if (!budgetState.mappingLine || budgetState.saving) return;
+  if (budgetState.person === 'all' || !budgetState.mappingLine || budgetState.saving) return;
   const transactionCategories = Array.from(
     document.querySelectorAll('#budgetMappingCategories input:checked'),
     input => input.value

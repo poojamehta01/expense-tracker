@@ -157,6 +157,12 @@ function budgetFixture(person = 'Pooja') {
   };
 }
 
+function deferredResponse() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
 function createBudgetWorkflow({ responses = [], person = 'Pooja', amountValues = ['0', '1000'], checkedCategories = [] } = {}) {
   const source = fs.readFileSync(APP_PATH, 'utf8');
   const start = source.indexOf('// ─── Budget Display Helpers');
@@ -207,7 +213,7 @@ function createBudgetWorkflow({ responses = [], person = 'Pooja', amountValues =
     },
     fetch: async (url, options = {}) => {
       requests.push({ url, options });
-      const response = responseQueue.shift() || { ok: true, status: 200, body: budgetFixture(person) };
+      const response = await (responseQueue.shift() || { ok: true, status: 200, body: budgetFixture(person) });
       return {
         ok: response.ok,
         status: response.status,
@@ -260,8 +266,79 @@ test('Combined budgets remain read-only and server labels are escaped in API ord
 
   assert.equal(elements.budgetEditBtn.disabled, true);
   assert.doesNotMatch(elements.budgetSections.innerHTML, /budget-amount-input/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /openBudgetMapping|>Map</);
   assert.doesNotMatch(elements.budgetSections.innerHTML, /<First>|<Rent>/);
   assert.ok(elements.budgetSections.innerHTML.indexOf('&lt;First&gt;') < elements.budgetSections.innerHTML.indexOf('Second'));
+});
+
+test('an older successful load cannot replace the active month response', async () => {
+  const older = deferredResponse();
+  const current = budgetFixture();
+  current.month = 'October_2026';
+  current.sections[0].lines[0].category = 'Current month rent';
+  const { workflow, elements } = createBudgetWorkflow({
+    responses: [older.promise, { ok: true, status: 200, body: current }],
+  });
+  workflow.setData(budgetFixture());
+  workflow.beginBudgetEdit();
+
+  const olderLoad = workflow.loadBudget();
+  assert.equal(workflow.getState().data, null);
+  assert.equal(workflow.getState().editing, false);
+  assert.equal(elements.budgetEditBtn.disabled, true);
+  assert.equal(elements.budgetEditBtn.textContent, 'Edit budget');
+  assert.equal(elements.budgetSections.innerHTML, '');
+
+  elements.budgetMonthPicker.value = 'October_2026';
+  const currentLoad = workflow.loadBudget();
+  await currentLoad;
+  older.resolve({ ok: true, status: 200, body: budgetFixture() });
+  await olderLoad;
+
+  assert.equal(workflow.getState().month, 'October_2026');
+  assert.equal(workflow.getState().data.month, 'October_2026');
+  assert.match(elements.budgetSections.innerHTML, /Current month rent/);
+  assert.equal(elements.budgetError.classList.contains('hidden'), true);
+});
+
+test('a late load error cannot overwrite the active selection', async () => {
+  const older = deferredResponse();
+  const current = budgetFixture();
+  current.month = 'October_2026';
+  const { workflow, elements } = createBudgetWorkflow({
+    responses: [older.promise, { ok: true, status: 200, body: current }],
+  });
+
+  const olderLoad = workflow.loadBudget();
+  elements.budgetMonthPicker.value = 'October_2026';
+  await workflow.loadBudget();
+  older.resolve({ ok: false, status: 500, body: { error: 'Late failure' } });
+  await olderLoad;
+
+  assert.equal(workflow.getState().month, 'October_2026');
+  assert.equal(workflow.getState().data.month, 'October_2026');
+  assert.equal(elements.budgetError.textContent, '');
+  assert.equal(elements.budgetError.classList.contains('hidden'), true);
+});
+
+test('an active failed load clears stale data and cannot submit a stale replacement', async () => {
+  const { workflow, elements, requests } = createBudgetWorkflow({
+    responses: [{ ok: false, status: 500, body: { error: 'Budget unavailable' } }],
+  });
+  workflow.setData(budgetFixture());
+  workflow.beginBudgetEdit();
+
+  await workflow.loadBudget();
+  workflow.beginBudgetEdit();
+  await workflow.saveBudget();
+
+  assert.equal(workflow.getState().data, null);
+  assert.equal(workflow.getState().editing, false);
+  assert.equal(elements.budgetEditBtn.disabled, true);
+  assert.equal(elements.budgetEditBtn.textContent, 'Edit budget');
+  assert.equal(elements.budgetSections.innerHTML, '');
+  assert.equal(elements.budgetError.textContent, 'Budget unavailable');
+  assert.equal(requests.some(request => request.options.method === 'PUT'), false);
 });
 
 test('a personal budget edit renders numeric inputs without blanking zero', () => {
@@ -275,7 +352,7 @@ test('a personal budget edit renders numeric inputs without blanking zero', () =
 });
 
 test('saving sends the complete person line set and reloads the affected month', async () => {
-  const { workflow, requests, dashboardLoads } = createBudgetWorkflow({
+  const { workflow, elements, requests, dashboardLoads } = createBudgetWorkflow({
     amountValues: ['0', '1250'],
     responses: [
       { ok: true, status: 200, body: { saved: true, count: 2 } },
@@ -297,6 +374,7 @@ test('saving sends the complete person line set and reloads the affected month',
     ],
   });
   assert.deepEqual(dashboardLoads, ['September_2026']);
+  assert.equal(elements.budgetCopyBtn.disabled, false);
 });
 
 test('a failed save retains edited values and displays the server error', async () => {
@@ -336,6 +414,21 @@ test('mapping save replaces checked categories for the selected budget line', as
     transactionCategories: ['Rent', 'Utilities'],
   });
   assert.equal(elements.budgetEditBtn.disabled, false);
+});
+
+test('Combined defensively rejects direct mapping edit and save calls', async () => {
+  const { workflow, elements, requests } = createBudgetWorkflow({
+    person: 'all',
+    checkedCategories: ['Rent'],
+  });
+  workflow.setData(budgetFixture('all'), 'all');
+
+  workflow.openBudgetMapping({ section: 'Home', category: 'Rent', kind: 'expense', mappings: ['Rent'] });
+  await workflow.saveBudgetMapping();
+
+  assert.equal(workflow.getState().mappingLine, null);
+  assert.equal(elements.budgetMappingModal.classList.contains('hidden'), true);
+  assert.equal(requests.some(request => request.url === '/api/budget-mappings'), false);
 });
 
 test('copy conflict opens replacement confirmation without retrying automatically', async () => {
