@@ -3097,23 +3097,42 @@ function buildBudgetSaveLines(sections) {
   );
 }
 
+const dashboardBudgetLoadState = {
+  sequence: 0,
+  month: '',
+  person: 'all',
+};
+
 async function loadDashboardBudget(month) {
   if (!month) return;
   const person = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'
     ? globalPersonFilter
     : 'all';
+  const loadSequence = ++dashboardBudgetLoadState.sequence;
+  dashboardBudgetLoadState.month = month;
+  dashboardBudgetLoadState.person = person;
+  const isActiveLoad = () =>
+    loadSequence === dashboardBudgetLoadState.sequence &&
+    month === dashboardBudgetLoadState.month &&
+    person === dashboardBudgetLoadState.person;
 
   try {
     const response = await fetch(`/api/budget?month=${encodeURIComponent(month)}&person=${encodeURIComponent(person)}`);
     const data = await response.json();
-    renderDashboardBudget(response.ok ? data : null);
+    if (!isActiveLoad()) return;
+    if (!response.ok) {
+      renderDashboardBudget(null, { unavailable: true });
+      return;
+    }
+    renderDashboardBudget(data);
   } catch (error) {
+    if (!isActiveLoad()) return;
     console.error('loadDashboardBudget error:', error);
-    renderDashboardBudget(null);
+    renderDashboardBudget(null, { unavailable: true });
   }
 }
 
-function renderDashboardBudget(data) {
+function renderDashboardBudget(data, { unavailable = false } = {}) {
   const card = document.getElementById('dashboardBudgetCard');
   const title = document.getElementById('dashboardBudgetTitle');
   const amount = document.getElementById('dashboardBudgetAmount');
@@ -3124,15 +3143,31 @@ function renderDashboardBudget(data) {
   const action = document.getElementById('dashboardBudgetAction');
   if (!card || !title || !amount || !variance || !progress || !progressFill || !usageText || !action) return;
 
+  const hideProgress = () => {
+    progress.classList.add('hidden');
+    progressFill.style.width = '0%';
+    progress.removeAttribute('aria-valuemin');
+    progress.removeAttribute('aria-valuemax');
+    progress.removeAttribute('aria-valuenow');
+    usageText.textContent = '';
+  };
+
+  if (unavailable) {
+    card.dataset.state = 'error';
+    title.textContent = 'Budget unavailable';
+    amount.textContent = '';
+    variance.textContent = 'Could not load this month\'s budget.';
+    hideProgress();
+    action.textContent = 'Open budget';
+    return;
+  }
+
   if (!data?.hasBudget) {
     card.dataset.state = 'empty';
     title.textContent = 'No budget set';
     amount.textContent = '';
     variance.textContent = 'Plan this month before spending starts.';
-    progress.classList.add('hidden');
-    progressFill.style.width = '0%';
-    progress.setAttribute('aria-valuenow', '0');
-    usageText.textContent = '';
+    hideProgress();
     action.textContent = 'Create budget';
     return;
   }
@@ -3163,6 +3198,11 @@ function renderDashboardBudget(data) {
     : budgetVariance > 0
       ? `${formatCurrency(budgetVariance)} remaining`
       : 'On budget';
+  if (expenseBudget === 0) {
+    hideProgress();
+    action.textContent = 'View budget';
+    return;
+  }
   progress.classList.remove('hidden');
   progressFill.style.width = `${usage.width}%`;
   progress.setAttribute('aria-valuemin', '0');
@@ -3196,6 +3236,7 @@ const budgetState = {
   editing: false,
   saving: false,
   mappingLine: null,
+  copySourceMonth: '',
   loadSequence: 0,
 };
 
@@ -3298,7 +3339,8 @@ function renderBudget() {
   const readOnly = budgetState.person === 'all';
 
   editButton.disabled = readOnly || budgetState.saving || !data?.hasBudget;
-  copyButton.disabled = budgetState.saving || !data?.hasBudget;
+  copyButton.disabled = budgetState.saving || !data;
+  copyButton.textContent = data?.hasBudget ? 'Copy month' : 'Copy previous month';
   editButton.textContent = budgetState.saving ? 'Saving…' : budgetState.editing ? 'Save budget' : 'Edit budget';
   if (cancelButton) cancelButton.classList.toggle('hidden', !budgetState.editing);
 
@@ -3508,21 +3550,38 @@ function budgetMonthLabel(month) {
   return String(month || '').replace('_', ' ');
 }
 
+function previousBudgetMonth(month) {
+  const months = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const match = /^([A-Za-z]+)_(\d{4})$/.exec(String(month || ''));
+  const index = match ? months.indexOf(match[1]) : -1;
+  if (index < 0) return '';
+  const previousIndex = (index + 11) % 12;
+  const year = Number(match[2]) - (index === 0 ? 1 : 0);
+  return `${months[previousIndex]}_${year}`;
+}
+
 function updateBudgetCopyMessage() {
   const target = document.getElementById('budgetCopyTargetMonth').value;
   document.getElementById('budgetCopyMessage').textContent =
-    `Copy ${budgetMonthLabel(budgetState.month)} to ${budgetMonthLabel(target)}?`;
+    `Copy ${budgetMonthLabel(budgetState.copySourceMonth || budgetState.month)} to ${budgetMonthLabel(target)}?`;
 }
 
 function openBudgetCopy() {
-  if (!budgetState.data?.hasBudget) return;
+  if (!budgetState.data || budgetState.saving) return;
   const targetPicker = document.getElementById('budgetCopyTargetMonth');
   const previous = targetPicker.value;
   copyMonthOptions(document.getElementById('budgetMonthPicker'), targetPicker);
   const values = Array.from(targetPicker.options || [], option => option.value);
-  targetPicker.value = values.includes(previous) && previous !== budgetState.month
-    ? previous
-    : values.find(value => value !== budgetState.month) || '';
+  if (budgetState.data.hasBudget) {
+    budgetState.copySourceMonth = budgetState.month;
+    targetPicker.value = values.includes(previous) && previous !== budgetState.month
+      ? previous
+      : values.find(value => value !== budgetState.month) || '';
+  } else {
+    budgetState.copySourceMonth = previousBudgetMonth(budgetState.month);
+    targetPicker.value = budgetState.month;
+  }
   document.getElementById('budgetCopyConfirmBtn').classList.remove('hidden');
   document.getElementById('budgetCopyReplaceBtn').classList.add('hidden');
   updateBudgetCopyMessage();
@@ -3537,9 +3596,9 @@ function closeBudgetCopy() {
 
 async function copyBudgetMonth(replace = false) {
   if (budgetState.saving) return;
-  const sourceMonth = budgetState.month;
+  const sourceMonth = budgetState.copySourceMonth || budgetState.month;
   const targetMonth = document.getElementById('budgetCopyTargetMonth').value;
-  if (!targetMonth || targetMonth === sourceMonth) {
+  if (!sourceMonth || !targetMonth || targetMonth === sourceMonth) {
     document.getElementById('budgetCopyMessage').textContent = 'Choose a different target month.';
     return;
   }

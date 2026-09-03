@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const APP_PATH = path.join(__dirname, '..', 'public', 'app.js');
 const HTML_PATH = path.join(__dirname, '..', 'public', 'index.html');
+const STYLE_PATH = path.join(__dirname, '..', 'public', 'style.css');
 
 function loadBudgetHelpers() {
   const source = fs.readFileSync(APP_PATH, 'utf8');
@@ -115,6 +116,7 @@ function element(initial = {}) {
     style: {},
     attributes: {},
     setAttribute(name, value) { this.attributes[name] = String(value); },
+    removeAttribute(name) { delete this.attributes[name]; },
     appendChild(child) { this.options.push(child); },
     ...initial,
   };
@@ -484,7 +486,13 @@ test('Common global filter initializes Budget as Combined and preserves month op
   );
 });
 
-function createDashboardWorkflow({ person = 'Pooja', transactionCount = 1, budget = budgetFixture(person) } = {}) {
+function createDashboardWorkflow({
+  person = 'Pooja',
+  transactionCount = 1,
+  budget = budgetFixture(person),
+  budgetResponses = [],
+  budgetError = null,
+} = {}) {
   const source = fs.readFileSync(APP_PATH, 'utf8');
   const dashboardStart = source.indexOf('async function loadDashboard(month)');
   const dashboardEnd = source.indexOf('let chartsVisible', dashboardStart);
@@ -523,6 +531,7 @@ function createDashboardWorkflow({ person = 'Pooja', transactionCount = 1, budge
   };
   const requests = [];
   const switchedTabs = [];
+  const responseQueue = [...budgetResponses];
   const context = vm.createContext({
     document: {
       getElementById: id => elements[id] || null,
@@ -530,13 +539,24 @@ function createDashboardWorkflow({ person = 'Pooja', transactionCount = 1, budge
     },
     fetch: async url => {
       requests.push(url);
+      if (url.startsWith('/api/budget')) {
+        if (budgetError) throw budgetError;
+        const queued = responseQueue.shift();
+        if (queued) {
+          const response = await queued;
+          return {
+            ok: response.ok,
+            status: response.status,
+            json: async () => response.body,
+          };
+        }
+        return { ok: true, status: 200, json: async () => budget };
+      }
       const body = url.startsWith('/api/dashboard')
         ? { transactionCount }
         : url.startsWith('/api/transactions')
           ? { transactions: [] }
-          : url.startsWith('/api/salary')
-            ? {}
-            : budget;
+          : {};
       return { ok: true, status: 200, json: async () => body };
     },
     renderSalaryKPIs() {},
@@ -559,6 +579,7 @@ function createDashboardWorkflow({ person = 'Pooja', transactionCount = 1, budge
      ${source.slice(helpersStart, helpersEnd)}
      globalThis.dashboardForTest = {
        loadDashboard, loadDashboardBudget, renderDashboardBudget, openBudgetDetails, setGlobalFilter,
+       setPersonForTest(person) { globalPersonFilter = person; },
      };`,
     context
   );
@@ -597,6 +618,45 @@ test('Dashboard budget requests Combined data for the Common filter', async () =
   assert.equal(requests[3], '/api/budget?month=September_2026&person=all');
 });
 
+test('a late Dashboard budget success cannot replace the active month', async () => {
+  const older = deferredResponse();
+  const current = budgetFixture();
+  current.summary.actualSpending = 400;
+  const { workflow, elements } = createDashboardWorkflow({
+    budgetResponses: [older.promise, { ok: true, status: 200, body: current }],
+  });
+
+  elements.monthPicker.value = 'August_2026';
+  const olderLoad = workflow.loadDashboardBudget('August_2026');
+  elements.monthPicker.value = 'September_2026';
+  await workflow.loadDashboardBudget('September_2026');
+  const oldData = budgetFixture();
+  oldData.month = 'August_2026';
+  oldData.summary.actualSpending = 50;
+  older.resolve({ ok: true, status: 200, body: oldData });
+  await olderLoad;
+
+  assert.equal(elements.dashboardBudgetAmount.textContent, '₹400 of ₹1000');
+});
+
+test('a late Dashboard budget error cannot replace the active person', async () => {
+  const older = deferredResponse();
+  const current = budgetFixture('Kunal');
+  current.summary.actualSpending = 600;
+  const { workflow, elements } = createDashboardWorkflow({
+    budgetResponses: [older.promise, { ok: true, status: 200, body: current }],
+  });
+
+  const olderLoad = workflow.loadDashboardBudget('September_2026');
+  workflow.setPersonForTest('Kunal');
+  await workflow.loadDashboardBudget('September_2026');
+  older.resolve({ ok: false, status: 500, body: { error: 'Late failure' } });
+  await olderLoad;
+
+  assert.equal(elements.dashboardBudgetTitle.textContent, 'Budget health');
+  assert.equal(elements.dashboardBudgetAmount.textContent, '₹600 of ₹1000');
+});
+
 test('changing the global person filter refreshes Dashboard budget context', () => {
   const { workflow, requests } = createDashboardWorkflow();
 
@@ -629,6 +689,23 @@ test('Dashboard budget offers creation when the selected month has no budget', (
   assert.equal(elements.dashboardBudgetProgress.classList.contains('hidden'), true);
 });
 
+test('Dashboard budget distinguishes non-OK and failed requests from a missing budget', async () => {
+  const unavailable = createDashboardWorkflow({
+    budgetResponses: [{ ok: false, status: 503, body: { error: 'Unavailable' } }],
+  });
+  await unavailable.workflow.loadDashboardBudget('September_2026');
+
+  assert.equal(unavailable.elements.dashboardBudgetTitle.textContent, 'Budget unavailable');
+  assert.equal(unavailable.elements.dashboardBudgetAction.textContent, 'Open budget');
+  assert.doesNotMatch(unavailable.elements.dashboardBudgetTitle.textContent, /No budget set/);
+
+  const failed = createDashboardWorkflow({ budgetError: new Error('network down') });
+  await failed.workflow.loadDashboardBudget('September_2026');
+
+  assert.equal(failed.elements.dashboardBudgetTitle.textContent, 'Budget unavailable');
+  assert.equal(failed.elements.dashboardBudgetAction.textContent, 'Open budget');
+});
+
 test('Dashboard budget presents zero-budget actuals as unbudgeted without invalid numbers', () => {
   const data = budgetFixture();
   data.summary.expenseBudget = 0;
@@ -647,7 +724,10 @@ test('Dashboard budget presents zero-budget actuals as unbudgeted without invali
   ].join(' ');
   assert.match(rendered, /Unbudgeted spending/);
   assert.doesNotMatch(rendered, /Infinity|NaN/);
-  assert.equal(elements.dashboardBudgetProgressFill.style.width, '100%');
+  assert.equal(elements.dashboardBudgetProgress.classList.contains('hidden'), true);
+  assert.equal(elements.dashboardBudgetProgressFill.style.width, '0%');
+  assert.equal(elements.dashboardBudgetProgress.attributes['aria-valuenow'], undefined);
+  assert.equal(elements.dashboardBudgetUsage.textContent, '');
 });
 
 test('opening Dashboard budget details preserves month and normalized person', () => {
@@ -658,4 +738,87 @@ test('opening Dashboard budget details preserves month and normalized person', (
   assert.equal(elements.budgetMonthPicker.value, 'September_2026');
   assert.equal(elements.budgetPersonPicker.value, 'all');
   assert.deepEqual(switchedTabs, ['budget']);
+});
+
+test('a missing Combined budget can copy the previous month with explicit conflict replacement', async () => {
+  const missing = budgetFixture('all');
+  missing.hasBudget = false;
+  missing.sections = [];
+  const copied = budgetFixture('all');
+  const { workflow, elements, requests, dashboardLoads } = createBudgetWorkflow({
+    person: 'all',
+    responses: [
+      { ok: false, status: 409, body: { error: 'Target budget already exists' } },
+      { ok: true, status: 200, body: { saved: true, count: 4 } },
+      { ok: true, status: 200, body: copied },
+    ],
+  });
+  workflow.setData(missing, 'all');
+  workflow.renderBudget();
+
+  assert.equal(elements.budgetEditBtn.disabled, true);
+  assert.equal(elements.budgetCopyBtn.disabled, false);
+  assert.equal(elements.budgetCopyBtn.textContent, 'Copy previous month');
+  workflow.openBudgetCopy();
+  assert.equal(elements.budgetCopyTargetMonth.value, 'September_2026');
+  await workflow.copyBudgetMonth(false);
+
+  let posts = requests.filter(request => request.options.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].url, '/api/budget/August_2026/copy');
+  assert.deepEqual(JSON.parse(posts[0].options.body), {
+    targetMonth: 'September_2026', person: 'all', replace: false,
+  });
+  assert.equal(elements.budgetCopyReplaceBtn.classList.contains('hidden'), false);
+  assert.match(elements.budgetCopyMessage.textContent, /August 2026.*September 2026/s);
+
+  await workflow.copyBudgetMonth(true);
+
+  posts = requests.filter(request => request.options.method === 'POST');
+  assert.deepEqual(JSON.parse(posts[1].options.body), {
+    targetMonth: 'September_2026', person: 'all', replace: true,
+  });
+  assert.deepEqual(dashboardLoads, ['September_2026']);
+});
+
+function parseHexColor(hex) {
+  const value = hex.replace('#', '');
+  return [0, 2, 4].map(offset => Number.parseInt(value.slice(offset, offset + 2), 16));
+}
+
+function relativeLuminance(hex) {
+  const channels = parseHexColor(hex).map(channel => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function contrastRatio(first, second) {
+  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function cssCustomProperties(block) {
+  return Object.fromEntries(Array.from(block.matchAll(/(--[\w-]+):\s*(#[0-9a-f]{6})/gi), match => [match[1], match[2]]));
+}
+
+test('Budget status tokens meet WCAG AA contrast in light and dark themes', () => {
+  const css = fs.readFileSync(STYLE_PATH, 'utf8');
+  const light = cssCustomProperties(css.match(/:root\s*\{([^}]*)\}/s)?.[1] || '');
+  const dark = cssCustomProperties(css.match(/body\.dark\s*\{([^}]*)\}/s)?.[1] || '');
+  const statuses = ['good', 'watch', 'bad', 'muted', 'unbudgeted', 'mapping'];
+
+  for (const theme of [light, dark]) {
+    for (const status of statuses) {
+      const foreground = theme[`--budget-${status}-text`];
+      const background = theme[`--budget-${status}-bg`];
+      assert.ok(foreground && background, `${status} status must define foreground and background tokens`);
+      assert.ok(
+        contrastRatio(foreground, background) >= 4.5,
+        `${status} contrast must be at least 4.5:1, got ${contrastRatio(foreground, background).toFixed(2)}:1`
+      );
+      assert.match(css, new RegExp(`\\.budget-status--${status}[^}]*var\\(--budget-${status}-text\\)[^}]*var\\(--budget-${status}-bg\\)`));
+    }
+  }
 });

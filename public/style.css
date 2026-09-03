@@ -12,6 +12,18 @@
   --error-bg: #fef2f2;
   --warning: #b45309;
   --warning-bg: #fffbeb;
+  --budget-good-text: #166534;
+  --budget-good-bg: #f0fdf4;
+  --budget-watch-text: #92400e;
+  --budget-watch-bg: #fffbeb;
+  --budget-bad-text: #991b1b;
+  --budget-bad-bg: #fef2f2;
+  --budget-muted-text: #475569;
+  --budget-muted-bg: #f5f5f7;
+  --budget-unbudgeted-text: #991b1b;
+  --budget-unbudgeted-bg: #fff1f2;
+  --budget-mapping-text: #854d0e;
+  --budget-mapping-bg: #fefce8;
   --header-bg: #1e293b;
   --radius: 10px;
   --shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -25,6 +37,18 @@ body.dark {
   --text-muted: #94a3b8;
   --warning: #fbbf24;
   --warning-bg: #422006;
+  --budget-good-text: #86efac;
+  --budget-good-bg: #052e16;
+  --budget-watch-text: #fde68a;
+  --budget-watch-bg: #422006;
+  --budget-bad-text: #fecaca;
+  --budget-bad-bg: #450a0a;
+  --budget-muted-text: #cbd5e1;
+  --budget-muted-bg: #0f172a;
+  --budget-unbudgeted-text: #fecaca;
+  --budget-unbudgeted-bg: #450a0a;
+  --budget-mapping-text: #fde68a;
+  --budget-mapping-bg: #422006;
   --header-bg: #0a0f1e;
   --shadow: 0 1px 3px rgba(0,0,0,0.4);
 }
@@ -1467,12 +1491,14 @@ body.dark .ai-response { background: #0f172a; border-color: #334155; }
 }
 .dashboard-budget-card[data-state="empty"] { border-left-color: var(--text-muted); }
 .dashboard-budget-card[data-state="over"] { border-left-color: var(--error); }
+.dashboard-budget-card[data-state="error"] { border-left-color: var(--error); }
 .dashboard-budget-card__main { flex: 1; min-width: 0; }
 .dashboard-budget-card__main .kpi-label { margin-bottom: 5px; }
 .dashboard-budget-card__title { font-size: 17px; font-weight: 700; color: var(--text); }
 .dashboard-budget-card__amount { margin-top: 4px; font-size: 22px; font-weight: 700; color: var(--text); }
 .dashboard-budget-card__variance { margin-top: 3px; color: var(--text-muted); }
 .dashboard-budget-card[data-state="over"] .dashboard-budget-card__variance { color: var(--error); font-weight: 600; }
+.dashboard-budget-card[data-state="error"] .dashboard-budget-card__variance { color: var(--error); font-weight: 600; }
 .dashboard-budget-card__usage { margin-top: 5px; color: var(--text-muted); font-size: 12px; }
 .dashboard-budget-card > .btn-secondary { flex-shrink: 0; }
 
@@ -1529,12 +1555,12 @@ body.dark .budget-summary-card { background: var(--white) !important; }
   line-height: 1.2;
   white-space: nowrap;
 }
-.budget-status--good { color: var(--success); background: var(--success-bg); border-color: #86efac; }
-.budget-status--watch { color: var(--warning); background: var(--warning-bg); border-color: #fcd34d; }
-.budget-status--bad { color: var(--error); background: var(--error-bg); border-color: #fca5a5; }
-.budget-status--muted { color: var(--text-muted); background: var(--bg); border-color: var(--border); }
-.budget-status--unbudgeted { color: var(--error); background: var(--error-bg); border-color: var(--error); }
-.budget-status--mapping { color: var(--warning); background: var(--warning-bg); border-color: #fcd34d; }
+.budget-status--good { color: var(--budget-good-text); background: var(--budget-good-bg); border-color: currentColor; }
+.budget-status--watch { color: var(--budget-watch-text); background: var(--budget-watch-bg); border-color: currentColor; }
+.budget-status--bad { color: var(--budget-bad-text); background: var(--budget-bad-bg); border-color: currentColor; }
+.budget-status--muted { color: var(--budget-muted-text); background: var(--budget-muted-bg); border-color: currentColor; }
+.budget-status--unbudgeted { color: var(--budget-unbudgeted-text); background: var(--budget-unbudgeted-bg); border-color: currentColor; }
+.budget-status--mapping { color: var(--budget-mapping-text); background: var(--budget-mapping-bg); border-color: currentColor; }
 .budget-table .budget-progress { height: 5px; margin: 7px 0 4px; }
 
 .budget-mapping-row {
@@ -1593,11 +1619,6 @@ body.dark .budget-summary-card { background: var(--white) !important; }
   overflow-wrap: anywhere;
 }
 .budget-modal #budgetMappingCategories input { flex: 0 0 auto; margin-top: 2px; }
-body.dark .budget-status--good { background: #052e16; border-color: #166534; }
-body.dark .budget-status--bad,
-body.dark .budget-status--unbudgeted { background: #450a0a; border-color: #991b1b; }
-body.dark .budget-status--watch,
-body.dark .budget-status--mapping { background: var(--warning-bg); border-color: #92400e; }
 body.dark .budget-edit-input { background: var(--bg); }
 
 /* ─── Mobile responsive ────────────────────────────────────────────────────── */
