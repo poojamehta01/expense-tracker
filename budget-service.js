@@ -1,6 +1,10 @@
 const PEOPLE = ['Pooja', 'Kunal'];
 const KINDS = new Set(['expense', 'investment']);
 const EXCLUDED_CATEGORIES = ['Credit Card Payment', 'Settlement', 'Refunded'];
+const MONTH_NAMES = new Set([
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]);
 
 function serviceError(code, message) {
   const error = new Error(message);
@@ -9,7 +13,8 @@ function serviceError(code, message) {
 }
 
 function validateMonth(month) {
-  if (typeof month !== 'string' || !/^[A-Z][A-Za-z]*_\d{4}$/.test(month)) {
+  const match = typeof month === 'string' && /^([A-Za-z]+)_(\d{4})$/.exec(month);
+  if (!match || !MONTH_NAMES.has(match[1])) {
     throw serviceError('validation', 'Month must use Month_YYYY');
   }
   return month;
@@ -139,7 +144,7 @@ function combineBudgetResponses(first, second) {
     month: responses[0].month,
     person: 'all',
     hasBudget: responses.some(response => response.hasBudget),
-    hasSalary: responses.some(response => response.hasSalary),
+    hasSalary: responses.length === PEOPLE.length && responses.every(response => response.hasSalary),
     summary: buildSummary(lines, salary),
     sections: sectionFromLines(lines),
     unmappedCount: lines.filter(line => !line.hasMappings).length,
@@ -264,6 +269,8 @@ function createBudgetService(db, { validCategories = [] } = {}) {
     validateMonth(sourceMonth);
     validateMonth(targetMonth);
     validatePerson(person, { allowAll: true });
+    if (sourceMonth === targetMonth) throw serviceError('validation', 'Source and target months must differ');
+    if (typeof replace !== 'boolean') throw serviceError('validation', 'Replace must be a boolean');
     const requestedPeople = person === 'all' ? PEOPLE : [person];
     const sourceRows = db.prepare(`
       SELECT person FROM budgets WHERE month = ? AND person IN (${requestedPeople.map(() => '?').join(', ')}) GROUP BY person

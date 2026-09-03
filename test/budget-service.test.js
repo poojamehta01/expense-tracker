@@ -4,6 +4,7 @@ const test = require('node:test');
 
 const {
   createBudgetService,
+  combineBudgetResponses,
   validateMonth,
   validatePerson,
   lineStatus,
@@ -45,6 +46,10 @@ function insertMapping(db, mapping) {
 test('validates month, person, and budget line status', () => {
   assert.equal(validateMonth('September_2026'), 'September_2026');
   assert.throws(() => validateMonth('2026-09'), /Month must use Month_YYYY/);
+  assert.throws(() => validateMonth('Sept_2026'), /Month must use Month_YYYY/);
+  assert.throws(() => validateMonth('september_2026'), /Month must use Month_YYYY/);
+  assert.throws(() => validateMonth('September_26'), /Month must use Month_YYYY/);
+  assert.throws(() => validateMonth('January_2026_extra'), /Month must use Month_YYYY/);
   assert.equal(validatePerson('all', { allowAll: true }), 'all');
   assert.throws(() => validatePerson('Common', { allowAll: true }), /Person must be/);
   assert.equal(lineStatus({ budget: 100, actual: 0, hasMappings: true }), 'no_activity');
@@ -53,6 +58,48 @@ test('validates month, person, and budget line status', () => {
   assert.equal(lineStatus({ budget: 100, actual: 101, hasMappings: true }), 'over_budget');
   assert.equal(lineStatus({ budget: 0, actual: 1, hasMappings: true }), 'unbudgeted');
   assert.equal(lineStatus({ budget: 100, actual: 50, hasMappings: false }), 'mapping_needed');
+});
+
+test('returns null usage for a zero budget and identifies an explicitly recorded zero salary', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Rent'] });
+  insertLine(db, { month: 'September_2026', person: 'Pooja', section: 'Home', category: 'House Rent', kind: 'expense', amount: 0, sort_order: 0 });
+  insertMapping(db, { section: 'Home', budget_category: 'House Rent', transaction_category: 'Rent', kind: 'expense' });
+  db.prepare(`INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)`).run('Pooja', 'September_2026', 0);
+
+  const response = service.getBudget({ month: 'September_2026', person: 'Pooja' });
+  assert.equal(response.sections[0].lines[0].usage, null);
+  assert.equal(response.summary.usage, null);
+  assert.equal(response.summary.salary, 0);
+  assert.equal(response.hasSalary, true);
+  db.close();
+});
+
+test('combines same-key personal lines and requires both salaries for a complete Combined salary', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Rent'] });
+  insertLine(db, { month: 'September_2026', person: 'Pooja', section: 'Home', category: 'House Rent', kind: 'expense', amount: 100, sort_order: 0 });
+  insertLine(db, { month: 'September_2026', person: 'Kunal', section: 'Home', category: 'House Rent', kind: 'expense', amount: 300, sort_order: 0 });
+  insertMapping(db, { section: 'Home', budget_category: 'House Rent', transaction_category: 'Rent', kind: 'expense' });
+  const addTransaction = db.prepare(`INSERT INTO transactions (amount, paid_by, category, month) VALUES (?, ?, ?, ?)`);
+  addTransaction.run(80, 'Pooja', 'Rent', 'September_2026');
+  addTransaction.run(260, 'Kunal', 'Rent', 'September_2026');
+  db.prepare(`INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)`).run('Pooja', 'September_2026', 0);
+
+  const pooja = service.getBudget({ month: 'September_2026', person: 'Pooja' });
+  const kunal = service.getBudget({ month: 'September_2026', person: 'Kunal' });
+  const combined = combineBudgetResponses(pooja, kunal);
+  const line = combined.sections[0].lines[0];
+  assert.equal(combined.sections[0].lines.length, 1);
+  assert.equal(line.budget, 400);
+  assert.equal(line.actual, 340);
+  assert.equal(line.variance, 60);
+  assert.equal(line.usage, 0.85);
+  assert.deepEqual(line.mappings, ['Rent']);
+  assert.equal(line.status, 'watch');
+  assert.equal(combined.hasSalary, false);
+  assert.equal(service.getBudget({ month: 'September_2026', person: 'all' }).hasSalary, false);
+  db.close();
 });
 
 test('replaceBudget validates every line before atomically replacing existing rows', () => {
@@ -130,5 +177,12 @@ test('copyBudget copies selected people, handles conflicts, and leaves global ma
   assert.throws(() => service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'October_2026', person: 'Pooja', replace: false }), error => error.code === 'conflict');
   assert.deepEqual(service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'October_2026', person: 'Pooja', replace: true }), { saved: true, count: 1 });
   assert.equal(db.prepare(`SELECT amount FROM budgets WHERE month = 'October_2026' AND person = 'Kunal'`).get().amount, 200);
+  const beforeSameMonth = db.prepare(`SELECT person, amount FROM budgets WHERE month = 'September_2026' ORDER BY person`).all();
+  assert.throws(() => service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'September_2026', person: 'all', replace: true }), /Source and target months must differ/);
+  assert.deepEqual(db.prepare(`SELECT person, amount FROM budgets WHERE month = 'September_2026' ORDER BY person`).all(), beforeSameMonth);
+  for (const replace of ['true', 1, null]) {
+    assert.throws(() => service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'October_2026', person: 'Pooja', replace }), /Replace must be a boolean/);
+  }
+  assert.throws(() => service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'October_2026', person: 'Pooja' }), error => error.code === 'conflict');
   db.close();
 });
