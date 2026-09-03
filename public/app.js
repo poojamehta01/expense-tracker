@@ -177,12 +177,13 @@ function initUploadMonthPicker() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  ['dashboard', 'add', 'trends', 'salary', 'ask', 'ai-memory'].forEach(t => {
+  ['dashboard', 'add', 'trends', 'salary', 'budget', 'ask', 'ai-memory'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('hidden', name !== t);
     document.getElementById('tab-btn-' + t).classList.toggle('active', name === t);
   });
   if (name === 'trends' && !trendsLoaded) loadTrends();
   if (name === 'salary') initSalaryTab();
+  if (name === 'budget') initBudgetTab();
   if (name === 'ai-memory') loadAIMemoryStatus();
 }
 
@@ -1978,6 +1979,12 @@ function setGlobalFilter(person) {
   if (trendsTab && !trendsTab.classList.contains('hidden')) {
     loadTrends();
   }
+  if (budgetState.initialized) {
+    const budgetPerson = person === 'Pooja' || person === 'Kunal' ? person : 'all';
+    document.getElementById('budgetPersonPicker').value = budgetPerson;
+    const budgetTab = document.getElementById('tab-budget');
+    if (budgetTab && !budgetTab.classList.contains('hidden')) loadBudget();
+  }
 }
 
 function applyGlobalFilter() {
@@ -3044,6 +3051,406 @@ function hideResult() {
 }
 function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── Budget Display Helpers ─────────────────────────────────────────────────
+
+const BUDGET_STATUS = {
+  on_track: ['On track', 'budget-status--good'],
+  watch: ['Watch', 'budget-status--watch'],
+  over_budget: ['Over budget', 'budget-status--bad'],
+  no_activity: ['No activity', 'budget-status--muted'],
+  unbudgeted: ['Unbudgeted', 'budget-status--bad'],
+  mapping_needed: ['Mapping needed', 'budget-status--mapping'],
+};
+
+function budgetStatusPresentation(status) {
+  const presentation = BUDGET_STATUS[status] || BUDGET_STATUS.no_activity;
+  return { label: presentation[0], className: presentation[1] };
+}
+
+function budgetUsagePresentation({ budget, actual, usage }) {
+  if (Number(budget) === 0 && Number(actual) > 0) {
+    return { label: 'Unbudgeted', width: 100 };
+  }
+  if (usage === null || usage === undefined || !Number.isFinite(Number(usage))) {
+    return { label: '—', width: 0 };
+  }
+  const percent = Number(usage) * 100;
+  return {
+    label: `${Math.round(percent)}%`,
+    width: Math.max(0, Math.min(100, percent)),
+  };
+}
+
+function buildBudgetSaveLines(sections) {
+  return (sections || []).flatMap(section =>
+    (section.lines || []).map((line, index) => ({
+      section: section.section,
+      category: line.category,
+      kind: line.kind,
+      amount: Number(line.amount ?? line.budget ?? 0),
+      sort_order: line.sort_order ?? index,
+    }))
+  );
+}
+
+// ─── Budget API Workflow ────────────────────────────────────────────────────
+
+const budgetState = {
+  initialized: false,
+  month: '',
+  person: 'all',
+  data: null,
+  editing: false,
+  saving: false,
+  mappingLine: null,
+};
+
+function showBudgetError(message) {
+  const error = document.getElementById('budgetError');
+  error.textContent = message || '';
+  error.classList.toggle('hidden', !message);
+}
+
+function copyMonthOptions(source, target) {
+  const previous = target.value;
+  target.innerHTML = '';
+  target.options.length = 0;
+  Array.from(source.options || []).forEach(option => {
+    const copy = document.createElement('option');
+    copy.value = option.value;
+    copy.textContent = option.textContent;
+    target.appendChild(copy);
+  });
+  const values = Array.from(target.options || [], option => option.value);
+  if (values.includes(previous)) target.value = previous;
+}
+
+async function initBudgetTab() {
+  const monthPicker = document.getElementById('budgetMonthPicker');
+  const dashboardPicker = document.getElementById('monthPicker');
+  if (!monthPicker.options.length) copyMonthOptions(dashboardPicker, monthPicker);
+  if (!monthPicker.value || !Array.from(monthPicker.options).some(option => option.value === monthPicker.value)) {
+    monthPicker.value = dashboardPicker.value || monthPicker.options[0]?.value || '';
+  }
+  const person = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'
+    ? globalPersonFilter
+    : 'all';
+  document.getElementById('budgetPersonPicker').value = person;
+  budgetState.initialized = true;
+  await loadBudget();
+}
+
+async function budgetResponseJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+async function loadBudget() {
+  const month = document.getElementById('budgetMonthPicker').value;
+  const person = document.getElementById('budgetPersonPicker').value || 'all';
+  if (!month) return;
+
+  budgetState.month = month;
+  budgetState.person = person === 'Common' ? 'all' : person;
+  budgetState.editing = false;
+  showBudgetError('');
+  document.getElementById('budgetLoading').classList.remove('hidden');
+  document.getElementById('budgetEmpty').classList.add('hidden');
+
+  try {
+    const response = await fetch(`/api/budget?month=${encodeURIComponent(month)}&person=${encodeURIComponent(budgetState.person)}`);
+    const data = await budgetResponseJson(response);
+    if (!response.ok) throw new Error(data.error || 'Failed to load budget');
+    budgetState.data = data;
+    renderBudget();
+  } catch (error) {
+    showBudgetError(error.message || 'Failed to load budget');
+  } finally {
+    document.getElementById('budgetLoading').classList.add('hidden');
+  }
+}
+
+function renderBudget() {
+  const data = budgetState.data;
+  const summary = document.getElementById('budgetSummary');
+  const sections = document.getElementById('budgetSections');
+  const empty = document.getElementById('budgetEmpty');
+  const editButton = document.getElementById('budgetEditBtn');
+  const cancelButton = document.getElementById('budgetCancelBtn');
+  const readOnly = budgetState.person === 'all';
+
+  editButton.disabled = readOnly || budgetState.saving || !data?.hasBudget;
+  editButton.textContent = budgetState.saving ? 'Saving…' : budgetState.editing ? 'Save budget' : 'Edit budget';
+  if (cancelButton) cancelButton.classList.toggle('hidden', !budgetState.editing);
+
+  if (!data?.hasBudget) {
+    summary.innerHTML = '';
+    sections.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  const values = data.summary || {};
+  const investmentValue = `${formatCurrency(values.plannedInvestments)} planned · ${formatCurrency(values.actualInvestments)} actual`;
+  const cards = [
+    ['Expense budget', formatCurrency(values.expenseBudget)],
+    ['Actual spending', formatCurrency(values.actualSpending)],
+    ['Remaining', formatCurrency(values.variance)],
+    ['Salary', data.hasSalary ? formatCurrency(values.salary) : '—'],
+    ['Monthly savings', data.hasSalary ? formatCurrency(values.netMonthlySavings) : '—'],
+    ['Investments', investmentValue],
+  ];
+  summary.innerHTML = cards.map(([label, value]) => `
+    <div class="kpi-card budget-summary-card">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-value small">${value}</div>
+    </div>
+  `).join('');
+
+  let inputIndex = 0;
+  sections.innerHTML = (data.sections || []).map(section => {
+    const sectionUsage = budgetUsagePresentation(section);
+    const rows = (section.lines || []).map(line => {
+      const status = budgetStatusPresentation(line.status);
+      const usage = budgetUsagePresentation(line);
+      const amount = budgetState.editing && !readOnly
+        ? `<input class="budget-amount-input" type="number" min="0" step="1" value="${esc(line.budget)}" data-budget-input="${inputIndex++}">`
+        : formatCurrency(line.budget);
+      const mappings = (line.mappings || []).length
+        ? (line.mappings || []).map(label => esc(label)).join(', ')
+        : 'No tracker categories mapped';
+      return `
+        <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
+          <td><strong>${esc(line.category)}</strong><br><span class="cell-empty">${mappings}</span></td>
+          <td>${amount}</td>
+          <td>${formatCurrency(line.actual)}</td>
+          <td>${formatCurrency(line.variance)}</td>
+          <td>
+            <span class="budget-status ${status.className}">${status.label}</span>
+            <div class="budget-progress"><span style="width:${usage.width}%"></span></div>
+            <span class="cell-empty">${usage.label}</span>
+          </td>
+          <td><button class="btn-secondary small" data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" onclick="openBudgetMapping(this)">Map</button></td>
+        </tr>`;
+    }).join('');
+    return `
+      <section class="table-section budget-section" data-section="${esc(section.section)}">
+        <div class="table-header-row">
+          <h2>${esc(section.section)}</h2>
+          <span>${formatCurrency(section.actual)} of ${formatCurrency(section.budget)} · ${sectionUsage.label}</span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Category</th><th>Budget</th><th>Actual</th><th>Remaining</th><th>Status</th><th>Mapping</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </section>`;
+  }).join('');
+}
+
+function beginBudgetEdit() {
+  if (budgetState.person === 'all' || !budgetState.data?.hasBudget || budgetState.saving) return;
+  if (budgetState.editing) return saveBudget();
+  budgetState.editing = true;
+  showBudgetError('');
+  renderBudget();
+}
+
+function cancelBudgetEdit() {
+  if (budgetState.saving) return;
+  budgetState.editing = false;
+  showBudgetError('');
+  renderBudget();
+}
+
+async function saveBudget() {
+  if (!budgetState.editing || budgetState.person === 'all' || budgetState.saving) return;
+  const inputs = Array.from(document.querySelectorAll('.budget-amount-input'));
+  let offset = 0;
+  const editedSections = (budgetState.data.sections || []).map(section => ({
+    section: section.section,
+    lines: (section.lines || []).map(line => {
+      const input = inputs[offset++];
+      return { ...line, amount: Number(input?.value) };
+    }),
+  }));
+  const lines = buildBudgetSaveLines(editedSections);
+  if (lines.some(line => !Number.isFinite(line.amount) || line.amount < 0)) {
+    showBudgetError('Budget amounts must be non-negative numbers');
+    return;
+  }
+
+  budgetState.saving = true;
+  showBudgetError('');
+  const editButton = document.getElementById('budgetEditBtn');
+  editButton.disabled = true;
+  editButton.textContent = 'Saving…';
+  try {
+    const response = await fetch(`/api/budget/${encodeURIComponent(budgetState.month)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ person: budgetState.person, lines }),
+    });
+    const result = await budgetResponseJson(response);
+    if (!response.ok) throw new Error(result.error || 'Failed to save budget');
+    budgetState.editing = false;
+    await loadBudget();
+    loadDashboard(budgetState.month);
+  } catch (error) {
+    showBudgetError(error.message || 'Failed to save budget');
+  } finally {
+    budgetState.saving = false;
+    editButton.disabled = budgetState.person === 'all';
+    editButton.textContent = budgetState.editing ? 'Save budget' : 'Edit budget';
+  }
+}
+
+function findBudgetLine({ section, category, kind }) {
+  for (const group of budgetState.data?.sections || []) {
+    const found = (group.lines || []).find(line =>
+      (line.section || group.section) === section && line.category === category && line.kind === kind);
+    if (found) return { ...found, section: found.section || group.section };
+  }
+  return null;
+}
+
+function openBudgetMapping(target) {
+  const selected = target?.dataset
+    ? findBudgetLine(target.dataset)
+    : target;
+  if (!selected) return;
+  budgetState.mappingLine = {
+    section: selected.section,
+    category: selected.category,
+    kind: selected.kind,
+    mappings: [...(selected.mappings || [])],
+  };
+  document.getElementById('budgetMappingLabel').textContent = `${selected.section} · ${selected.category}`;
+  const checked = new Set(selected.mappings || []);
+  document.getElementById('budgetMappingCategories').innerHTML = CATEGORIES.map(category => `
+    <label class="col-check">
+      <input type="checkbox" value="${esc(category)}" ${checked.has(category) ? 'checked' : ''}>
+      ${esc(category)}
+    </label>
+  `).join('');
+  document.getElementById('budgetMappingModal').classList.remove('hidden');
+}
+
+function closeBudgetMapping() {
+  document.getElementById('budgetMappingModal').classList.add('hidden');
+  budgetState.mappingLine = null;
+}
+
+async function saveBudgetMapping() {
+  if (!budgetState.mappingLine || budgetState.saving) return;
+  const transactionCategories = Array.from(
+    document.querySelectorAll('#budgetMappingCategories input:checked'),
+    input => input.value
+  );
+  const payload = {
+    section: budgetState.mappingLine.section,
+    budgetCategory: budgetState.mappingLine.category,
+    kind: budgetState.mappingLine.kind,
+    transactionCategories,
+  };
+  budgetState.saving = true;
+  const button = document.getElementById('budgetMappingSaveBtn');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  try {
+    const response = await fetch('/api/budget-mappings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await budgetResponseJson(response);
+    if (!response.ok) throw new Error(result.error || 'Failed to save category mapping');
+    closeBudgetMapping();
+    await loadBudget();
+    loadDashboard(budgetState.month);
+  } catch (error) {
+    showBudgetError(error.message || 'Failed to save category mapping');
+  } finally {
+    budgetState.saving = false;
+    button.disabled = false;
+    button.textContent = 'Save';
+    renderBudget();
+  }
+}
+
+function budgetMonthLabel(month) {
+  return String(month || '').replace('_', ' ');
+}
+
+function updateBudgetCopyMessage() {
+  const target = document.getElementById('budgetCopyTargetMonth').value;
+  document.getElementById('budgetCopyMessage').textContent =
+    `Copy ${budgetMonthLabel(budgetState.month)} to ${budgetMonthLabel(target)}?`;
+}
+
+function openBudgetCopy() {
+  if (!budgetState.data?.hasBudget) return;
+  const targetPicker = document.getElementById('budgetCopyTargetMonth');
+  const previous = targetPicker.value;
+  copyMonthOptions(document.getElementById('budgetMonthPicker'), targetPicker);
+  const values = Array.from(targetPicker.options || [], option => option.value);
+  targetPicker.value = values.includes(previous) && previous !== budgetState.month
+    ? previous
+    : values.find(value => value !== budgetState.month) || '';
+  document.getElementById('budgetCopyConfirmBtn').classList.remove('hidden');
+  document.getElementById('budgetCopyReplaceBtn').classList.add('hidden');
+  updateBudgetCopyMessage();
+  document.getElementById('budgetCopyModal').classList.remove('hidden');
+}
+
+function closeBudgetCopy() {
+  document.getElementById('budgetCopyModal').classList.add('hidden');
+  document.getElementById('budgetCopyConfirmBtn').classList.remove('hidden');
+  document.getElementById('budgetCopyReplaceBtn').classList.add('hidden');
+}
+
+async function copyBudgetMonth(replace = false) {
+  if (budgetState.saving) return;
+  const sourceMonth = budgetState.month;
+  const targetMonth = document.getElementById('budgetCopyTargetMonth').value;
+  if (!targetMonth || targetMonth === sourceMonth) {
+    document.getElementById('budgetCopyMessage').textContent = 'Choose a different target month.';
+    return;
+  }
+  budgetState.saving = true;
+  try {
+    const response = await fetch(`/api/budget/${encodeURIComponent(sourceMonth)}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetMonth, person: budgetState.person, replace: Boolean(replace) }),
+    });
+    const result = await budgetResponseJson(response);
+    if (response.status === 409 && !replace) {
+      document.getElementById('budgetCopyConfirmBtn').classList.add('hidden');
+      document.getElementById('budgetCopyReplaceBtn').classList.remove('hidden');
+      document.getElementById('budgetCopyMessage').textContent =
+        `${budgetMonthLabel(sourceMonth)} → ${budgetMonthLabel(targetMonth)}. ${result.error || 'Target budget already exists'}.`;
+      document.getElementById('budgetCopyModal').classList.remove('hidden');
+      return;
+    }
+    if (!response.ok) throw new Error(result.error || 'Failed to copy budget');
+    closeBudgetCopy();
+    document.getElementById('budgetMonthPicker').value = targetMonth;
+    await loadBudget();
+    loadDashboard(targetMonth);
+  } catch (error) {
+    showBudgetError(error.message || 'Failed to copy budget');
+  } finally {
+    budgetState.saving = false;
+    renderBudget();
+  }
 }
 
 // ─── Trends Tab ───────────────────────────────────────────────────────────────
