@@ -35,6 +35,29 @@ test('creates constrained budget tables', () => {
     INSERT INTO budgets (month, person, section, category, kind, amount, sort_order)
     VALUES ('September_2026', 'Pooja', 'Lifestyle', 'Dining Out / Pub', 'expense', 100, 1)
   `).run(), /UNIQUE constraint failed/);
+  ["'not a number'", '-1', '1e999'].forEach((amount, index) => {
+    assert.throws(() => db.prepare(`
+      INSERT INTO budgets (month, person, section, category, kind, amount, sort_order)
+      VALUES ('October_2026', 'Pooja', 'Validation', 'Validation ${index}', 'expense', ${amount}, 0)
+    `).run(), /CHECK constraint failed/);
+  });
+});
+
+test('creates constrained mapping table', () => {
+  const mappingColumns = db.prepare('PRAGMA table_info(budget_category_mappings)').all().map(row => row.name);
+  assert.deepEqual(mappingColumns, [
+    'id', 'section', 'budget_category', 'transaction_category', 'kind', 'created_at'
+  ]);
+  const insertMapping = db.prepare(`
+    INSERT INTO budget_category_mappings (section, budget_category, transaction_category, kind)
+    VALUES (?, ?, 'Shared category', ?)
+  `);
+  insertMapping.run('Mapping test', 'Expense category', 'expense');
+  insertMapping.run('Mapping test', 'Investment category', 'investment');
+  assert.throws(
+    () => insertMapping.run('Mapping test', 'Another expense category', 'expense'),
+    /UNIQUE constraint failed/
+  );
 });
 
 test('seeds September totals exactly once', () => {

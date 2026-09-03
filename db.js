@@ -81,7 +81,7 @@ db.exec(`
     section    TEXT NOT NULL,
     category   TEXT NOT NULL,
     kind       TEXT NOT NULL CHECK(kind IN ('expense','investment')),
-    amount     REAL NOT NULL CHECK(amount >= 0),
+    amount     REAL NOT NULL CHECK(typeof(amount) IN ('integer','real') AND amount >= 0 AND amount < 9e999),
     sort_order INTEGER NOT NULL CHECK(sort_order >= 0),
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
