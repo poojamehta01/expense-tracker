@@ -209,7 +209,7 @@ The initial unambiguous mappings are:
 | LOANS & OTHER DEBTS → Vehicle Loan | Car downpayment/ emi |
 | OTT Subscription → Claude/ AI/ other | Subscriptions |
 
-Lines without mappings show **Mapping needed**. Removing all mappings is allowed and returns the line to that state.
+Lines without mappings show **Mapping needed**. Removing all mappings is allowed and returns the line to that state. If the final personal/monthly occurrence of a budget line is deleted, its now-orphaned global mappings are removed in the same transaction.
 
 ### Copy a Prior Month
 

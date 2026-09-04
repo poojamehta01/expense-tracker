@@ -391,8 +391,8 @@ test('editing locks controls that could discard unsaved budget amounts', () => {
   assert.equal(globalFilterButtons[0].disabled, false);
 });
 
-test('saving sends the complete person line set and reloads the affected month', async () => {
-  const { workflow, elements, requests, dashboardLoads } = createBudgetWorkflow({
+test('saving sends the complete person line set, refreshes the card, and unlocks navigation', async () => {
+  const { workflow, elements, requests, dashboardLoads, tabButtons, globalFilterButtons } = createBudgetWorkflow({
     amountValues: ['0', '1250'],
     responses: [
       { ok: true, status: 200, body: { saved: true, count: 2 } },
@@ -416,6 +416,10 @@ test('saving sends the complete person line set and reloads the affected month',
   assert.deepEqual(dashboardLoads, []);
   assert.equal(requests.at(-1).url, '/api/budget?month=September_2026&person=Pooja');
   assert.equal(elements.budgetCopyBtn.disabled, false);
+  assert.equal(elements.budgetMonthPicker.disabled, false);
+  assert.equal(elements.budgetPersonPicker.disabled, false);
+  assert.equal(tabButtons[0].disabled, false);
+  assert.equal(globalFilterButtons[0].disabled, false);
 });
 
 test('a failed save retains edited values and displays the server error', async () => {

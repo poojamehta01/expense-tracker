@@ -3357,6 +3357,17 @@ async function loadBudget() {
   }
 }
 
+function applyBudgetInteractionLock(editLocked) {
+  document.getElementById('budgetMonthPicker').disabled = editLocked;
+  document.getElementById('budgetPersonPicker').disabled = editLocked;
+  document.querySelectorAll('.tab-btn').forEach(button => {
+    button.disabled = editLocked && button.id !== 'tab-btn-budget';
+  });
+  document.querySelectorAll('.global-filter-btn').forEach(button => {
+    button.disabled = editLocked;
+  });
+}
+
 function renderBudget() {
   const data = budgetState.data;
   const summary = document.getElementById('budgetSummary');
@@ -3368,14 +3379,7 @@ function renderBudget() {
   const readOnly = budgetState.person === 'all';
   const editLocked = budgetState.editing || budgetState.saving;
 
-  document.getElementById('budgetMonthPicker').disabled = editLocked;
-  document.getElementById('budgetPersonPicker').disabled = editLocked;
-  document.querySelectorAll('.tab-btn').forEach(button => {
-    button.disabled = editLocked && button.id !== 'tab-btn-budget';
-  });
-  document.querySelectorAll('.global-filter-btn').forEach(button => {
-    button.disabled = editLocked;
-  });
+  applyBudgetInteractionLock(editLocked);
 
   editButton.disabled = readOnly || budgetState.saving || !data?.hasBudget;
   let canCopy = Boolean(data?.hasBudget);
@@ -3519,9 +3523,10 @@ async function saveBudget() {
     showBudgetError(error.message || 'Failed to save budget');
   } finally {
     budgetState.saving = false;
+    applyBudgetInteractionLock(budgetState.editing);
     editButton.disabled = budgetState.person === 'all' || !budgetState.data?.hasBudget;
     editButton.textContent = budgetState.editing ? 'Save budget' : 'Edit budget';
-    document.getElementById('budgetCopyBtn').disabled = !budgetState.data?.hasBudget;
+    document.getElementById('budgetCopyBtn').disabled = budgetState.editing || !budgetState.data?.hasBudget;
   }
 }
 

@@ -120,6 +120,22 @@ test('replaceBudget validates every line before atomically replacing existing ro
   db.close();
 });
 
+test('replaceBudget removes a mapping only after its final budget line is deleted', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Rent'] });
+  const line = { month: 'September_2026', section: 'Home', category: 'House Rent', kind: 'expense', amount: 100, sort_order: 0 };
+  insertLine(db, { ...line, person: 'Pooja' });
+  insertLine(db, { ...line, person: 'Kunal' });
+  insertMapping(db, { section: 'Home', budget_category: 'House Rent', transaction_category: 'Rent', kind: 'expense' });
+
+  service.replaceBudget({ month: 'September_2026', person: 'Pooja', lines: [] });
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM budget_category_mappings').get().count, 1);
+
+  service.replaceBudget({ month: 'September_2026', person: 'Kunal', lines: [] });
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM budget_category_mappings').get().count, 0);
+  db.close();
+});
+
 test('attributes only mapped qualifying transactions and separates investment totals', () => {
   const db = createFixture();
   const service = createBudgetService(db, { validCategories: ['Rent', 'Outside Food', 'SIP', 'Unmapped'] });

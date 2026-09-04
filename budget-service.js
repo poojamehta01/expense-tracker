@@ -159,6 +159,15 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       VALUES (@month, @person, @section, @category, @kind, @amount, @sort_order, datetime('now'), datetime('now'))
     `);
     for (const line of lines) insert.run({ ...line, month, person });
+    db.prepare(`
+      DELETE FROM budget_category_mappings AS mapping
+      WHERE NOT EXISTS (
+        SELECT 1 FROM budgets AS budget
+        WHERE budget.section = mapping.section
+          AND budget.category = mapping.budget_category
+          AND budget.kind = mapping.kind
+      )
+    `).run();
     return { saved: true, count: lines.length };
   });
 
