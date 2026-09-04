@@ -257,9 +257,12 @@ body {
   outline: none;
 }
 .upload-date-range input:focus { border-color: var(--primary); }
+.upload-payment-method { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.upload-payment-method select { min-width:180px; }
 body.dark .upload-month-bar { background: #1e293b; border-color: #334155; }
 body.dark .upload-month-bar select { background: #0f172a; color: #f1f5f9; border-color: #334155; }
 body.dark .upload-date-range input { background: #0f172a; color: #f1f5f9; border-color: #334155; }
+body.dark .upload-payment-method select { background:#0f172a; color:#f1f5f9; border-color:#334155; }
 
 /* Upload */
 .upload-card {
@@ -1537,6 +1540,9 @@ body.dark .budget-summary-card { background: var(--white) !important; }
 
 #budgetSections { display: flex; flex-direction: column; gap: 16px; }
 .budget-section { min-width: 0; }
+.budget-section-toggle { display:flex; align-items:center; gap:8px; border:0; padding:0; background:transparent; color:inherit; cursor:pointer; text-align:left; }
+.budget-section-toggle:focus-visible { outline:2px solid var(--primary); outline-offset:4px; border-radius:4px; }
+.budget-section-indicator { width:1em; color:var(--text-muted); }
 .budget-section .table-header-row > span { color: var(--text-muted); overflow-wrap: anywhere; }
 .budget-table { table-layout: fixed; }
 .budget-table th:first-child { width: 29%; }
@@ -1732,6 +1738,8 @@ body.dark .budget-edit-input { background: var(--bg); }
   /* Upload card */
   .upload-month-bar { align-items: stretch; flex-wrap: wrap; }
   .upload-date-range { width: 100%; margin-left: 0; }
+  .upload-payment-method { width:100%; margin-left:0; }
+  .upload-payment-method select { flex:1; min-width:0; }
   .upload-date-range input { flex: 1; min-width: 0; }
   .upload-card { padding: 28px 16px; }
   .upload-icon { font-size: 26px; }

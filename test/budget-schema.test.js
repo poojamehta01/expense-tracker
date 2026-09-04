@@ -81,6 +81,49 @@ test('seeds September totals exactly once', () => {
   assert.equal(db.prepare('SELECT COUNT(*) count FROM budgets').get().count, before);
 });
 
+test('backfills January through August from September exactly once without storing Combined', () => {
+  const months = ['January','February','March','April','May','June','July','August'].map(m => `${m}_2026`);
+  const source = db.prepare(`SELECT person, section, category, kind, amount, sort_order FROM budgets WHERE month='September_2026' ORDER BY person, section, sort_order, category`).all();
+  for (const month of months) {
+    const rows = db.prepare(`SELECT person, section, category, kind, amount, sort_order FROM budgets WHERE month=? ORDER BY person, section, sort_order, category`).all(month);
+    assert.deepEqual(rows, source);
+    assert.deepEqual(db.prepare(`SELECT person, SUM(amount) total FROM budgets WHERE month=? AND kind='expense' GROUP BY person ORDER BY person`).all(month), [
+      { person: 'Kunal', total: 115647 }, { person: 'Pooja', total: 111177 },
+    ]);
+  }
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM budgets WHERE person='all'`).get().count, 0);
+  assert.ok(db.prepare(`SELECT 1 FROM schema_migrations WHERE version='2026-09-04-budget-history-v1'`).get());
+  const before = db.prepare('SELECT COUNT(*) count FROM budgets').get().count;
+  db.close(); delete require.cache[require.resolve('../db')]; db = require('../db');
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM budgets').get().count, before);
+});
+
+test('historical backfill never overwrites an existing month and person slice', () => {
+  db.close();
+  const Database = require('better-sqlite3');
+  const raw = new Database(databasePath);
+  raw.prepare(`DELETE FROM schema_migrations WHERE version='2026-09-04-budget-history-v1'`).run();
+  raw.prepare(`DELETE FROM budgets WHERE month='August_2026' AND person='Pooja'`).run();
+  raw.prepare(`INSERT INTO budgets (month,person,section,category,kind,amount,sort_order) VALUES ('August_2026','Pooja','Custom','Protected','expense',123,0)`).run();
+  raw.close(); delete require.cache[require.resolve('../db')]; db = require('../db');
+  assert.deepEqual(db.prepare(`SELECT section,category,amount FROM budgets WHERE month='August_2026' AND person='Pooja'`).all(), [
+    { section: 'Custom', category: 'Protected', amount: 123 },
+  ]);
+});
+
+test('historical migration is not recorded when a September person source is missing', () => {
+  db.close();
+  const Database = require('better-sqlite3');
+  const raw = new Database(databasePath);
+  raw.prepare(`DELETE FROM schema_migrations WHERE version='2026-09-04-budget-history-v1'`).run();
+  raw.prepare(`DELETE FROM budgets WHERE person='Kunal'`).run();
+  raw.close(); delete require.cache[require.resolve('../db')];
+  assert.throws(() => require('../db'), /September 2026 budget source is incomplete/);
+  const check = new Database(databasePath);
+  assert.equal(check.prepare(`SELECT COUNT(*) count FROM schema_migrations WHERE version='2026-09-04-budget-history-v1'`).get().count, 0);
+  check.close(); db = null;
+});
+
 test('does not restore seed defaults removed by the user after restart', () => {
   db.prepare(`
     DELETE FROM budget_category_mappings

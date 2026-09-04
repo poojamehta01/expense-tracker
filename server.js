@@ -397,7 +397,7 @@ const MONTH_SORT = `
     WHEN 'October' THEN 10 WHEN 'November' THEN 11 WHEN 'December' THEN 12
   END`;
 
-const CC_EXCLUDE = " AND category != 'Credit Card Payment' AND category != 'Settlement'";
+const EXPENSE_EXCLUDE = " AND category != 'Credit Card Payment' AND category != 'Settlement' AND category != 'Investment'";
 
 app.get('/api/trends', (req, res) => {
   const { person } = req.query;
@@ -409,7 +409,7 @@ app.get('/api/trends', (req, res) => {
   // Monthly totals (excluding CC payments)
   const monthlyTotals = db.prepare(
     `SELECT month, COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
-     FROM transactions WHERE 1=1${CC_EXCLUDE}${pf} GROUP BY month ORDER BY ${MONTH_SORT}`
+     FROM transactions WHERE 1=1${EXPENSE_EXCLUDE}${pf} GROUP BY month ORDER BY ${MONTH_SORT}`
   ).all(...pfParams);
 
   const months = monthlyTotals.map(r => r.month);
@@ -418,7 +418,7 @@ app.get('/api/trends', (req, res) => {
   // Pooja vs Kunal split (excluding CC payments)
   const splitRows = db.prepare(
     `SELECT month, paid_by, COALESCE(SUM(amount),0) AS total
-     FROM transactions WHERE paid_by IN ('Pooja','Kunal')${CC_EXCLUDE}${pf}
+     FROM transactions WHERE paid_by IN ('Pooja','Kunal')${EXPENSE_EXCLUDE}${pf}
      GROUP BY month, paid_by ORDER BY ${MONTH_SORT}`
   ).all(...pfParams);
   const splitMap = {};
@@ -430,7 +430,7 @@ app.get('/api/trends', (req, res) => {
 
   // Top 5 categories (excluding CC payments)
   const top5 = db.prepare(
-    `SELECT category FROM transactions WHERE category != '' AND category IS NOT NULL${CC_EXCLUDE}${pf}
+    `SELECT category FROM transactions WHERE category != '' AND category IS NOT NULL${EXPENSE_EXCLUDE}${pf}
      GROUP BY category ORDER BY SUM(amount) DESC LIMIT 5`
   ).all(...pfParams).map(r => r.category);
 
@@ -456,7 +456,7 @@ app.get('/api/trends', (req, res) => {
   // All categories breakdown (excluding CC payments)
   const allCatRows = db.prepare(
     `SELECT month, category, COALESCE(SUM(amount),0) AS total
-     FROM transactions WHERE category != '' AND category IS NOT NULL${CC_EXCLUDE}${pf}
+     FROM transactions WHERE category != '' AND category IS NOT NULL${EXPENSE_EXCLUDE}${pf}
      GROUP BY month, category ORDER BY ${MONTH_SORT}`
   ).all(...pfParams);
 
@@ -473,7 +473,7 @@ app.get('/api/trends', (req, res) => {
   const respRows = db.prepare(
     `SELECT month, expense_type, COALESCE(SUM(amount),0) AS total
      FROM transactions
-     WHERE expense_type IN ('Pooja_Personal','Kunal_Personal','Common_50_50','Pooja_for_Kunal','Kunal_for_Pooja')
+     WHERE expense_type IN ('Pooja_Personal','Kunal_Personal','Common_50_50','Pooja_for_Kunal','Kunal_for_Pooja')${EXPENSE_EXCLUDE}
      GROUP BY month, expense_type ORDER BY ${MONTH_SORT}`
   ).all();
   const respMap = {};
@@ -503,7 +503,7 @@ app.get('/api/trends', (req, res) => {
   // Spend by payment method (excluding CC payments)
   const pmRows = db.prepare(
     `SELECT month, payment_method, COALESCE(SUM(amount),0) AS total
-     FROM transactions WHERE payment_method != '' AND payment_method IS NOT NULL${CC_EXCLUDE}${pf}
+     FROM transactions WHERE payment_method != '' AND payment_method IS NOT NULL${EXPENSE_EXCLUDE}${pf}
      GROUP BY month, payment_method ORDER BY ${MONTH_SORT}`
   ).all(...pfParams);
   const pmTotals = {};
@@ -535,14 +535,16 @@ app.get('/api/dashboard', (req, res) => {
   if (!month) return res.status(400).json({ error: 'month required' });
 
   const base = 'FROM transactions WHERE month = ?';
+  const expenseBase = `${base}${EXPENSE_EXCLUDE}`;
 
-  const totalRow = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt ${base}`).get(month);
-  const byCategory = db.prepare(`SELECT category, SUM(amount) AS total ${base} GROUP BY category ORDER BY total DESC LIMIT 10`).all(month);
-  const byPaidByRows = db.prepare(`SELECT paid_by, SUM(amount) AS total ${base} GROUP BY paid_by`).all(month);
-  const byExpenseType = db.prepare(`SELECT expense_type, SUM(amount) AS total ${base} GROUP BY expense_type ORDER BY total DESC`).all(month);
-  const byPaymentMethod = db.prepare(`SELECT payment_method, SUM(amount) AS total ${base} GROUP BY payment_method ORDER BY total DESC`).all(month);
-  const dailySpend = db.prepare(`SELECT date, SUM(amount) AS total ${base} GROUP BY date ORDER BY date`).all(month);
-  const topMerchants = db.prepare(`SELECT description, SUM(amount) AS total, COUNT(*) AS cnt ${base} GROUP BY description ORDER BY total DESC LIMIT 10`).all(month);
+  const totalRow = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt ${expenseBase}`).get(month);
+  const investmentRow = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total ${base} AND category = 'Investment'`).get(month);
+  const byCategory = db.prepare(`SELECT category, SUM(amount) AS total ${expenseBase} GROUP BY category ORDER BY total DESC LIMIT 10`).all(month);
+  const byPaidByRows = db.prepare(`SELECT paid_by, SUM(amount) AS total ${expenseBase} GROUP BY paid_by`).all(month);
+  const byExpenseType = db.prepare(`SELECT expense_type, SUM(amount) AS total ${expenseBase} GROUP BY expense_type ORDER BY total DESC`).all(month);
+  const byPaymentMethod = db.prepare(`SELECT payment_method, SUM(amount) AS total ${expenseBase} GROUP BY payment_method ORDER BY total DESC`).all(month);
+  const dailySpend = db.prepare(`SELECT date, SUM(amount) AS total ${expenseBase} GROUP BY date ORDER BY date`).all(month);
+  const topMerchants = db.prepare(`SELECT description, SUM(amount) AS total, COUNT(*) AS cnt ${expenseBase} GROUP BY description ORDER BY total DESC LIMIT 10`).all(month);
 
   const byPaidBy = {};
   for (const r of byPaidByRows) byPaidBy[r.paid_by || 'Unknown'] = r.total;
@@ -583,6 +585,7 @@ app.get('/api/dashboard', (req, res) => {
 
   res.json({
     totalSpend: totalRow.total,
+    investments: investmentRow.total,
     transactionCount: totalRow.cnt,
     byCategory,
     byPaidBy,
@@ -656,7 +659,7 @@ const EXPENSE_TYPES = [
 
 const PAYMENT_METHODS = [
   'Cash', 'ICICI_Credit_Card', 'Amazon_Credit_Card', 'SBI_Credit_Card',
-  'HDFC_Credit_Card', 'ABFL_Credit_Card', 'HDFC_Debit_Card', 'Zaggle'
+  'HDFC_Credit_Card', 'ABFL_Credit_Card', 'HDFC_Debit_Card', 'SBI_Debit_Card', 'Zaggle'
 ];
 
 function rebuildMerchantPatterns() {
