@@ -111,6 +111,19 @@ test('historical backfill never overwrites an existing month and person slice', 
   ]);
 });
 
+test('historical migration is not recorded when a September person source is missing', () => {
+  db.close();
+  const Database = require('better-sqlite3');
+  const raw = new Database(databasePath);
+  raw.prepare(`DELETE FROM schema_migrations WHERE version='2026-09-04-budget-history-v1'`).run();
+  raw.prepare(`DELETE FROM budgets WHERE person='Kunal'`).run();
+  raw.close(); delete require.cache[require.resolve('../db')];
+  assert.throws(() => require('../db'), /September 2026 budget source is incomplete/);
+  const check = new Database(databasePath);
+  assert.equal(check.prepare(`SELECT COUNT(*) count FROM schema_migrations WHERE version='2026-09-04-budget-history-v1'`).get().count, 0);
+  check.close(); db = null;
+});
+
 test('does not restore seed defaults removed by the user after restart', () => {
   db.prepare(`
     DELETE FROM budget_category_mappings

@@ -21,6 +21,8 @@ test('upload payment selector supports deterministic file overrides but SMS rema
   assert.match(html, />Auto-detect</);
   assert.match(app, /function applyUploadPaymentMethodOverride/);
   assert.match(app, /applyUploadPaymentMethodOverride\(extracted/);
+  assert.match(app, /const paymentMethodOverride[\s\S]*for \(let i = 0; i < files\.length; i\+\+\)/);
+  assert.match(app, /applyUploadPaymentMethodOverride\(extracted, paymentMethodOverride\)/);
   const sms = app.slice(app.indexOf('async function extractFromTextArea'), app.indexOf('async function extractFromText', app.indexOf('async function extractFromTextArea') + 10));
   assert.doesNotMatch(sms, /applyUploadPaymentMethodOverride/);
 });
@@ -37,5 +39,10 @@ test('budget sections are accessible, stateful, and hide Education only at rende
   assert.match(app, /collapsedBudgetSections\s*=\s*new Set/);
   assert.match(app, /aria-expanded=/);
   assert.match(app, /Education\/Child Care/);
+  assert.match(app, /data\.sections \|\| \[\]\)\.filter\(section => section\.section !== 'Education\/Child Care'\)/);
   assert.match(css, /budget-section-toggle/);
+});
+
+test('filtered Dashboard applies the same non-expense categories as the server', () => {
+  assert.match(app, /expenseList = gList\.filter\(t => !\['Credit Card Payment', 'Settlement', 'Investment'\]\.includes\(t\.category\)\)/);
 });

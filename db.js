@@ -133,6 +133,10 @@ db.transaction(() => {
 db.transaction(() => {
   const version = '2026-09-04-budget-history-v1';
   if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version)) return;
+  const sourcePeople = db.prepare(`SELECT person, COUNT(*) count FROM budgets WHERE month='September_2026' GROUP BY person`).all();
+  if (sourcePeople.length !== 2 || sourcePeople.some(row => !row.count)) {
+    throw new Error('September 2026 budget source is incomplete');
+  }
   const targets = ['January','February','March','April','May','June','July','August'].map(month => `${month}_2026`);
   const exists = db.prepare('SELECT 1 FROM budgets WHERE month = ? AND person = ? LIMIT 1');
   const copy = db.prepare(`

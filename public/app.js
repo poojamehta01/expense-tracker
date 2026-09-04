@@ -459,13 +459,14 @@ async function handleFiles(files) {
 
   const newTx = [];
   let excludedCount = 0;
+  const paymentMethodOverride = document.getElementById('uploadPaymentMethod')?.value || '';
   for (let i = 0; i < files.length; i++) {
     setLoadingText(`Processing file ${i + 1} of ${files.length}: ${files[i].name}…`);
     try {
       const extracted = isSpreadsheetFile(files[i])
         ? await parseSpreadsheetFile(files[i])
         : await extractFromFile(files[i]);
-      const overridden = applyUploadPaymentMethodOverride(extracted);
+      const overridden = applyUploadPaymentMethodOverride(extracted, paymentMethodOverride);
       const filtered = filterTransactionsByDateRange(overridden, fromISO, toISO);
       excludedCount += filtered.excludedCount;
       const uploadMonth = getUploadMonth(); // e.g. "March_2026"
@@ -2017,7 +2018,7 @@ function applyGlobalFilter() {
     renderChartsFromData(_lastDashData);
     renderTopMerchants(_lastDashData);
   } else {
-    const expenseList = gList.filter(t => t.category !== 'Investment');
+    const expenseList = gList.filter(t => !['Credit Card Payment', 'Settlement', 'Investment'].includes(t.category));
     const investments = gList.filter(t => t.category === 'Investment').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
     const totalSpend = expenseList.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
     const byPaidBy = {};
@@ -3449,7 +3450,7 @@ function renderBudget() {
   `).join('');
 
   let inputIndex = 0;
-  sections.innerHTML = (data.sections || []).map(section => {
+  sections.innerHTML = (data.sections || []).filter(section => section.section !== 'Education/Child Care').map(section => {
     const sectionUsage = budgetUsagePresentation(section);
     const collapsed = collapsedBudgetSections.has(section.section);
     const rows = (section.lines || []).filter(line => line.section !== 'Education/Child Care' && section.section !== 'Education/Child Care').map(line => {
