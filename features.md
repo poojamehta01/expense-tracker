@@ -14,7 +14,7 @@ The top nav bar includes:
 - **Budget** — monthly personal budgets, mappings, actuals, and copy workflow
 - **Ask AI** — Gemini-powered financial Q&A
 
-Global person filter (All / Pooja / Kunal / Common) in the top-right nav filters data across Dashboard and Trends.
+The global person filter (All / Pooja / Kunal / Common) in the top-right nav filters Dashboard and Trends data, always refreshes the Dashboard budget card, and synchronizes the Budget person selector when that tab has been initialized. If Budget is visible, the synchronized budget detail reloads immediately; All and Common map to the Combined budget view.
 
 Dark mode toggle (🌙/☀️) in the top-right nav, persisted in localStorage.
 
@@ -213,11 +213,11 @@ Lines without mappings show **Mapping needed**. Removing all mappings is allowed
 
 For an empty month, the app scans earlier months from most recent to oldest and offers the first populated budget it finds—not merely the immediately previous calendar month. Copying into an empty target succeeds directly. If the target is populated, the server returns a conflict and the modal requires the separate **Replace and copy** confirmation before existing target rows are replaced.
 
-Copy applies to the selected person, or to both people from Combined. Mappings are global and are not duplicated by a month copy.
+Copy applies to the selected person. From Combined, it copies whichever personal budgets exist in the chosen source month; if both Pooja and Kunal have source rows, both are copied. Mappings are global and are not duplicated by a month copy.
 
 ### Statuses and Empty States
 
-- **On track** — below 80% used.
+- **On track** — positive actual spending below 80% used.
 - **Watch** — 80% through 100% used.
 - **Over budget** — actual spending is greater than budget.
 - **No activity** — a positive budget has no actual spending.

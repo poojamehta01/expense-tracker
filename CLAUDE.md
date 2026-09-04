@@ -232,7 +232,7 @@ POST /api/audit/:id/restore      restore a snapshot
 - Gemini response rendered below
 
 ## Key JS Functions (app.js)
-- `switchTab(name)` — toggles dashboard/add/trends/salary/ask tabs; calls `loadTrends()` on trends, `initSalaryTab()` on salary
+- `switchTab(name)` — toggles dashboard/add/trends/salary/budget/ask/ai-memory tabs; calls `loadTrends()` on trends, `initSalaryTab()` on salary, and `initBudgetTab()` on budget
 - `saveToTracker()` — POST batch to DB; resets `trendsLoaded = false`
 - `loadMonths()` — shows all months Jan 2026→current; months without data marked with ` —`
 - `loadDashboard(month)` — parallel fetch dashboard + transactions + salary; renders all
