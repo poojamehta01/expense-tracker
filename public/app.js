@@ -3267,7 +3267,10 @@ async function initBudgetTab() {
   const monthPicker = document.getElementById('budgetMonthPicker');
   const dashboardPicker = document.getElementById('monthPicker');
   if (!monthPicker.options.length) copyMonthOptions(dashboardPicker, monthPicker);
-  if (!monthPicker.value || !Array.from(monthPicker.options).some(option => option.value === monthPicker.value)) {
+  const values = Array.from(monthPicker.options, option => option.value);
+  if (!budgetState.initialized && values.includes(dashboardPicker.value)) {
+    monthPicker.value = dashboardPicker.value;
+  } else if (!monthPicker.value || !values.includes(monthPicker.value)) {
     monthPicker.value = dashboardPicker.value || monthPicker.options[0]?.value || '';
   }
   const person = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'

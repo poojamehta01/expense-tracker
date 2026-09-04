@@ -174,6 +174,7 @@ function createBudgetWorkflow({
   checkedCategories = [],
   monthOptions = null,
   selectedMonth = 'September_2026',
+  budgetSelectedMonth = selectedMonth,
 } = {}) {
   const source = fs.readFileSync(APP_PATH, 'utf8');
   const start = source.indexOf('// ─── Budget Display Helpers');
@@ -190,7 +191,7 @@ function createBudgetWorkflow({
   ];
   const elements = {
     monthPicker: element({ value: selectedMonth, options: dashboardOptions }),
-    budgetMonthPicker: element({ value: selectedMonth, options: dashboardOptions.map(option => ({ ...option })) }),
+    budgetMonthPicker: element({ value: budgetSelectedMonth, options: dashboardOptions.map(option => ({ ...option })) }),
     budgetPersonPicker: element({ value: person }),
     budgetEditBtn: element(),
     budgetCopyBtn: element(),
@@ -491,6 +492,17 @@ test('Common global filter initializes Budget as Combined and preserves month op
     Array.from(elements.budgetMonthPicker.options, option => option.textContent),
     ['August 2026', 'September 2026', 'October 2026 —']
   );
+});
+
+test('opening Budget synchronizes its pre-populated month picker with the Dashboard month', async () => {
+  const { workflow, elements } = createBudgetWorkflow({
+    selectedMonth: 'September_2026',
+    budgetSelectedMonth: 'August_2026',
+  });
+
+  await workflow.initBudgetTab();
+
+  assert.equal(elements.budgetMonthPicker.value, 'September_2026');
 });
 
 function createDashboardWorkflow({
