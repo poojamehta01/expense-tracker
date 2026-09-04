@@ -112,6 +112,24 @@ test('validation errors return HTTP 400 without leaking stacks', () => {
   assert.equal(JSON.stringify(res.body).includes('stack'), false);
 });
 
+test('untyped errors return a generic HTTP 500 without leaking stacks', () => {
+  const app = createApp();
+  registerBudgetRoutes(app, createService({
+    getBudget: () => {
+      const error = new Error('sensitive database failure');
+      error.stack = 'sensitive stack';
+      throw error;
+    },
+  }));
+
+  const res = createResponse();
+  route(app, 'GET', '/api/budget')({ query: { month: 'September_2026' } }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Budget operation failed' });
+  assert.equal(JSON.stringify(res.body).includes('stack'), false);
+});
+
 test('missing source returns HTTP 404', () => {
   const app = createApp();
   registerBudgetRoutes(app, createService({ copyBudget: () => { const error = new Error('Source budget was not found'); error.code = 'not_found'; throw error; } }));
