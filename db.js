@@ -110,8 +110,19 @@ const insertBudgetMapping = db.prepare(`
 `);
 
 db.transaction(() => {
-  for (const line of SEPTEMBER_2026_BUDGET_LINES) insertBudgetLine.run(line);
-  for (const mapping of INITIAL_BUDGET_MAPPINGS) insertBudgetMapping.run(mapping);
+  const seedKey = 'budget_seed_september_2026_v1';
+  const seeded = db.prepare('SELECT 1 FROM settings WHERE key = ?').get(seedKey);
+  if (seeded) return;
+
+  const hasSeptemberBudget = db.prepare(
+    `SELECT 1 FROM budgets WHERE month = 'September_2026' LIMIT 1`
+  ).get();
+  if (!hasSeptemberBudget) {
+    for (const line of SEPTEMBER_2026_BUDGET_LINES) insertBudgetLine.run(line);
+    for (const mapping of INITIAL_BUDGET_MAPPINGS) insertBudgetMapping.run(mapping);
+  }
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    .run(seedKey, 'applied');
 })();
 
 db.pragma('incremental_vacuum(100)');   // reclaim up to 100 free pages on each startup

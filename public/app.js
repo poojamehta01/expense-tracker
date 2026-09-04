@@ -3366,6 +3366,16 @@ function renderBudget() {
   const copyButton = document.getElementById('budgetCopyBtn');
   const cancelButton = document.getElementById('budgetCancelBtn');
   const readOnly = budgetState.person === 'all';
+  const editLocked = budgetState.editing || budgetState.saving;
+
+  document.getElementById('budgetMonthPicker').disabled = editLocked;
+  document.getElementById('budgetPersonPicker').disabled = editLocked;
+  document.querySelectorAll('.tab-btn').forEach(button => {
+    button.disabled = editLocked && button.id !== 'tab-btn-budget';
+  });
+  document.querySelectorAll('.global-filter-btn').forEach(button => {
+    button.disabled = editLocked;
+  });
 
   editButton.disabled = readOnly || budgetState.saving || !data?.hasBudget;
   let canCopy = Boolean(data?.hasBudget);
@@ -3382,7 +3392,7 @@ function renderBudget() {
             ? `Copy ${budgetMonthLabel(budgetState.copySourceMonth)}`
             : 'No earlier budget to copy';
   }
-  copyButton.disabled = budgetState.saving || !canCopy;
+  copyButton.disabled = editLocked || !canCopy;
   copyButton.textContent = copyLabel;
   editButton.textContent = budgetState.saving ? 'Saving…' : budgetState.editing ? 'Save budget' : 'Edit budget';
   if (cancelButton) cancelButton.classList.toggle('hidden', !budgetState.editing);
@@ -3426,7 +3436,7 @@ function renderBudget() {
         : '<span class="cell-empty">No tracker categories mapped</span>';
       const mappingAction = readOnly
         ? '<span class="cell-empty">—</span>'
-        : `<button class="btn-secondary small" data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" onclick="openBudgetMapping(this)">Map</button>`;
+        : `<button class="btn-secondary small" ${editLocked ? 'disabled ' : ''}data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" onclick="openBudgetMapping(this)">Map</button>`;
       return `
         <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
           <td class="budget-category-cell" data-label="Category"><strong>${esc(line.category)}</strong><div class="budget-mapping-row">${mappings}</div></td>
@@ -3504,7 +3514,7 @@ async function saveBudget() {
     if (!response.ok) throw new Error(result.error || 'Failed to save budget');
     budgetState.editing = false;
     await loadBudget();
-    loadDashboard(budgetState.month);
+    loadDashboardBudget(document.getElementById('monthPicker').value);
   } catch (error) {
     showBudgetError(error.message || 'Failed to save budget');
   } finally {
@@ -3525,7 +3535,7 @@ function findBudgetLine({ section, category, kind }) {
 }
 
 function openBudgetMapping(target) {
-  if (budgetState.person === 'all' || !budgetState.data?.hasBudget) return;
+  if (budgetState.editing || budgetState.person === 'all' || !budgetState.data?.hasBudget) return;
   const selected = target?.dataset
     ? findBudgetLine(target.dataset)
     : target;
@@ -3578,7 +3588,7 @@ async function saveBudgetMapping() {
     if (!response.ok) throw new Error(result.error || 'Failed to save category mapping');
     closeBudgetMapping();
     await loadBudget();
-    loadDashboard(budgetState.month);
+    loadDashboardBudget(document.getElementById('monthPicker').value);
   } catch (error) {
     showBudgetError(error.message || 'Failed to save category mapping');
   } finally {
@@ -3616,7 +3626,7 @@ function updateBudgetCopyMessage() {
 }
 
 function openBudgetCopy() {
-  if (!budgetState.data || budgetState.saving) return;
+  if (!budgetState.data || budgetState.editing || budgetState.saving) return;
   if (!budgetState.data.hasBudget &&
       (budgetState.copySourceStatus !== 'available' || !budgetState.copySourceMonth)) return;
   const targetPicker = document.getElementById('budgetCopyTargetMonth');
@@ -3672,7 +3682,7 @@ async function copyBudgetMonth(replace = false) {
     closeBudgetCopy();
     document.getElementById('budgetMonthPicker').value = targetMonth;
     await loadBudget();
-    loadDashboard(targetMonth);
+    loadDashboardBudget(document.getElementById('monthPicker').value);
   } catch (error) {
     showBudgetError(error.message || 'Failed to copy budget');
   } finally {

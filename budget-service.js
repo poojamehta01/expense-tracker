@@ -238,6 +238,12 @@ function createBudgetService(db, { validCategories = [] } = {}) {
     section = nonEmptyString(section, 'Section');
     budgetCategory = nonEmptyString(budgetCategory, 'Budget category');
     validateKind(kind);
+    const budgetLineExists = db.prepare(`
+      SELECT 1 FROM budgets
+      WHERE section = ? AND category = ? AND kind = ?
+      LIMIT 1
+    `).get(section, budgetCategory, kind);
+    if (!budgetLineExists) throw serviceError('not_found', 'Budget line not found');
     if (!Array.isArray(transactionCategories)) throw serviceError('validation', 'Transaction categories must be an array');
     const knownCategories = new Set(validCategories);
     for (const row of db.prepare(`SELECT value FROM lists WHERE list_name = 'categories'`).all()) knownCategories.add(row.value);

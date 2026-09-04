@@ -80,3 +80,33 @@ test('seeds September totals exactly once', () => {
   db = require('../db');
   assert.equal(db.prepare('SELECT COUNT(*) count FROM budgets').get().count, before);
 });
+
+test('does not restore seed defaults removed by the user after restart', () => {
+  db.prepare(`
+    DELETE FROM budget_category_mappings
+    WHERE section = 'Household Expenses'
+      AND budget_category = 'House Rent'
+      AND transaction_category = 'Rent'
+      AND kind = 'expense'
+  `).run();
+  db.prepare(`
+    DELETE FROM budgets
+    WHERE month = 'September_2026' AND person = 'Pooja'
+      AND section = 'Household Expenses' AND category = 'House Rent'
+  `).run();
+
+  db.close();
+  delete require.cache[require.resolve('../db')];
+  db = require('../db');
+
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) count FROM budget_category_mappings
+    WHERE section = 'Household Expenses' AND budget_category = 'House Rent'
+      AND transaction_category = 'Rent' AND kind = 'expense'
+  `).get().count, 0);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) count FROM budgets
+    WHERE month = 'September_2026' AND person = 'Pooja'
+      AND section = 'Household Expenses' AND category = 'House Rent'
+  `).get().count, 0);
+});

@@ -175,7 +175,7 @@ budget_category_mappings
 └── UNIQUE(kind, transaction_category)  ← prevents double attribution within a kind
 ```
 
-`db.js` idempotently seeds September 2026 budget rows from `budget-seed.js`: Kunal ₹1,15,647, Pooja ₹1,11,177, Combined ₹2,26,824, with zero planned investments. Initial mappings are deliberately limited to unambiguous categories: Rent; Petrol and Ola/Uber; Outside Food; Car downpayment/ emi; and Subscriptions. Unmapped budget lines remain visible as `mapping_needed`.
+`db.js` applies the September 2026 defaults once, tracked by a migration marker in `settings`: Kunal ₹1,15,647, Pooja ₹1,11,177, Combined ₹2,26,824, with zero planned investments. If an existing database already has September budget rows, initialization records the marker without reapplying defaults, so later user deletions stay deleted. Initial mappings are deliberately limited to unambiguous categories: Rent; Petrol and Ola/Uber; Outside Food; Car downpayment/ emi; and Subscriptions. Unmapped budget lines remain visible as `mapping_needed`.
 
 ---
 

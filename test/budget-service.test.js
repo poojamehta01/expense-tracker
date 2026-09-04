@@ -154,6 +154,8 @@ test('attributes only mapped qualifying transactions and separates investment to
 test('replaceMappings validates complete replacements and preserves existing mappings on failure', () => {
   const db = createFixture();
   const service = createBudgetService(db, { validCategories: ['Rent', 'Petrol'] });
+  insertLine(db, { month: 'September_2026', person: 'Pooja', section: 'Home', category: 'House Rent', kind: 'expense', amount: 100, sort_order: 0 });
+  insertLine(db, { month: 'September_2026', person: 'Pooja', section: 'Transport', category: 'Fuel', kind: 'expense', amount: 100, sort_order: 1 });
   insertMapping(db, { section: 'Home', budget_category: 'House Rent', transaction_category: 'Rent', kind: 'expense' });
   assert.deepEqual(service.replaceMappings({ section: 'Home', budgetCategory: 'House Rent', kind: 'expense', transactionCategories: ['Rent', 'Petrol'] }), { saved: true, count: 2 });
   assert.throws(() => service.replaceMappings({ section: 'Home', budgetCategory: 'House Rent', kind: 'expense', transactionCategories: ['Unknown'] }), /Unknown transaction category/);
@@ -163,6 +165,20 @@ test('replaceMappings validates complete replacements and preserves existing map
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM budget_category_mappings`).get().count, 0);
   db.prepare(`INSERT INTO lists (list_name, value) VALUES ('categories', 'Custom')`).run();
   assert.deepEqual(service.replaceMappings({ section: 'Home', budgetCategory: 'House Rent', kind: 'expense', transactionCategories: ['Custom'] }), { saved: true, count: 1 });
+  db.close();
+});
+
+test('replaceMappings rejects a target that is not a real budget line', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Rent'] });
+
+  assert.throws(
+    () => service.replaceMappings({
+      section: 'Ghost', budgetCategory: 'Missing line', kind: 'expense', transactionCategories: ['Rent'],
+    }),
+    error => error.code === 'not_found' && /Budget line not found/.test(error.message)
+  );
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM budget_category_mappings').get().count, 0);
   db.close();
 });
 

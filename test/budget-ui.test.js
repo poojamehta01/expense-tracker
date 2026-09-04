@@ -212,6 +212,9 @@ function createBudgetWorkflow({
   };
   const requests = [];
   const dashboardLoads = [];
+  const dashboardBudgetLoads = [];
+  const tabButtons = [element({ id: 'tab-btn-dashboard' }), element({ id: 'tab-btn-budget' })];
+  const globalFilterButtons = [element({ id: 'filter-all' }), element({ id: 'filter-pooja' })];
   const responseQueue = [...responses];
   const context = vm.createContext({
     document: {
@@ -220,6 +223,8 @@ function createBudgetWorkflow({
       querySelectorAll: selector => {
         if (selector === '.budget-amount-input') return amountInputs;
         if (selector === '#budgetMappingCategories input:checked') return mappingInputs;
+        if (selector === '.tab-btn') return tabButtons;
+        if (selector === '.global-filter-btn') return globalFilterButtons;
         return [];
       },
     },
@@ -233,6 +238,7 @@ function createBudgetWorkflow({
       };
     },
     loadDashboard: month => { dashboardLoads.push(month); },
+    loadDashboardBudget: month => { dashboardBudgetLoads.push(month); },
     formatCurrency: value => `₹${Number(value)}`,
     esc: value => String(value)
       .replace(/&/g, '&amp;')
@@ -262,7 +268,7 @@ function createBudgetWorkflow({
      };`,
     context
   );
-  return { workflow: context.workflowForTest, elements, amountInputs, requests, dashboardLoads };
+  return { workflow: context.workflowForTest, elements, amountInputs, requests, dashboardLoads, dashboardBudgetLoads, tabButtons, globalFilterButtons };
 }
 
 test('Combined budgets remain read-only and server labels are escaped in API order', () => {
@@ -363,6 +369,28 @@ test('a personal budget edit renders numeric inputs without blanking zero', () =
   assert.match(elements.budgetSections.innerHTML, /class="[^"]*budget-amount-input[^"]*"[^>]*type="number"[^>]*value="0"/);
 });
 
+test('editing locks controls that could discard unsaved budget amounts', () => {
+  const { workflow, elements, tabButtons, globalFilterButtons } = createBudgetWorkflow();
+  workflow.setData(budgetFixture());
+
+  workflow.beginBudgetEdit();
+
+  assert.equal(elements.budgetMonthPicker.disabled, true);
+  assert.equal(elements.budgetPersonPicker.disabled, true);
+  assert.equal(elements.budgetCopyBtn.disabled, true);
+  assert.match(elements.budgetSections.innerHTML, />Map<\/button>/);
+  assert.match(elements.budgetSections.innerHTML, /disabled[^>]*>Map<\/button>/);
+  assert.equal(tabButtons[0].disabled, true);
+  assert.equal(tabButtons[1].disabled, false);
+  assert.equal(globalFilterButtons[0].disabled, true);
+
+  workflow.cancelBudgetEdit();
+  assert.equal(elements.budgetMonthPicker.disabled, false);
+  assert.equal(elements.budgetPersonPicker.disabled, false);
+  assert.equal(tabButtons[0].disabled, false);
+  assert.equal(globalFilterButtons[0].disabled, false);
+});
+
 test('saving sends the complete person line set and reloads the affected month', async () => {
   const { workflow, elements, requests, dashboardLoads } = createBudgetWorkflow({
     amountValues: ['0', '1250'],
@@ -385,7 +413,8 @@ test('saving sends the complete person line set and reloads the affected month',
       { section: 'Home', category: 'Utilities', kind: 'expense', amount: 1250, sort_order: 1 },
     ],
   });
-  assert.deepEqual(dashboardLoads, ['September_2026']);
+  assert.deepEqual(dashboardLoads, []);
+  assert.equal(requests.at(-1).url, '/api/budget?month=September_2026&person=Pooja');
   assert.equal(elements.budgetCopyBtn.disabled, false);
 });
 
@@ -403,6 +432,25 @@ test('a failed save retains edited values and displays the server error', async 
   assert.equal(amountInputs[0].value, '75');
   assert.equal(elements.budgetError.textContent, 'Budget amount is invalid');
   assert.equal(elements.budgetError.classList.contains('hidden'), false);
+});
+
+test('saving a different Budget month refreshes only the Dashboard card for its selected month', async () => {
+  const august = { ...budgetFixture(), month: 'August_2026' };
+  const { workflow, elements, requests, dashboardLoads } = createBudgetWorkflow({
+    selectedMonth: 'September_2026',
+    responses: [
+      { ok: true, status: 200, body: { saved: true, count: 2 } },
+      { ok: true, status: 200, body: august },
+    ],
+  });
+  workflow.setData(august);
+  workflow.beginBudgetEdit();
+
+  await workflow.saveBudget();
+
+  assert.equal(elements.monthPicker.value, 'September_2026');
+  assert.deepEqual(dashboardLoads, []);
+  assert.equal(requests.at(-1).url, '/api/budget?month=September_2026&person=Pooja');
 });
 
 test('mapping save replaces checked categories for the selected budget line', async () => {
@@ -816,7 +864,8 @@ test('a missing Combined budget skips empty months and copies the latest populat
   assert.deepEqual(JSON.parse(posts[1].options.body), {
     targetMonth: 'September_2026', person: 'all', replace: true,
   });
-  assert.deepEqual(dashboardLoads, ['September_2026']);
+  assert.deepEqual(dashboardLoads, []);
+  assert.equal(requests.at(-1).url, '/api/budget?month=September_2026&person=all');
 });
 
 test('a missing budget with no populated earlier month disables copy and sends no copy request', async () => {

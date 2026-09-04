@@ -191,6 +191,8 @@ Budget actuals exclude `Credit Card Payment`, `Settlement`, and `Refunded`. Unma
 2. Choose **Edit budget**, change non-negative amounts, and choose **Save budget**.
 3. The app replaces only that person's complete budget for that month, then refreshes both the Budget detail and Dashboard card. Editing Pooja never changes Kunal, and vice versa.
 
+While amount editing is active, month/person filters, mappings, copying, and other tabs are locked until the edit is saved or cancelled, preventing silent loss of unsaved values. A Budget write refreshes only the Dashboard budget card for the Dashboard's own selected month; it does not replace Dashboard transactions or KPIs with another month.
+
 Combined disables amount and mapping controls. Use a personal view whenever a write is required.
 
 ### Edit Category Mappings
