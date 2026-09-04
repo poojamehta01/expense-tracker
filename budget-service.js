@@ -207,7 +207,8 @@ function createBudgetService(db, { validCategories = [] } = {}) {
     const lines = budgetRows.map(row => {
       const mappingKey = `${row.section}\u0000${row.category}\u0000${row.kind}`;
       const lineMappings = mappings.get(mappingKey) || [];
-      const actual = lineMappings.reduce((total, category) => total + (totals.get(category) || 0), 0);
+      const actual = lineMappings.reduce((total, category) =>
+        total + (row.kind === 'expense' && category === 'Investment' ? 0 : (totals.get(category) || 0)), 0);
       const budget = Number(row.amount);
       return {
         section: row.section,

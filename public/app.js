@@ -20,7 +20,7 @@ const DEFAULT_EXPENSE_TYPES = [
 
 const DEFAULT_PAYMENT_METHODS = [
   'Cash','ICICI_Credit_Card','Amazon_Credit_Card','SBI_Credit_Card',
-  'HDFC_Credit_Card','ABFL_Credit_Card','HDFC_Debit_Card','Zaggle'
+  'HDFC_Credit_Card','ABFL_Credit_Card','HDFC_Debit_Card','SBI_Debit_Card','Zaggle'
 ];
 
 let CATEGORIES = [...DEFAULT_CATEGORIES];
@@ -49,6 +49,7 @@ const CHIP_MAP = {
   'HDFC_Credit_Card':      { bg: '#e0e7ff', color: '#3730a3' },
   'ABFL_Credit_Card':      { bg: '#f5f3ff', color: '#6d28d9' },
   'HDFC_Debit_Card':       { bg: '#ffe4e6', color: '#be123c' },
+  'SBI_Debit_Card':        { bg: '#dbeafe', color: '#1e40af' },
   'Zaggle':                { bg: '#fdf4ff', color: '#86198f' },
   // paid_by
   'Pooja':                 { bg: '#ede9fe', color: '#5b21b6' },
@@ -97,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   loadSettings();
   setupUpload();
+  populateUploadPaymentMethods();
   initUploadMonthPicker();
   loadUser();
   switchTab('add');
@@ -204,6 +206,7 @@ async function loadLists() {
     EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES, ...data.expense_types.map(x => x.value)];
     PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS, ...data.payment_methods.map(x => x.value)];
     syncColOpts();
+    populateUploadPaymentMethods();
   } catch (e) { console.error('loadLists error:', e); }
 }
 
@@ -397,6 +400,20 @@ function filterTransactionsByDateRange(rows, fromISO, toISO) {
   return { included, excludedCount: rows.length - included.length };
 }
 
+function populateUploadPaymentMethods() {
+  const select = document.getElementById('uploadPaymentMethod');
+  if (!select) return;
+  const selected = select.value;
+  select.innerHTML = '<option value="">Auto-detect</option>' + PAYMENT_METHODS.map(method =>
+    `<option value="${esc(method)}">${esc(method.replace(/_/g, ' '))}</option>`).join('');
+  if (PAYMENT_METHODS.includes(selected)) select.value = selected;
+}
+
+function applyUploadPaymentMethodOverride(rows, method = document.getElementById('uploadPaymentMethod')?.value || '') {
+  if (!method) return rows;
+  return rows.map(tx => ({ ...tx, payment_method: method }));
+}
+
 // ─── Upload Processing ─────────────────────────────────────────────────────
 
 function setupUpload() {
@@ -448,7 +465,8 @@ async function handleFiles(files) {
       const extracted = isSpreadsheetFile(files[i])
         ? await parseSpreadsheetFile(files[i])
         : await extractFromFile(files[i]);
-      const filtered = filterTransactionsByDateRange(extracted, fromISO, toISO);
+      const overridden = applyUploadPaymentMethodOverride(extracted);
+      const filtered = filterTransactionsByDateRange(overridden, fromISO, toISO);
       excludedCount += filtered.excludedCount;
       const uploadMonth = getUploadMonth(); // e.g. "March_2026"
       const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
@@ -1690,6 +1708,7 @@ function renderKPIs(data) {
     kpiRow('Total', formatCurrency(data.totalSpend)) +
     kpiRow('Pooja', formatCurrency(pooja)) +
     kpiRow('Kunal', formatCurrency(kunal));
+  document.getElementById('kpiInvestments').textContent = formatCurrency(data.investments || 0);
 
   if (data.settlement === null) {
     document.getElementById('kpiSettlement').innerHTML =
@@ -1998,12 +2017,14 @@ function applyGlobalFilter() {
     renderChartsFromData(_lastDashData);
     renderTopMerchants(_lastDashData);
   } else {
-    const totalSpend = gList.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    const expenseList = gList.filter(t => t.category !== 'Investment');
+    const investments = gList.filter(t => t.category === 'Investment').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    const totalSpend = expenseList.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
     const byPaidBy = {};
-    for (const t of gList) byPaidBy[t.paid_by] = (byPaidBy[t.paid_by] || 0) + (parseFloat(t.amount) || 0);
-    renderKPIs({ totalSpend, transactionCount: gList.length, byPaidBy, settlement: null });
-    renderChartsFromData(aggregateFromTxList(gList, _lastDashData));
-    renderTopMerchantsFromList(gList);
+    for (const t of expenseList) byPaidBy[t.paid_by] = (byPaidBy[t.paid_by] || 0) + (parseFloat(t.amount) || 0);
+    renderKPIs({ totalSpend, investments, transactionCount: expenseList.length, byPaidBy, settlement: null });
+    renderChartsFromData(aggregateFromTxList(expenseList, _lastDashData));
+    renderTopMerchantsFromList(expenseList);
   }
 
   // re-render grid rows (head stays, no filter reset)
@@ -3242,6 +3263,7 @@ const budgetState = {
   copySourceStatus: 'idle',
   loadSequence: 0,
 };
+const collapsedBudgetSections = new Set();
 
 function showBudgetError(message) {
   const error = document.getElementById('budgetError');
@@ -3429,7 +3451,8 @@ function renderBudget() {
   let inputIndex = 0;
   sections.innerHTML = (data.sections || []).map(section => {
     const sectionUsage = budgetUsagePresentation(section);
-    const rows = (section.lines || []).map(line => {
+    const collapsed = collapsedBudgetSections.has(section.section);
+    const rows = (section.lines || []).filter(line => line.section !== 'Education/Child Care' && section.section !== 'Education/Child Care').map(line => {
       const status = budgetStatusPresentation(line.status);
       const usage = budgetUsagePresentation(line);
       const amount = budgetState.editing && !readOnly
@@ -3458,10 +3481,10 @@ function renderBudget() {
     return `
       <section class="table-section budget-section" data-section="${esc(section.section)}">
         <div class="table-header-row">
-          <h2>${esc(section.section)}</h2>
+          <button type="button" class="budget-section-toggle" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${esc(section.section)}" onclick="toggleBudgetSection('${esc(section.section).replace(/'/g, '&#39;')}')"><span class="budget-section-indicator" aria-hidden="true">${collapsed ? '▶' : '▼'}</span><h2>${esc(section.section)}</h2></button>
           <span>${formatCurrency(section.actual)} of ${formatCurrency(section.budget)} · ${sectionUsage.label}</span>
         </div>
-        <div class="table-wrapper">
+        <div class="table-wrapper" ${collapsed ? 'hidden' : ''}>
           <table class="budget-table">
             <thead><tr><th>Category</th><th>Budget</th><th>Actual</th><th>Remaining</th><th>Status</th><th>Mapping</th></tr></thead>
             <tbody>${rows}</tbody>
@@ -3469,6 +3492,12 @@ function renderBudget() {
         </div>
       </section>`;
   }).join('');
+}
+
+function toggleBudgetSection(sectionName) {
+  if (collapsedBudgetSections.has(sectionName)) collapsedBudgetSections.delete(sectionName);
+  else collapsedBudgetSections.add(sectionName);
+  renderBudget();
 }
 
 function beginBudgetEdit() {
@@ -3493,6 +3522,7 @@ async function saveBudget() {
   const editedSections = (budgetState.data.sections || []).map(section => ({
     section: section.section,
     lines: (section.lines || []).map(line => {
+      if ((line.section || section.section) === 'Education/Child Care') return { ...line, amount: Number(line.budget) };
       const input = inputs[offset++];
       return { ...line, amount: Number(input?.value) };
     }),

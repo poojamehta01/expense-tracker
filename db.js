@@ -74,6 +74,11 @@ db.exec(`
     value TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    version    TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS budgets (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     month      TEXT NOT NULL CHECK(month GLOB '[A-Z]*_[0-9][0-9][0-9][0-9]'),
@@ -123,6 +128,24 @@ db.transaction(() => {
   }
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
     .run(seedKey, 'applied');
+})();
+
+db.transaction(() => {
+  const version = '2026-09-04-budget-history-v1';
+  if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version)) return;
+  const targets = ['January','February','March','April','May','June','July','August'].map(month => `${month}_2026`);
+  const exists = db.prepare('SELECT 1 FROM budgets WHERE month = ? AND person = ? LIMIT 1');
+  const copy = db.prepare(`
+    INSERT INTO budgets (month, person, section, category, kind, amount, sort_order, created_at, updated_at)
+    SELECT ?, person, section, category, kind, amount, sort_order, datetime('now'), datetime('now')
+    FROM budgets WHERE month = 'September_2026' AND person = ?
+  `);
+  for (const month of targets) {
+    for (const person of ['Pooja', 'Kunal']) {
+      if (!exists.get(month, person)) copy.run(month, person);
+    }
+  }
+  db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
 })();
 
 db.pragma('incremental_vacuum(100)');   // reclaim up to 100 free pages on each startup
