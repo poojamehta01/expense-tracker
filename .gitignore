@@ -4,3 +4,4 @@ uploads/
 .DS_Store
 expenses.db
 *.csv
+.worktrees/

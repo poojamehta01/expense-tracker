@@ -6,14 +6,15 @@ Personal expense tracker for Pooja & Kunal. Upload payment screenshots → AI ex
 
 ## Navigation
 
-Five tabs in the top nav bar:
+The top nav bar includes:
 - **Dashboard** (default) — monthly snapshot
 - **Add Expenses** — upload & extract transactions
 - **Trends** — all-time analysis
 - **Salary** — salary tracking & savings rate
+- **Budget** — monthly personal budgets, mappings, actuals, and copy workflow
 - **Ask AI** — Gemini-powered financial Q&A
 
-Global person filter (All / Pooja / Kunal / Common) in the top-right nav filters data across Dashboard and Trends.
+The global person filter (All / Pooja / Kunal / Common) in the top-right nav filters Dashboard and Trends data, always refreshes the Dashboard budget card, and synchronizes the Budget person selector when that tab has been initialized. If Budget is visible, the synchronized budget detail reloads immediately; All and Common map to the Combined budget view.
 
 Dark mode toggle (🌙/☀️) in the top-right nav, persisted in localStorage.
 
@@ -31,6 +32,12 @@ Four cards showing stats for the selected month:
 ### Salary KPI Cards (Row 2)
 Shown only when salary data exists for the selected month:
 - **Pooja Salary** / **Kunal Salary** / **Combined Salary**
+
+### Monthly Budget Card
+
+The compact card uses the Dashboard's selected month and global person filter (`All` and `Common` use Combined). For an existing budget it shows actual expense spending against the expense budget, budget remaining or overspent, and percentage used. A zero budget with positive actuals is labelled unbudgeted instead of showing an infinite percentage.
+
+The action opens the detailed Budget tab without losing month/person context. `No budget set` means the budget request succeeded but the selected context has no rows. `Budget unavailable` means the request failed; it is not presented as an empty budget.
 
 ### Month Picker
 Dropdown in the toolbar showing all months from Jan 2026 to present. Months without data are marked with `—`.
@@ -67,6 +74,8 @@ Drop or select files (up to 20MB each):
 - **Images** (PNG, JPG, HEIC) or **PDFs** — Gemini AI extracts transactions from the screenshot/statement
 - **CSV / XLSX / XLS** — parsed directly in the browser (no AI); rows map to transaction fields automatically
 
+Choose an inclusive **From** and **To** date before uploading. Only transactions dated within that range reach the review table; transactions outside the range or with missing/invalid dates are excluded. After processing, the app reports how many transactions were included and excluded.
+
 For spreadsheets, columns are matched by name (case-insensitive). Supported aliases:
 
 | Field | Accepted column names |
@@ -86,7 +95,7 @@ Rows with no amount (or amount ≤ 0) are skipped. All other fields default the 
 Expandable card to paste raw SMS or bank notification text. Gemini extracts transactions from the text.
 
 ### Month Selector
-Choose which month the transactions belong to. Defaults to current month. Used as fallback date if no date is found in the screenshot.
+Choose which month the transactions belong to. Defaults to current month and initializes the upload date range (today for the current month, or the full month for another month). It remains the fallback month for pasted bank messages.
 
 ### Review Table
 After extraction, transactions appear in an editable table:
@@ -151,6 +160,73 @@ One row per month (most recent first):
 - Month, Pooja Salary, Kunal Salary, Combined Salary, Pooja Spend, Kunal Spend, Total Spend, Savings, Savings %
 
 Spend columns sourced from Trends data (same CC-excluded totals). Savings % = (Combined Salary − Total Spend) / Combined Salary.
+
+---
+
+## Budget Tab
+
+Track a separate monthly budget for Pooja and Kunal while viewing a derived household total. September 2026 is seeded at:
+
+| Person | Expense budget |
+|---|---:|
+| Kunal | ₹1,15,647 |
+| Pooja | ₹1,11,177 |
+| Combined | ₹2,26,824 |
+
+September planned investments are ₹0. Combined is calculated from the two personal budgets and is read-only; it is never stored or edited as a third budget.
+
+### Read the Summary Correctly
+
+- **Expense budget** — planned ordinary expenses.
+- **Actual spending** — qualifying transactions attributed through tracker-category mappings.
+- **Remaining** — expense budget minus actual spending. A negative result is overspent; it is not savings.
+- **Monthly savings** — recorded salary minus qualifying actual spending. Missing salary displays `—`, while a recorded zero salary remains a valid value.
+- **Investments** — planned and actual investment totals, kept separate from ordinary expense budget and spending.
+
+Budget actuals exclude `Credit Card Payment`, `Settlement`, and `Refunded`. Unmapped tracker categories are not silently assigned, and investment actuals do not increase ordinary expense actuals.
+
+### Edit One Person's Budget
+
+1. Select the month and then `Pooja` or `Kunal` under **Budget for**.
+2. Choose **Edit budget**, change non-negative amounts, and choose **Save budget**.
+3. The app replaces only that person's complete budget for that month, then refreshes both the Budget detail and Dashboard card. Editing Pooja never changes Kunal, and vice versa.
+
+While amount editing is active, month/person filters, mappings, copying, and other tabs are locked until the edit is saved or cancelled, preventing silent loss of unsaved values. A Budget write refreshes only the Dashboard budget card for the Dashboard's own selected month; it does not replace Dashboard transactions or KPIs with another month.
+
+Combined disables amount and mapping controls. Use a personal view whenever a write is required.
+
+### Edit Category Mappings
+
+Choose **Map** beside a budget line, select zero or more tracker categories, and save. Mappings are global across months, and each tracker category may belong to only one budget line within the same `expense` or `investment` kind, preventing duplicate actuals.
+
+The initial unambiguous mappings are:
+
+| Budget line | Tracker category or categories |
+|---|---|
+| Household Expenses → House Rent | Rent |
+| Household Expenses → Conveyance (Petrol/ Disel/ Cab / Bus) | Petrol, Ola/Uber |
+| Lifestyle → Dining Out / Pub | Outside Food |
+| LOANS & OTHER DEBTS → Vehicle Loan | Car downpayment/ emi |
+| OTT Subscription → Claude/ AI/ other | Subscriptions |
+
+Lines without mappings show **Mapping needed**. Removing all mappings is allowed and returns the line to that state. If the final personal/monthly occurrence of a budget line is deleted, its now-orphaned global mappings are removed in the same transaction.
+
+### Copy a Prior Month
+
+For an empty month, the app scans earlier months from most recent to oldest and offers the first populated budget it finds—not merely the immediately previous calendar month. Copying into an empty target succeeds directly. If the target is populated, the server returns a conflict and the modal requires the separate **Replace and copy** confirmation before existing target rows are replaced.
+
+Copy applies to the selected person. From Combined, it copies whichever personal budgets exist in the chosen source month; if both Pooja and Kunal have source rows, both are copied. Mappings are global and are not duplicated by a month copy.
+
+### Statuses and Empty States
+
+- **On track** — positive actual spending below 80% used.
+- **Watch** — 80% through 100% used.
+- **Over budget** — actual spending is greater than budget.
+- **No activity** — a positive budget has no actual spending.
+- **Unbudgeted** — a zero budget has positive actual spending.
+- **Mapping needed** — no tracker category is mapped; this takes precedence because actuals cannot be attributed.
+
+A budget may exist with no transactions, no salary, or all-zero amounts; those are valid, explicit states. If no earlier source exists, copying stays disabled with **No earlier budget to copy**. Budget fetch failures show a readable error and never masquerade as a missing budget.
 
 ---
 

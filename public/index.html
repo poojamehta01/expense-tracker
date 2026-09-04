@@ -39,6 +39,7 @@
       <button class="tab-btn" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
       <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
       <button class="tab-btn" onclick="switchTab('salary')" id="tab-btn-salary">Salary</button>
+      <button class="tab-btn" id="tab-btn-budget" onclick="switchTab('budget')">Budget</button>
       <button class="tab-btn" onclick="switchTab('ask')" id="tab-btn-ask">Ask AI</button>
       <button class="tab-btn" onclick="switchTab('ai-memory')" id="tab-btn-ai-memory">🧠 AI Memory</button>
       <div class="tab-nav-spacer"></div>
@@ -82,6 +83,20 @@
             <div class="kpi-value small" id="kpiSettlement">—</div>
           </div>
         </div>
+
+        <section id="dashboardBudgetCard" class="dashboard-budget-card" aria-labelledby="dashboardBudgetTitle">
+          <div class="dashboard-budget-card__main">
+            <div class="kpi-label">Monthly budget</div>
+            <div id="dashboardBudgetTitle" class="dashboard-budget-card__title">Loading budget…</div>
+            <div id="dashboardBudgetAmount" class="dashboard-budget-card__amount"></div>
+            <div id="dashboardBudgetVariance" class="dashboard-budget-card__variance"></div>
+            <div id="dashboardBudgetProgress" class="budget-progress hidden" role="progressbar" aria-label="Monthly budget used">
+              <span id="dashboardBudgetProgressFill" class="budget-progress__fill"></span>
+            </div>
+            <div id="dashboardBudgetUsage" class="dashboard-budget-card__usage"></div>
+          </div>
+          <button id="dashboardBudgetAction" class="btn-secondary" type="button" onclick="openBudgetDetails()">View budget</button>
+        </section>
 
         <!-- Charts grid -->
         <div class="section-header" onclick="toggleCharts()">
@@ -184,6 +199,12 @@
         <div class="upload-month-bar">
           <label for="uploadMonthPicker">Adding expenses for</label>
           <select id="uploadMonthPicker" onchange="onUploadMonthChange()"></select>
+          <div class="upload-date-range" aria-label="Transaction date range">
+            <label for="uploadDateFrom">From</label>
+            <input id="uploadDateFrom" type="date" required />
+            <label for="uploadDateTo">To</label>
+            <input id="uploadDateTo" type="date" required />
+          </div>
         </div>
 
         <!-- Upload area -->
@@ -499,6 +520,35 @@
         </div>
       </div><!-- /tab-salary -->
 
+      <!-- ═══════════════════════════════ BUDGET TAB ══════════════════════════ -->
+      <div id="tab-budget" class="hidden">
+        <div class="dashboard-toolbar">
+          <div class="month-picker-wrap">
+            <label for="budgetMonthPicker">Month</label>
+            <select id="budgetMonthPicker" onchange="loadBudget()"></select>
+          </div>
+          <div class="month-picker-wrap">
+            <label for="budgetPersonPicker">Budget for</label>
+            <select id="budgetPersonPicker" onchange="loadBudget()">
+              <option value="all">Combined</option>
+              <option value="Pooja">Pooja</option>
+              <option value="Kunal">Kunal</option>
+            </select>
+          </div>
+          <div class="toolbar-right">
+            <button class="btn-secondary" id="budgetCopyBtn" onclick="openBudgetCopy()">Copy month</button>
+            <button class="btn-secondary hidden" id="budgetCancelBtn" onclick="cancelBudgetEdit()">Cancel</button>
+            <button class="btn-primary" id="budgetEditBtn" onclick="beginBudgetEdit()">Edit budget</button>
+          </div>
+        </div>
+
+        <div id="budgetLoading" class="empty-state hidden"><p>Loading budget…</p></div>
+        <div id="budgetError" class="error-card hidden"></div>
+        <div id="budgetEmpty" class="empty-state hidden"><p>No budget has been set for this month.</p></div>
+        <div id="budgetSummary" class="budget-summary-grid"></div>
+        <div id="budgetSections"></div>
+      </div><!-- /tab-budget -->
+
       <!-- ════════════════════════════════ ASK AI TAB ══════════════════════════ -->
       <div id="tab-ask" class="hidden">
         <div class="ai-section">
@@ -553,6 +603,44 @@
       </div><!-- /tab-ai-memory -->
 
     </main>
+  </div>
+
+  <!-- Budget Mapping Modal -->
+  <div id="budgetMappingModal" class="modal-overlay budget-modal hidden" onclick="if(event.target===this)closeBudgetMapping()">
+    <div class="modal-card modal-card--sm">
+      <div class="modal-header">
+        <h2>Map tracker categories</h2>
+        <button class="modal-close" onclick="closeBudgetMapping()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Budget category: <strong id="budgetMappingLabel"></strong></p>
+        <div id="budgetMappingCategories"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeBudgetMapping()">Cancel</button>
+        <button class="btn-primary" id="budgetMappingSaveBtn" onclick="saveBudgetMapping()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Budget Copy Modal -->
+  <div id="budgetCopyModal" class="modal-overlay budget-modal hidden" onclick="if(event.target===this)closeBudgetCopy()">
+    <div class="modal-card modal-card--sm">
+      <div class="modal-header">
+        <h2>Copy monthly budget</h2>
+        <button class="modal-close" onclick="closeBudgetCopy()">×</button>
+      </div>
+      <div class="modal-body">
+        <label for="budgetCopyTargetMonth">Copy to</label>
+        <select id="budgetCopyTargetMonth" onchange="updateBudgetCopyMessage()"></select>
+        <p id="budgetCopyMessage"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeBudgetCopy()">Cancel</button>
+        <button class="btn-primary" id="budgetCopyConfirmBtn" onclick="copyBudgetMonth(false)">Copy</button>
+        <button class="btn-danger hidden" id="budgetCopyReplaceBtn" onclick="copyBudgetMonth(true)">Replace and copy</button>
+      </div>
+    </div>
   </div>
 
   <!-- Confirm Modal -->

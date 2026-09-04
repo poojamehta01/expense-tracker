@@ -27,9 +27,11 @@ Invoke the matching skill automatically — user does NOT need to type the slash
 ```
 server.js          Express app, all routes, Gemini extraction + AI Q&A
 db.js              SQLite init, CREATE TABLE, exports db instance
+budget-service.js  Budget validation, attribution, summaries, mappings, and copy operations
+budget-seed.js     Idempotent September 2026 budget lines and initial mappings
 public/
-  index.html       Five tabs: Dashboard + Add Expenses + Trends + Salary + Ask AI
-  app.js           All frontend JS — dashboard, upload, save flow, trends, salary, AI
+  index.html       Dashboard + Add Expenses + Trends + Salary + Budget + Ask AI + AI Memory tabs
+  app.js           All frontend JS — dashboard, budget workflow, upload, trends, salary, AI
   style.css        All styles + dark mode + mobile responsive
 apps-script.gs     Google Sheets Apps Script (optional export target)
 features.md        User-facing feature documentation
@@ -49,6 +51,19 @@ created_at TEXT, UNIQUE(person, month)
 
 -- transaction_audit
 id, tx_id INTEGER, action TEXT, snapshot TEXT, changed_at TEXT
+
+-- budgets (one row per month/person/adviser-sheet line)
+id, month TEXT, person TEXT CHECK(person IN ('Pooja','Kunal')),
+section TEXT, category TEXT, kind TEXT CHECK(kind IN ('expense','investment')),
+amount REAL CHECK(amount >= 0), sort_order INTEGER,
+created_at TEXT, updated_at TEXT,
+UNIQUE(month, person, section, category)
+
+-- budget_category_mappings (global across months)
+id, section TEXT, budget_category TEXT, transaction_category TEXT,
+kind TEXT CHECK(kind IN ('expense','investment')), created_at TEXT,
+UNIQUE(section, budget_category, transaction_category),
+UNIQUE(kind, transaction_category)
 ```
 
 ## API Routes (all behind `requireAuth`)
@@ -64,6 +79,10 @@ GET  /api/dashboard?month=       aggregated stats (see shape below)
 GET  /api/trends                 all-time monthly data for Trends tab (see shape below)
 GET  /api/salary?month=          salary for specific month {Pooja, Kunal, notes} OR all months {history}
 POST /api/salary                 upsert salary {month, Pooja, Kunal, notes}
+GET  /api/budget?month=&person=  budget detail; person is Pooja, Kunal, or all (Combined)
+PUT  /api/budget/:month          replace one person's complete budget {person, lines}
+PUT  /api/budget-mappings        replace one line's global tracker-category mappings
+POST /api/budget/:month/copy     copy source month to {targetMonth, person, replace}
 POST /api/ask                    AI Q&A {question, month} → {answer}
 GET  /api/audit                  recent changes (last 24h)
 POST /api/audit/:id/restore      restore a snapshot
@@ -86,6 +105,35 @@ POST /api/audit/:id/restore      restore a snapshot
   "topMerchants": [{"description":"...", "total":0, "cnt":0}]
 }
 ```
+
+## Budget Response Meaning (`/api/budget?month=&person=`)
+`person=all` is the derived, read-only Combined view; the database stores only Pooja and Kunal rows.
+
+```json
+{
+  "month": "September_2026",
+  "person": "Pooja",
+  "hasBudget": true,
+  "hasSalary": true,
+  "summary": {
+    "expenseBudget": 111177,
+    "actualSpending": 0,
+    "variance": 111177,
+    "usage": 0,
+    "salary": 0,
+    "netMonthlySavings": 0,
+    "plannedInvestments": 0,
+    "actualInvestments": 0
+  },
+  "sections": [{"section":"...","budget":0,"actual":0,"variance":0,"usage":null,"lines":[]}],
+  "unmappedCount": 0
+}
+```
+
+- `variance` is budget remaining (`expenseBudget - actualSpending`), not savings.
+- `netMonthlySavings` is recorded salary minus qualifying actual spending; `hasSalary` distinguishes a missing salary from a recorded zero salary.
+- Expense and investment lines are summarized separately. Budget actuals exclude `Credit Card Payment`, `Settlement`, and `Refunded`.
+- September 2026 seeds reconcile to Kunal ₹1,15,647, Pooja ₹1,11,177, and Combined ₹2,26,824. Initial unambiguous mappings cover Rent, Petrol, Ola/Uber, Outside Food, Car downpayment/ emi, and Subscriptions; remaining lines visibly report `mapping_needed` until mapped.
 
 ## Trends Response Shape (`/api/trends?person=`)
 `person` param: `Pooja`, `Kunal`, `Common`, or omit for all.
@@ -134,25 +182,31 @@ POST /api/audit/:id/restore      restore a snapshot
 ## Frontend Flow
 1. **Add Expenses tab:** upload file → (if image/PDF: `/api/extract` via Gemini; if CSV/XLSX/XLS: parsed client-side via SheetJS/vanilla JS) → review table → `saveToTracker()` → `POST /api/transactions`
    - `paid_by` preserved from spreadsheet if set; otherwise auto-set to logged-in user's first name; `expense_type` defaults to `{User}_Personal`
-   - Month selector at top — defaults to current month; date fields fall back to selected month if missing
+   - Month selector at top — defaults to current month and initializes an inclusive From/To upload range (today for the current month, full month otherwise)
+   - All uploaded file types are filtered before review; only valid transaction dates within the selected range are included, and an included/excluded count is shown
    - Spreadsheet column mapping (case-insensitive): `date`, `amount/amt/value/debit/credit`, `description/desc/merchant/narration/particulars`, `payment_method/method/mode`, `paid_by/who/person`, `expense_type/type`, `category/cat`, `mood`, `impulse`, `remarks/notes`; rows with `amount ≤ 0` are filtered out
-2. **Dashboard tab (default):** `loadMonths()` → `loadDashboard(month)` → renders KPIs + salary KPIs + 4 charts (collapsible "Trends" section) + merchants table + transactions list
+2. **Dashboard tab (default):** `loadMonths()` → `loadDashboard(month)` → renders KPIs + salary KPIs + budget-health card + 4 charts (collapsible "Trends" section) + merchants table + transactions list
    - Global person filter (All/Pooja/Kunal/Common) in top-right nav filters all data
    - Dashboard toolbar: Month picker on left, "Edit History" + "Export to Google Sheets" grouped on right
    - Salary row (Pooja / Kunal / Combined) shown below main KPIs if salary exists for that month
+   - Budget loads independently for the same month/person context; request failures show `Budget unavailable`, while a successful empty response shows `No budget set`
 3. **Trends tab:** `loadTrends()` (fetches once, cached in `trendsLoaded`; reset after save or filter change) → renders tables + chart
 4. **Salary tab:** `initSalaryTab()` → month picker + entry form (Pooja/Kunal inputs) + history table; `loadSalaryHistory()` fetches salary + trends data for full picture
-5. **Ask AI tab:** Gemini-powered Q&A with context (monthly totals, top categories, current month detail); preset chips for common questions
-6. **Export to Sheets (optional):** fetches month transactions → POSTs to Apps Script URL stored in localStorage
+5. **Budget tab:** `initBudgetTab()` synchronizes Dashboard month/person → `loadBudget()` → renders summary + section lines; Pooja/Kunal can edit amounts and mappings, while Combined is read-only
+   - Empty months scan backward through the available month list and offer the most recent earlier budget as the copy source
+   - Copying to an empty target proceeds; a populated target returns `409` and exposes a separate `Replace and copy` confirmation
+6. **Ask AI tab:** Gemini-powered Q&A with context (monthly totals, top categories, current month detail); preset chips for common questions
+7. **Export to Sheets (optional):** fetches month transactions → POSTs to Apps Script URL stored in localStorage
 
 ## Tabs Layout
 ### Dashboard tab (top → bottom)
 1. Toolbar (month picker + Edit History + Export)
 2. KPI row: Total Spend | Transactions | Pooja vs Kunal | Settlement
-3. Salary KPI row (hidden if no salary): Pooja Salary | Kunal Salary | Combined (shown for selected month)
-4. Trends section (collapsible, default collapsed): 4 charts
-5. Top Merchants (collapsible)
-6. Transactions list (sortable, filterable, inline edit, bulk edit/delete, column toggle)
+3. Budget-health card: actual of budget, remaining/overspent, usage, and Budget-tab action
+4. Salary KPI row (hidden if no salary): Pooja Salary | Kunal Salary | Combined (shown for selected month)
+5. Trends section (collapsible, default collapsed): 4 charts
+6. Top Merchants (collapsible)
+7. Transactions list (sortable, filterable, inline edit, bulk edit/delete, column toggle)
 
 ### Trends tab (top → bottom)
 1. Monthly Summary table — month rows, total spend (excl. CC), transactions, Pooja/Kunal split
@@ -166,16 +220,24 @@ POST /api/audit/:id/restore      restore a snapshot
 2. Entry card — month picker + Pooja/Kunal salary inputs + notes + Save button
 3. History table — Month | Pooja Salary | Kunal Salary | Combined | Pooja Spend | Kunal Spend | Total Spend | Savings | Savings %
 
+### Budget tab (top → bottom)
+1. Month and person selectors plus Copy/Edit actions
+2. Separate Expense budget, Actual spending, Remaining, Salary, Monthly savings, and Investments summaries
+3. Adviser-sheet sections with budget, mapping-derived actual, remaining, usage/status, and mappings per line
+4. Pooja/Kunal amount and mapping controls; Combined has no write controls
+
 ### Ask AI tab
 - Preset chips (top spend category, where to improve, next month prediction, etc.)
 - Free-text input
 - Gemini response rendered below
 
 ## Key JS Functions (app.js)
-- `switchTab(name)` — toggles dashboard/add/trends/salary/ask tabs; calls `loadTrends()` on trends, `initSalaryTab()` on salary
+- `switchTab(name)` — toggles dashboard/add/trends/salary/budget/ask/ai-memory tabs; calls `loadTrends()` on trends, `initSalaryTab()` on salary, and `initBudgetTab()` on budget
 - `saveToTracker()` — POST batch to DB; resets `trendsLoaded = false`
 - `loadMonths()` — shows all months Jan 2026→current; months without data marked with ` —`
 - `loadDashboard(month)` — parallel fetch dashboard + transactions + salary; renders all
+- `loadDashboardBudget(month)` / `renderDashboardBudget(data, options)` — independently render active, empty, or unavailable budget health without allowing stale responses to win
+- `openBudgetDetails()` — opens Budget with the Dashboard month and normalized person (`All`/`Common` → Combined)
 - `renderKPIs(data)` — settlement card shows net + breakdown
 - `renderSalaryKPIs(data)` — shows/hides `#kpiSalaryGrid` with month salary values
 - `loadTrends()` — fetches `/api/trends?person=`, renders all trends sections; `trendsLoaded` cache
@@ -192,11 +254,18 @@ POST /api/audit/:id/restore      restore a snapshot
 - `loadSalaryForMonth()` — fetches salary for selected month, populates inputs
 - `saveSalary()` — POST salary, refresh history
 - `loadSalaryHistory()` — fetches `/api/salary` + `/api/trends`; computes 9-cell summary (salary/spend/savings × pooja/kunal/combined) + history table
+- `initBudgetTab()` / `loadBudget()` / `renderBudget()` — synchronize context, load guarded budget state, and render summaries/sections
+- `saveBudget()` — replace a selected person's complete line set; Combined is blocked
+- `saveBudgetMapping()` — replace global tracker-category mappings for one budget line
+- `findEarlierBudgetSource()` — scan backward and select the most recent earlier month that has a budget
+- `copyBudgetMonth(replace)` — copy into an empty month or retry with explicit replacement after a `409`
 - `isSpreadsheetFile(file)` — returns true for .csv/.xlsx/.xls by name or MIME type
 - `parseSpreadsheetFile(file)` — async; CSV → `parseCSVToObjects`; XLSX/XLS → SheetJS; returns mapped tx array (rows with amount ≤ 0 filtered)
 - `parseCSVToObjects(text)` — splits CSV text into array of objects keyed by header row
 - `parseCSVLine(line)` — RFC-4180 CSV line parser (handles quoted fields, escaped quotes)
 - `mapSpreadsheetRow(rawRow)` — normalises column names (lowercase) and maps aliases to tx fields; handles SheetJS Date objects for date column
+- `validateUploadDateRange(fromISO, toISO)` — requires both inclusive range boundaries and rejects reversed ranges
+- `filterTransactionsByDateRange(rows, fromISO, toISO)` — excludes out-of-range transactions and missing/invalid dates before review
 - `askChip(btn)` — fills AI input with chip text + submits
 - `submitAsk()` — POST to `/api/ask`, renders markdown-ish response
 - `makeChipCombo(options, current, index, field)` — chip-based searchable dropdown
@@ -212,10 +281,13 @@ POST /api/audit/:id/restore      restore a snapshot
 - `_catSortCol` / `_catSortDir` — current sort state for Spend by Category table (default: `'total'` / `'desc'`)
 - `globalPersonFilter` — `'all' | 'Pooja' | 'Kunal' | 'Common'`
 - `_salaryInited` — bool; prevents re-running `loadSalaryHistory()` on every tab switch
+- `dashboardBudgetLoadState` — active Dashboard budget request sequence/month/person; prevents stale success or failure from replacing current context
+- `budgetState` — `{ initialized, month, person, data, editing, saving, mappingLine, copySourceMonth, copySourceStatus, loadSequence }`
 
 ## CSS Patterns
 - Dark mode: `body.dark` class with CSS custom property overrides (`--bg`, `--white`, `--border`, `--text`)
 - `.btn-primary.small` — `padding: 6px 12px; font-size: 12px`
+- `.upload-date-range` — responsive From/To date controls in the upload month bar; stacks across the mobile width
 - `body.dark .btn-primary` — explicit rule ensures correct blue rendering in dark mode
 - Chip combo: `.rv-combo-trigger`, `.rv-combo-panel`, `.rv-combo-search`, `.rv-combo-list`, `.rv-opt`
 - Inline edit panel: `.rv-combo-panel.rv-inline` — `position: absolute; z-index: 200`
@@ -248,6 +320,7 @@ PORT                  default 3000
 - Do not run `npm install` unless adding a new package — everything is installed
 - Do not add Google Apps Script as a required step — it is now optional export only
 - Month sort in SQL must use the `MONTH_SORT` CASE expression (not `ORDER BY month`) — alphabetical sort is wrong
-- `Credit Card Payment` and `Settlement` categories must always be excluded from expense totals — use `CC_EXCLUDE` constant in server.js; CC payments appear in the separate `creditCardPayments` section; Settlement is handled via individual transaction expense types
+- `Credit Card Payment` and `Settlement` categories must always be excluded from general expense totals — use `CC_EXCLUDE` constant in server.js; CC payments appear in the separate `creditCardPayments` section; Settlement is handled via individual transaction expense types
+- Budget actuals have a separate explicit exclusion set: `Credit Card Payment`, `Settlement`, and `Refunded`. Do not silently assign unmapped tracker categories or combine investment actuals with expense actuals.
 - Per-chart person filter was removed from Dashboard — global filter (All/Pooja/Kunal/Common) in top nav handles all filtering
 - `_salaryInited` flag prevents redundant re-fetches on tab switch; reset it to `false` after save so history refreshes
