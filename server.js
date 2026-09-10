@@ -11,6 +11,7 @@ const { createBudgetService } = require('./budget-service');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const EXTRACTION_TIMEOUT_MS = 90_000;
 
 // Trust Railway's reverse proxy so secure cookies work over HTTPS
 app.set('trust proxy', 1);
@@ -785,7 +786,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     const result = await model.generateContent([
       { inlineData: { data: base64Data, mimeType } },
       buildExtractionPrompt()
-    ]);
+    ], { timeout: EXTRACTION_TIMEOUT_MS });
 
     const text = result.response.text().trim();
     const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -795,6 +796,9 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     res.json({ transactions });
   } catch (err) {
     console.error('Extraction error:', err.message);
+    if (/timeout|timed out|aborted/i.test(err.message)) {
+      return res.status(504).json({ error: 'Extraction timed out. Please retry the file.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });

@@ -584,7 +584,19 @@ async function extractFromFile(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch('/api/extract', { method: 'POST', body: formData });
+  let res;
+  try {
+    res = await fetch('/api/extract', {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(100_000)
+    });
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      throw new Error('Extraction timed out. Please retry the file.');
+    }
+    throw err;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || 'Server error');
