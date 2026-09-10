@@ -637,6 +637,29 @@ app.delete('/api/lists/:id', (req, res) => {
 // ─── Gemini extraction ────────────────────────────────────────────────────────
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const EXTRACTION_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash'];
+
+function isTransientGeminiError(err) {
+  return [429, 500, 503, 504].includes(err?.status)
+    || /\b(?:429|500|503|504)\b/.test(err?.message || '');
+}
+
+async function generateExtractionContent(parts, ai = genAI, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+  let lastError;
+  for (const modelName of EXTRACTION_MODELS) {
+    const model = ai.getGenerativeModel({ model: modelName });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await model.generateContent(parts, { timeout: EXTRACTION_TIMEOUT_MS });
+      } catch (err) {
+        if (!isTransientGeminiError(err)) throw err;
+        lastError = err;
+        if (attempt === 0) await sleep(750);
+      }
+    }
+  }
+  throw lastError;
+}
 
 const CATEGORIES = [
   'Zepto/Blinkit', 'Credit Card Payment', 'Doctor', 'Donation', 'Entertainment',
@@ -779,14 +802,13 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
     const base64Data = req.file.buffer.toString('base64');
     const mimeType = req.file.mimetype;
 
-    const result = await model.generateContent([
+    const result = await generateExtractionContent([
       { inlineData: { data: base64Data, mimeType } },
       buildExtractionPrompt()
-    ], { timeout: EXTRACTION_TIMEOUT_MS });
+    ]);
 
     const text = result.response.text().trim();
     const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -799,6 +821,9 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     if (/timeout|timed out|aborted/i.test(err.message)) {
       return res.status(504).json({ error: 'Extraction timed out. Please retry the file.' });
     }
+    if (isTransientGeminiError(err)) {
+      return res.status(503).json({ error: 'Gemini is temporarily busy. Please retry in a minute.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -808,8 +833,7 @@ app.post('/api/extract-text', express.json(), async (req, res) => {
   if (!text || !text.trim()) return res.status(400).json({ error: 'No text provided' });
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-    const result = await model.generateContent([
+    const result = await generateExtractionContent([
       `The following is one or more SMS / bank notification messages pasted by the user. Extract all transactions from them.\n\n${text.trim()}\n\n${buildExtractionPrompt()}`
     ]);
 
@@ -821,6 +845,12 @@ app.post('/api/extract-text', express.json(), async (req, res) => {
     res.json({ transactions });
   } catch (err) {
     console.error('Text extraction error:', err.message);
+    if (/timeout|timed out|aborted/i.test(err.message)) {
+      return res.status(504).json({ error: 'Extraction timed out. Please retry.' });
+    }
+    if (isTransientGeminiError(err)) {
+      return res.status(503).json({ error: 'Gemini is temporarily busy. Please retry in a minute.' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -927,4 +957,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { registerBudgetRoutes };
+module.exports = { registerBudgetRoutes, generateExtractionContent };
