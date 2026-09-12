@@ -102,6 +102,22 @@ test('combines same-key personal lines and requires both salaries for a complete
   db.close();
 });
 
+test('splits household-pool spending equally across both personal budgets', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Outside Food'] });
+  for (const person of ['Pooja', 'Kunal']) {
+    insertLine(db, { month: 'September_2026', person, section: 'Food', category: 'Dining', kind: 'expense', amount: 1000, sort_order: 0 });
+  }
+  insertMapping(db, { section: 'Food', budget_category: 'Dining', transaction_category: 'Outside Food', kind: 'expense' });
+  db.prepare(`INSERT INTO transactions (amount, paid_by, category, month) VALUES (?, ?, ?, ?)`)
+    .run(800, 'Household Pool', 'Outside Food', 'September_2026');
+
+  assert.equal(service.getBudget({ month: 'September_2026', person: 'Pooja' }).summary.actualSpending, 400);
+  assert.equal(service.getBudget({ month: 'September_2026', person: 'Kunal' }).summary.actualSpending, 400);
+  assert.equal(service.getBudget({ month: 'September_2026', person: 'all' }).summary.actualSpending, 800);
+  db.close();
+});
+
 test('replaceBudget validates every line before atomically replacing existing rows', () => {
   const db = createFixture();
   const service = createBudgetService(db, { validCategories: ['Rent'] });

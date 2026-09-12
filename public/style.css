@@ -1618,6 +1618,7 @@ body.dark .budget-summary-card { background: var(--white) !important; }
   outline-offset: 2px;
 }
 #budgetMappingCategories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.budget-mapping-hint { margin: -6px 0 2px; color: var(--text-muted); font-size: 12px; }
 .budget-modal #budgetMappingCategories .budget-mapping-row {
   align-items: flex-start;
   flex-wrap: nowrap;

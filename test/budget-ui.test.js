@@ -19,11 +19,38 @@ function loadBudgetHelpers() {
   const context = vm.createContext({});
   vm.runInContext(
     `${source.slice(start, end)}\n` +
-      'globalThis.helpersForTest = { budgetStatusPresentation, budgetUsagePresentation, buildBudgetSaveLines };',
+      'globalThis.helpersForTest = { budgetStatusPresentation, budgetUsagePresentation, buildBudgetSaveLines, smartBudgetMappingSuggestions };',
     context
   );
   return context.helpersForTest;
 }
+
+test('smart mapping suggests relevant available tracker categories without stealing existing mappings', () => {
+  const { smartBudgetMappingSuggestions } = loadBudgetHelpers();
+  const categories = ['Doctor', 'Medicines', 'Medical Checkup', 'Monthly Home bills', 'Groceries', 'Unrelated'];
+  const sections = [{
+    section: 'Household Expenses',
+    lines: [
+      { section: 'Household Expenses', category: 'Medicine (All family)', kind: 'expense', mappings: [] },
+      { section: 'Household Expenses', category: 'Other', kind: 'expense', mappings: ['Doctor'] },
+    ],
+  }];
+
+  assert.deepEqual(
+    Array.from(smartBudgetMappingSuggestions(sections[0].lines[0], categories, sections)),
+    ['Medicines', 'Medical Checkup']
+  );
+});
+
+test('smart mapping includes matching custom categories and avoids weak generic matches', () => {
+  const { smartBudgetMappingSuggestions } = loadBudgetHelpers();
+  const line = { section: 'Household Expenses', category: 'Gas / LPG / MNGL', kind: 'expense', mappings: [] };
+
+  assert.deepEqual(
+    Array.from(smartBudgetMappingSuggestions(line, ['Cooking Gas', 'Gas Cylinder', 'Shopping - home', 'Others'], [])),
+    ['Cooking Gas', 'Gas Cylinder']
+  );
+});
 
 test('Budget navigation and render targets are present', () => {
   const html = fs.readFileSync(HTML_PATH, 'utf8');
@@ -202,6 +229,7 @@ function createBudgetWorkflow({
     budgetSections: element(),
     budgetMappingModal: element({ hidden: true }),
     budgetMappingLabel: element(),
+    budgetMappingHint: element(),
     budgetMappingCategories: element(),
     budgetMappingSaveBtn: element(),
     budgetCopyModal: element({ hidden: true }),
@@ -211,6 +239,7 @@ function createBudgetWorkflow({
     budgetCopyReplaceBtn: element({ hidden: true }),
   };
   const requests = [];
+  const documentListeners = {};
   const dashboardLoads = [];
   const dashboardBudgetLoads = [];
   const tabButtons = [element({ id: 'tab-btn-dashboard' }), element({ id: 'tab-btn-budget' })];
@@ -218,6 +247,7 @@ function createBudgetWorkflow({
   const responseQueue = [...responses];
   const context = vm.createContext({
     document: {
+      addEventListener: (name, listener) => { documentListeners[name] = listener; },
       getElementById: id => elements[id] || null,
       createElement: tag => element({ tagName: tag.toUpperCase() }),
       querySelectorAll: selector => {
@@ -268,8 +298,22 @@ function createBudgetWorkflow({
      };`,
     context
   );
-  return { workflow: context.workflowForTest, elements, amountInputs, requests, dashboardLoads, dashboardBudgetLoads, tabButtons, globalFilterButtons };
+  return { workflow: context.workflowForTest, elements, amountInputs, requests, dashboardLoads, dashboardBudgetLoads, tabButtons, globalFilterButtons, documentListeners };
 }
+
+test('clicking a rendered Map button opens the mapping modal through delegated handling', () => {
+  const { workflow, elements, documentListeners } = createBudgetWorkflow();
+  workflow.setData(budgetFixture());
+  workflow.renderBudget();
+  const button = element({
+    dataset: { section: 'Home', category: 'Utilities', kind: 'expense' },
+  });
+
+  documentListeners.click({ target: { closest: selector => selector === '[data-budget-map]' ? button : null } });
+
+  assert.equal(elements.budgetMappingModal.classList.contains('hidden'), false);
+  assert.equal(elements.budgetMappingLabel.textContent, 'Home · Utilities');
+});
 
 test('Combined budgets remain read-only and server labels are escaped in API order', () => {
   const { workflow, elements } = createBudgetWorkflow({ person: 'all' });

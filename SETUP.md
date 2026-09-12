@@ -287,6 +287,7 @@ All routes require login (protected by `requireAuth` middleware).
 ### Settlement KPI Card
 Shows who owes whom for the selected month based on expense types:
 - **Common_50_50**: split equally; each person effectively owes the other half
+- **Common_50_50 paid by Household Pool**: paid from the equally funded SBI debit wallet; neither person owes the other
 - **Pooja_for_Kunal**: Pooja paid an expense that's Kunal's → Kunal owes Pooja
 - **Kunal_for_Pooja**: Kunal paid an expense that's Pooja's → Pooja owes Kunal
 - Displays net settlement (e.g. "Kunal owes Pooja ₹5,000") with breakdown detail

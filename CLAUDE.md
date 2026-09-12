@@ -175,9 +175,11 @@ POST /api/audit/:id/restore      restore a snapshot
 
 **Expense types:** Pooja_Personal, Kunal_Personal, Common_50_50, Pooja_for_Kunal, Kunal_for_Pooja, Kunal_CreditCard_Bill, Pooja_CreditCard_Bill
 
-**Payment methods:** Cash, ICICI_Credit_Card, Amazon_Credit_Card, SBI_Credit_Card, HDFC_Credit_Card, ABFL_Credit_Card, HDFC_Debit_Card, Zaggle
+**Payment methods:** Cash, ICICI_Credit_Card, Amazon_Credit_Card, SBI_Credit_Card, HDFC_Credit_Card, ABFL_Credit_Card, HDFC_Debit_Card, SBI_Debit_Card, Zaggle
 
-**Paid by:** Pooja, Kunal
+**Paid by:** Pooja, Kunal, Household Pool
+
+`SBI_Debit_Card` is an equally funded household wallet. Its transactions are normalized to `paid_by = Household Pool` and `expense_type = Common_50_50`; they count as spending and split equally in budgets, but create no settlement debt. A one-time migration applies this rule to existing SBI debit transactions.
 
 ## Frontend Flow
 1. **Add Expenses tab:** upload file → (if image/PDF: `/api/extract` via Gemini; if CSV/XLSX/XLS: parsed client-side via SheetJS/vanilla JS) → review table → `saveToTracker()` → `POST /api/transactions`

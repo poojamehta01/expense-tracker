@@ -60,6 +60,29 @@ test('creates constrained mapping table', () => {
   );
 });
 
+test('database invariant normalizes only SBI debit transactions and survives restart', () => {
+  const insert = db.prepare(`
+    INSERT INTO transactions
+      (date, amount, description, payment_method, paid_by, expense_type, category, month)
+    VALUES (?, 100, ?, ?, 'Kunal', 'Kunal_Personal', 'Outside Food', 'September_2026')
+  `);
+  insert.run('1 September 2026', 'SBI row', 'SBI_Debit_Card');
+  insert.run('1 September 2026', 'HDFC row', 'HDFC_Debit_Card');
+
+  assert.deepEqual(
+    db.prepare(`SELECT description, paid_by, expense_type FROM transactions ORDER BY id`).all(),
+    [
+      { description: 'SBI row', paid_by: 'Household Pool', expense_type: 'Common_50_50' },
+      { description: 'HDFC row', paid_by: 'Kunal', expense_type: 'Kunal_Personal' },
+    ]
+  );
+
+  db.close();
+  delete require.cache[require.resolve('../db')];
+  db = require('../db');
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM transactions WHERE paid_by = 'Household Pool'`).get().count, 1);
+});
+
 test('seeds September totals exactly once', () => {
   const totals = db.prepare(`
     SELECT person, SUM(amount) total FROM budgets

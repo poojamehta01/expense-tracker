@@ -26,6 +26,7 @@ const DEFAULT_PAYMENT_METHODS = [
 let CATEGORIES = [...DEFAULT_CATEGORIES];
 let EXPENSE_TYPES = [...DEFAULT_EXPENSE_TYPES];
 let PAYMENT_METHODS = [...DEFAULT_PAYMENT_METHODS];
+const PAYERS = ['Pooja', 'Kunal', 'Household Pool'];
 let customLists = { categories: [], expense_types: [], payment_methods: [] };
 
 const MOODS = ['', 'Neutral', 'Happy', 'Sad', 'Angry', 'Anxious', 'Bored'];
@@ -54,6 +55,7 @@ const CHIP_MAP = {
   // paid_by
   'Pooja':                 { bg: '#ede9fe', color: '#5b21b6' },
   'Kunal':                 { bg: '#dbeafe', color: '#1e40af' },
+  'Household Pool':        { bg: '#dcfce7', color: '#166534' },
   // impulse
   'Impulse':               { bg: '#fee2e2', color: '#991b1b' },
   'Intentional':           { bg: '#dcfce7', color: '#166534' },
@@ -414,6 +416,14 @@ function applyUploadPaymentMethodOverride(rows, method = document.getElementById
   return rows.map(tx => ({ ...tx, payment_method: method }));
 }
 
+function normalizeHouseholdPoolTransaction(transaction) {
+  if (transaction.payment_method === 'SBI_Debit_Card') {
+    transaction.paid_by = 'Household Pool';
+    transaction.expense_type = 'Common_50_50';
+  }
+  return transaction;
+}
+
 // ─── Upload Processing ─────────────────────────────────────────────────────
 
 function setupUpload() {
@@ -472,6 +482,7 @@ async function handleFiles(files) {
       const uploadMonth = getUploadMonth(); // e.g. "March_2026"
       const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
       filtered.included.forEach(tx => {
+        normalizeHouseholdPoolTransaction(tx);
         if (!tx.paid_by) tx.paid_by = currentUserName;
         smartCategorize(tx); // apply pattern-based defaults before expense_type fallback
         if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
@@ -537,7 +548,8 @@ async function extractFromTextArea() {
     const uploadMonth = getUploadMonth();
     const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
     extracted.forEach(tx => {
-      tx.paid_by = currentUserName;
+      normalizeHouseholdPoolTransaction(tx);
+      if (!tx.paid_by) tx.paid_by = currentUserName;
       if (!tx.expense_type || tx.expense_type === 'Pooja_Personal' || tx.expense_type === 'Kunal_Personal') {
         tx.expense_type = currentUserName + '_Personal';
       }
@@ -952,7 +964,7 @@ function buildFilterRow() {
     mkText('amount'),
     mkText('description'),
     mkSelect('payment_method', PAYMENT_METHODS),
-    mkSelect('paid_by', ['Pooja','Kunal']),
+    mkSelect('paid_by', PAYERS),
     mkSelect('expense_type', EXPENSE_TYPES),
     mkSelect('category', CATEGORIES),
     mkSelect('mood', MOODS.filter(Boolean)),
@@ -1006,7 +1018,7 @@ function buildRow(tx, index) {
 
   const tds = tr.querySelectorAll('.rv-td');
   tds[0].appendChild(makeChipCombo(PAYMENT_METHODS, tx.payment_method || '', index, 'payment_method'));
-  tds[1].appendChild(makeChipCombo(['Pooja','Kunal'], tx.paid_by || '', index, 'paid_by'));
+  tds[1].appendChild(makeChipCombo(PAYERS, tx.paid_by || '', index, 'paid_by'));
   tds[2].appendChild(makeChipCombo(EXPENSE_TYPES, tx.expense_type || '', index, 'expense_type'));
   tds[3].appendChild(makeChipCombo(CATEGORIES, tx.category || '', index, 'category'));
   tds[4].appendChild(makeChipCombo(MOODS, tx.mood || '', index, 'mood'));
@@ -1148,13 +1160,17 @@ function makeSelect(options, current, index, field) {
 
 function updateTx(index, field, value) {
   transactions[index][field] = value;
+  if (field === 'payment_method') {
+    normalizeHouseholdPoolTransaction(transactions[index]);
+    renderTable();
+  }
 }
 
 // ─── Review table bulk / fill ─────────────────────────────────────────────────
 
 function getReviewFieldOpts(field) {
   if (field === 'payment_method') return PAYMENT_METHODS;
-  if (field === 'paid_by') return ['Pooja', 'Kunal'];
+  if (field === 'paid_by') return PAYERS;
   if (field === 'expense_type') return EXPENSE_TYPES;
   if (field === 'category') return CATEGORIES;
   if (field === 'mood') return MOODS;
@@ -1229,7 +1245,10 @@ function applyReviewBulk() {
   const opts = getReviewFieldOpts(field);
   const val = opts.length ? reviewBulkVal : (document.getElementById('reviewBulkText')?.value ?? '');
   const saved = new Set(reviewSelected);
-  saved.forEach(i => { transactions[i][field] = val; });
+  saved.forEach(i => {
+    transactions[i][field] = val;
+    if (field === 'payment_method') normalizeHouseholdPoolTransaction(transactions[i]);
+  });
   renderTable(saved); // re-render preserving selection
 }
 
@@ -2051,7 +2070,7 @@ const TX_COLS = [
   { key: 'amount',         label: 'Amount',         type: 'number' },
   { key: 'description',    label: 'Description',    type: 'text'   },
   { key: 'category',       label: 'Category',       type: 'select', opts: CATEGORIES },
-  { key: 'paid_by',        label: 'Paid By',        type: 'select', opts: ['Pooja','Kunal'] },
+  { key: 'paid_by',        label: 'Paid By',        type: 'select', opts: PAYERS },
   { key: 'expense_type',   label: 'Expense Type',   type: 'select', opts: EXPENSE_TYPES },
   { key: 'payment_method', label: 'Payment Method', type: 'select', opts: PAYMENT_METHODS },
   { key: 'impulse',        label: 'Impulse',        type: 'select', opts: IMPULSE_OPTIONS },
@@ -2439,12 +2458,14 @@ function startEdit(cell) {
   const saveVal = (newVal) => {
     tx[field] = newVal;
     if (field === 'date') tx.month = clientMonthFromDate(String(newVal));
+    if (field === 'payment_method') normalizeHouseholdPoolTransaction(tx);
     restoreCell(newVal);
     fetch(`/api/transactions/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(tx)
     }).catch(e => console.error('Save failed', e));
+    if (field === 'payment_method') renderGrid();
   };
 
   const cancelEdit = () => restoreCell(origVal);
@@ -2723,7 +2744,7 @@ function renderAddRowModal() {
   // Chip combos
   const combos = [
     ['arm-category',       CATEGORIES,                   'category'],
-    ['arm-paid_by',        ['Pooja','Kunal'],             'paid_by'],
+    ['arm-paid_by',        PAYERS,                         'paid_by'],
     ['arm-expense_type',   EXPENSE_TYPES,                'expense_type'],
     ['arm-payment_method', PAYMENT_METHODS,              'payment_method'],
     ['arm-mood',           MOODS,                        'mood'],
@@ -3034,15 +3055,20 @@ async function submitBulkEdit() {
   try {
     await Promise.all(ids.map(id => {
       const existing = savedTxList.find(t => t.id === id) || {};
+      const updated = { ...existing, [field]: value };
+      if (field === 'payment_method') normalizeHouseholdPoolTransaction(updated);
       return fetch(`/api/transactions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...existing, [field]: value })
+        body: JSON.stringify(updated)
       });
     }));
     ids.forEach(id => {
       const tx = savedTxList.find(t => t.id === id);
-      if (tx) tx[field] = value;
+      if (tx) {
+        tx[field] = value;
+        if (field === 'payment_method') normalizeHouseholdPoolTransaction(tx);
+      }
     });
     closeBulkEditModal();
     renderGrid();
@@ -3129,6 +3155,56 @@ function buildBudgetSaveLines(sections) {
       sort_order: line.sort_order ?? index,
     }))
   );
+}
+
+const BUDGET_MAPPING_ALIASES = {
+  protein: ['protien', 'protein'],
+  groceries: ['vegetable', 'vegitble', 'fruit', 'fruits', 'groceries', 'grocery', 'zepto', 'blinkit', 'instamart'],
+  rent: ['rent', 'house rent'],
+  parking: ['parking', 'repair', 'maintenance', 'maintainance'],
+  transport: ['conveyance', 'petrol', 'diesel', 'disel', 'cab', 'bus', 'ola', 'uber', 'metro', 'rapido'],
+  gas: ['gas', 'lpg', 'mngl', 'cooking gas', 'cylinder'],
+  medical: ['medicine', 'medicines', 'doctor', 'medical', 'therapy', 'nutritionist'],
+  utilities: ['electricity', 'monthly home bills'],
+  connectivity: ['mobile', 'wifi', 'phone', 'gadget', 'gadgets', 'electronics'],
+  householdHelp: ['maid', 'laundry', 'driver', 'house help', 'porter'],
+  clothes: ['cloths', 'clothes'],
+  salon: ['saloon', 'salon', 'spa', 'cosmetics', 'skin', 'hair care'],
+  dining: ['dining', 'pub', 'outside food'],
+  fitness: ['gym', 'yoga', 'aerobics', 'zumba', 'fitness'],
+  travel: ['travelling', 'travel', 'trip', 'flight', 'flights', 'stays'],
+  entertainment: ['movie', 'movies', 'book', 'books', 'entertainment'],
+  gifts: ['gift', 'gifts', 'birthday gift', 'flowers'],
+  donations: ['donation', 'donations'],
+  hobbies: ['hobby', 'hobbies', 'skills', 'learnings'],
+  loans: ['loan', 'emi', 'lend money', 'car downpayment'],
+  subscriptions: ['subscription', 'subscriptions', 'netflix', 'spotify', 'prime', 'hotstar'],
+};
+
+function normalizedBudgetMappingText(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function smartBudgetMappingSuggestions(line, categories, sections) {
+  const lineText = normalizedBudgetMappingText(`${line?.section || ''} ${line?.category || ''}`);
+  const occupied = new Set((sections || []).flatMap(section =>
+    (section.lines || []).flatMap(other => {
+      const isSelected = (other.section || section.section) === line?.section &&
+        other.category === line?.category && other.kind === line?.kind;
+      return !isSelected && other.kind === line?.kind ? (other.mappings || []) : [];
+    })
+  ));
+  const matchingConcepts = Object.values(BUDGET_MAPPING_ALIASES)
+    .filter(terms => terms.some(term => lineText.includes(normalizedBudgetMappingText(term))));
+
+  return (categories || []).filter(category => {
+    if (occupied.has(category)) return false;
+    const categoryText = normalizedBudgetMappingText(category);
+    return matchingConcepts.some(terms => terms.some(term => {
+      const normalizedTerm = normalizedBudgetMappingText(term);
+      return categoryText.includes(normalizedTerm) || normalizedTerm.includes(categoryText);
+    }));
+  });
 }
 
 const dashboardBudgetLoadState = {
@@ -3476,7 +3552,7 @@ function renderBudget() {
         : '<span class="cell-empty">No tracker categories mapped</span>';
       const mappingAction = readOnly
         ? '<span class="cell-empty">—</span>'
-        : `<button class="btn-secondary small" ${editLocked ? 'disabled ' : ''}data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" onclick="openBudgetMapping(this)">Map</button>`;
+        : `<button type="button" class="btn-secondary small" ${editLocked ? 'disabled ' : ''}data-budget-map data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">Map</button>`;
       return `
         <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
           <td class="budget-category-cell" data-label="Category"><strong>${esc(line.category)}</strong><div class="budget-mapping-row">${mappings}</div></td>
@@ -3595,7 +3671,13 @@ function openBudgetMapping(target) {
     mappings: [...(selected.mappings || [])],
   };
   document.getElementById('budgetMappingLabel').textContent = `${selected.section} · ${selected.category}`;
-  const checked = new Set(selected.mappings || []);
+  const suggestions = smartBudgetMappingSuggestions(selected, CATEGORIES, budgetState.data.sections || []);
+  const checked = new Set([...(selected.mappings || []), ...suggestions]);
+  const newSuggestionCount = suggestions.filter(category => !(selected.mappings || []).includes(category)).length;
+  const hint = document.getElementById('budgetMappingHint');
+  if (hint) hint.textContent = newSuggestionCount
+    ? `${newSuggestionCount} smart suggestion${newSuggestionCount === 1 ? '' : 's'} selected. Review before saving.`
+    : 'Select any tracker categories that belong to this budget line.';
   document.getElementById('budgetMappingCategories').innerHTML = CATEGORIES.map(category => `
     <label class="col-check budget-mapping-row">
       <input type="checkbox" value="${esc(category)}" ${checked.has(category) ? 'checked' : ''}>
@@ -3604,6 +3686,11 @@ function openBudgetMapping(target) {
   `).join('');
   document.getElementById('budgetMappingModal').classList.remove('hidden');
 }
+
+document.addEventListener('click', event => {
+  const button = event.target?.closest?.('[data-budget-map]');
+  if (button) openBudgetMapping(button);
+});
 
 function closeBudgetMapping() {
   document.getElementById('budgetMappingModal').classList.add('hidden');

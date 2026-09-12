@@ -8,6 +8,7 @@ const multer = require('multer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('./db');
 const { createBudgetService } = require('./budget-service');
+const { normalizeHouseholdPoolTransaction, calculateSettlement } = require('./household-pool');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -228,7 +229,8 @@ app.post('/api/transactions', (req, res) => {
   const insertMany = db.transaction((rows) => {
     const ids = [];
     let skipped = 0;
-    for (const tx of rows) {
+    for (const input of rows) {
+      const tx = normalizeHouseholdPoolTransaction(input);
       const date = tx.date || '';
       const amount = parseFloat(tx.amount) || 0;
       const description = tx.description || '';
@@ -290,7 +292,7 @@ app.put('/api/transactions/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   saveAudit(id, 'update', existing);
-  const tx = { ...existing, ...req.body };
+  const tx = normalizeHouseholdPoolTransaction({ ...existing, ...req.body });
   const info = db.prepare(`
     UPDATE transactions SET
       date=@date, amount=@amount, description=@description,
@@ -339,7 +341,7 @@ app.get('/api/audit', (req, res) => {
 app.post('/api/audit/:id/restore', (req, res) => {
   const auditRow = db.prepare('SELECT * FROM transaction_audit WHERE id = ?').get(parseInt(req.params.id));
   if (!auditRow) return res.status(404).json({ error: 'Audit entry not found or expired' });
-  const snap = JSON.parse(auditRow.snapshot);
+  const snap = normalizeHouseholdPoolTransaction(JSON.parse(auditRow.snapshot));
 
   const txExists = db.prepare('SELECT id FROM transactions WHERE id = ?').get(snap.id);
   if (txExists) {
@@ -566,23 +568,7 @@ app.get('/api/dashboard', (req, res) => {
      GROUP BY expense_type, paid_by`
   ).all(month);
 
-  let kunalOwesPooja = 0;
-  let poojaOwesKunal = 0;
-  let commonSpend = 0, poojaForKunal = 0, kunalForPooja = 0;
-  for (const r of settlementRows) {
-    if (r.expense_type === 'Common_50_50') {
-      commonSpend += r.total;
-      if (r.paid_by === 'Pooja') kunalOwesPooja += r.total / 2;
-      if (r.paid_by === 'Kunal') poojaOwesKunal += r.total / 2;
-    } else if (r.expense_type === 'Pooja_for_Kunal') {
-      poojaForKunal += r.total;
-      kunalOwesPooja += r.total;
-    } else if (r.expense_type === 'Kunal_for_Pooja') {
-      kunalForPooja += r.total;
-      poojaOwesKunal += r.total;
-    }
-  }
-  const netSettlement = kunalOwesPooja - poojaOwesKunal;
+  const settlement = calculateSettlement(settlementRows);
 
   res.json({
     totalSpend: totalRow.total,
@@ -595,7 +581,7 @@ app.get('/api/dashboard', (req, res) => {
     byPaymentMethod,
     dailySpend,
     topMerchants,
-    settlement: { kunalOwesPooja, poojaOwesKunal, net: netSettlement, commonSpend, poojaForKunal, kunalForPooja }
+    settlement
   });
 });
 
@@ -957,4 +943,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { registerBudgetRoutes, generateExtractionContent };
+module.exports = {
+  registerBudgetRoutes,
+  generateExtractionContent,
+};

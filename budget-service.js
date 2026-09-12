@@ -197,13 +197,16 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       SELECT paid_by, category, COALESCE(SUM(amount), 0) AS total
       FROM transactions
       WHERE month = ?
-        AND paid_by IN ('Pooja','Kunal')
+        AND paid_by IN ('Pooja','Kunal','Household Pool')
         AND category NOT IN ('Credit Card Payment','Settlement','Refunded')
       GROUP BY paid_by, category
     `).all(month);
-    const totals = new Map(transactionRows
-      .filter(row => row.paid_by === person)
-      .map(row => [row.category, Number(row.total)]));
+    const totals = new Map();
+    for (const row of transactionRows) {
+      if (row.paid_by !== person && row.paid_by !== 'Household Pool') continue;
+      const share = Number(row.total) * (row.paid_by === 'Household Pool' ? 0.5 : 1);
+      totals.set(row.category, (totals.get(row.category) || 0) + share);
+    }
     const lines = budgetRows.map(row => {
       const mappingKey = `${row.section}\u0000${row.category}\u0000${row.kind}`;
       const lineMappings = mappings.get(mappingKey) || [];

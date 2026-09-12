@@ -197,7 +197,7 @@ Combined disables amount and mapping controls. Use a personal view whenever a wr
 
 ### Edit Category Mappings
 
-Choose **Map** beside a budget line, select zero or more tracker categories, and save. Mappings are global across months, and each tracker category may belong to only one budget line within the same `expense` or `investment` kind, preventing duplicate actuals.
+Choose **Map** beside a budget line, review the smart suggestions selected from the existing default and custom tracker categories, adjust them if needed, and save. Suggestions use conservative label and synonym matching and never take a category already mapped to another line of the same kind. Mappings are global across months, and each tracker category may belong to only one budget line within the same `expense` or `investment` kind, preventing duplicate actuals.
 
 The initial unambiguous mappings are:
 
@@ -268,9 +268,12 @@ Used to calculate who owes whom at end of month:
 | `Kunal_for_Pooja` | Kunal paid, Pooja should reimburse |
 | `Pooja_Personal` | Pooja's own expense, no settlement needed |
 | `Kunal_Personal` | Kunal's own expense, no settlement needed |
+| `Common_50_50` paid by `Household Pool` | Paid from the equally funded SBI debit wallet; no settlement needed |
 | `Pooja_CreditCard_Bill` / `Kunal_CreditCard_Bill` | CC bill payments, excluded from totals |
 
 Net = Kunal owes Pooja − Pooja owes Kunal. Positive → Kunal pays Pooja. Negative → Pooja pays Kunal.
+
+Transactions using `SBI_Debit_Card` are automatically recorded as `Household Pool / Common_50_50`. Their spending is split equally across Pooja's and Kunal's budget actuals.
 
 ---
 

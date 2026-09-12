@@ -131,6 +131,44 @@ db.transaction(() => {
 })();
 
 db.transaction(() => {
+  const version = '2026-09-12-household-pool-v1';
+  if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version)) return;
+  db.prepare(`
+    UPDATE transactions
+    SET paid_by = 'Household Pool', expense_type = 'Common_50_50'
+    WHERE payment_method = 'SBI_Debit_Card'
+  `).run();
+  db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
+})();
+
+db.transaction(() => {
+  const version = '2026-09-12-household-pool-invariant-v2';
+  if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version)) return;
+  db.exec(`
+    CREATE TRIGGER normalize_household_pool_insert
+    AFTER INSERT ON transactions
+    WHEN NEW.payment_method = 'SBI_Debit_Card'
+      AND (NEW.paid_by IS NOT 'Household Pool' OR NEW.expense_type IS NOT 'Common_50_50')
+    BEGIN
+      UPDATE transactions
+      SET paid_by = 'Household Pool', expense_type = 'Common_50_50'
+      WHERE id = NEW.id;
+    END;
+
+    CREATE TRIGGER normalize_household_pool_update
+    AFTER UPDATE OF payment_method, paid_by, expense_type ON transactions
+    WHEN NEW.payment_method = 'SBI_Debit_Card'
+      AND (NEW.paid_by IS NOT 'Household Pool' OR NEW.expense_type IS NOT 'Common_50_50')
+    BEGIN
+      UPDATE transactions
+      SET paid_by = 'Household Pool', expense_type = 'Common_50_50'
+      WHERE id = NEW.id;
+    END;
+  `);
+  db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
+})();
+
+db.transaction(() => {
   const version = '2026-09-04-budget-history-v1';
   if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version)) return;
   const sourcePeople = db.prepare(`SELECT person, COUNT(*) count FROM budgets WHERE month='September_2026' GROUP BY person`).all();
