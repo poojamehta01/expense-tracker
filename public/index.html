@@ -102,6 +102,22 @@
           <button id="dashboardBudgetAction" class="btn-secondary" type="button" onclick="openBudgetDetails()">View budget</button>
         </section>
 
+        <section class="monthly-notes-card" aria-labelledby="monthlyNotesTitle">
+          <div class="monthly-notes-header">
+            <div>
+              <div class="kpi-label">Shared</div>
+              <h2 id="monthlyNotesTitle">Notes</h2>
+            </div>
+            <span id="monthlyNotesStatus" class="monthly-notes-status" aria-live="polite"></span>
+          </div>
+          <div id="monthlyNotesList" class="monthly-notes-list"></div>
+          <div class="monthly-notes-compose">
+            <label class="sr-only" for="monthlyNoteInput">Add a shared note for this month</label>
+            <textarea id="monthlyNoteInput" rows="2" maxlength="1000" placeholder="Add a note for this month…"></textarea>
+            <button id="monthlyNoteAdd" class="btn-primary" type="button" onclick="addMonthlyNote()">Add note</button>
+          </div>
+        </section>
+
         <!-- Charts grid -->
         <div class="section-header" onclick="toggleCharts()">
           <span class="section-title">Trends</span>

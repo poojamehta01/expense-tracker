@@ -413,8 +413,8 @@ test('a personal budget edit renders numeric inputs without blanking zero', () =
   assert.match(elements.budgetSections.innerHTML, /class="[^"]*budget-amount-input[^"]*"[^>]*type="number"[^>]*value="0"/);
 });
 
-test('editing locks controls that could discard unsaved budget amounts', () => {
-  const { workflow, elements, tabButtons, globalFilterButtons } = createBudgetWorkflow();
+test('editing locks navigation but Map explains how to preserve unsaved budget amounts', () => {
+  const { workflow, elements, tabButtons, globalFilterButtons, documentListeners } = createBudgetWorkflow();
   workflow.setData(budgetFixture());
 
   workflow.beginBudgetEdit();
@@ -423,7 +423,11 @@ test('editing locks controls that could discard unsaved budget amounts', () => {
   assert.equal(elements.budgetPersonPicker.disabled, true);
   assert.equal(elements.budgetCopyBtn.disabled, true);
   assert.match(elements.budgetSections.innerHTML, />Map<\/button>/);
-  assert.match(elements.budgetSections.innerHTML, /disabled[^>]*>Map<\/button>/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /disabled[^>]*>Map<\/button>/);
+  const mapButton = element({ dataset: { section: 'Home', category: 'Utilities', kind: 'expense' } });
+  documentListeners.click({ target: { closest: () => mapButton } });
+  assert.equal(elements.budgetError.textContent, 'Save or cancel your budget amount changes before editing mappings.');
+  assert.equal(elements.budgetMappingModal.classList.contains('hidden'), true);
   assert.equal(tabButtons[0].disabled, true);
   assert.equal(tabButtons[1].disabled, false);
   assert.equal(globalFilterButtons[0].disabled, true);
@@ -720,6 +724,7 @@ test('Dashboard loads and renders budget in the same refresh even without transa
     '/api/transactions?month=September_2026',
     '/api/salary?month=September_2026',
     '/api/budget?month=September_2026&person=Pooja',
+    '/api/monthly-notes?month=September_2026',
   ]);
   assert.equal(elements.dashboardEmpty.classList.contains('hidden'), false);
   assert.equal(elements.dashboardBudgetAmount.textContent, '₹250 of ₹1000');

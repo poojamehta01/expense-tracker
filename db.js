@@ -52,6 +52,17 @@ db.exec(`
     UNIQUE(person, month)
   );
 
+  CREATE TABLE IF NOT EXISTS monthly_notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    month      TEXT NOT NULL,
+    author     TEXT NOT NULL CHECK(author IN ('Pooja','Kunal')),
+    body       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_monthly_notes_month
+    ON monthly_notes(month, id);
+
   CREATE TABLE IF NOT EXISTS transaction_audit (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     tx_id      INTEGER NOT NULL,

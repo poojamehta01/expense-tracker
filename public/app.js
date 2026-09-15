@@ -102,10 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setupUpload();
   populateUploadPaymentMethods();
   initUploadMonthPicker();
-  loadUser();
   switchTab('add');
   renderMotdQuote();
-  loadMonths();
+  loadUser().finally(loadMonths);
 
   // Close column panel when clicking outside
   document.addEventListener('click', e => {
@@ -116,17 +115,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-let currentUserName = 'Pooja'; // default, overwritten after login check
+let currentUserName = null;
 
 async function loadUser() {
   try {
     const res = await fetch('/api/me');
     if (!res.ok) return;
     const user = await res.json();
-    // Extract first name and match to known paid_by values
-    const firstName = (user.name || '').split(' ')[0];
-    if (firstName === 'Kunal') currentUserName = 'Kunal';
-    else currentUserName = 'Pooja';
+    currentUserName = user.person || null;
     const el = document.getElementById('userInfo');
     el.innerHTML = `
       ${user.photo ? `<img src="${esc(user.photo)}" alt="${esc(user.name)}" referrerpolicy="no-referrer" />` : ''}
@@ -1669,6 +1665,7 @@ async function loadDashboard(month) {
       fetch(`/api/transactions?month=${encodeURIComponent(month)}`),
       fetch(`/api/salary?month=${encodeURIComponent(month)}`),
       loadDashboardBudget(month),
+      loadMonthlyNotes(month),
     ]);
 
     const dash = await dashRes.json();
@@ -1698,6 +1695,100 @@ async function loadDashboard(month) {
     console.error('loadDashboard error:', err);
   }
 }
+
+// ─── Monthly Notes ──────────────────────────────────────────────────────────
+
+function formatMonthlyNoteTime(value) {
+  if (!value) return '';
+  const date = new Date(`${value.replace(' ', 'T')}Z`);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit'
+  });
+}
+
+function renderMonthlyNotes(notes) {
+  const list = document.getElementById('monthlyNotesList');
+  if (!list) return;
+  if (!notes.length) {
+    list.innerHTML = '<div class="monthly-notes-empty">No notes for this month yet.</div>';
+    return;
+  }
+  list.innerHTML = notes.map(note => `
+    <article class="monthly-note">
+      <div>
+        <div class="monthly-note__body">${esc(note.body)}</div>
+        <div class="monthly-note__meta">${esc(note.author)}${formatMonthlyNoteTime(note.created_at) ? ` · ${esc(formatMonthlyNoteTime(note.created_at))}` : ''}</div>
+      </div>
+      ${note.author === currentUserName
+        ? `<button class="monthly-note__delete" type="button" onclick="deleteMonthlyNote(${note.id}, '${esc(note.month)}')" aria-label="Delete note">×</button>`
+        : ''}
+    </article>`).join('');
+}
+
+async function loadMonthlyNotes(month) {
+  if (!month) return;
+  if (document.getElementById('monthPicker').value !== month) return;
+  const status = document.getElementById('monthlyNotesStatus');
+  const list = document.getElementById('monthlyNotesList');
+  if (list) list.innerHTML = '<div class="monthly-notes-empty">Loading notes…</div>';
+  try {
+    const res = await fetch(`/api/monthly-notes?month=${encodeURIComponent(month)}`);
+    if (!res.ok) throw new Error('Unable to load notes');
+    const data = await res.json();
+    if (document.getElementById('monthPicker').value !== month) return;
+    renderMonthlyNotes(data.notes || []);
+    if (status) status.textContent = '';
+  } catch (error) {
+    if (document.getElementById('monthPicker').value !== month) return;
+    if (list) list.innerHTML = '<div class="monthly-notes-empty">Could not load notes.</div>';
+    if (status) status.textContent = 'Could not load notes';
+  }
+}
+
+async function addMonthlyNote() {
+  const input = document.getElementById('monthlyNoteInput');
+  const button = document.getElementById('monthlyNoteAdd');
+  const status = document.getElementById('monthlyNotesStatus');
+  const month = document.getElementById('monthPicker').value;
+  const body = input.value.trim();
+  if (!body || !month) return;
+  input.disabled = true;
+  button.disabled = true;
+  status.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/monthly-notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, body }),
+    });
+    if (!res.ok) throw new Error('Unable to save note');
+    if (document.getElementById('monthPicker').value === month) {
+      input.value = '';
+      await loadMonthlyNotes(month);
+    }
+  } catch (error) {
+    if (document.getElementById('monthPicker').value === month) status.textContent = 'Could not save note';
+  } finally {
+    input.disabled = false;
+    button.disabled = false;
+  }
+}
+
+async function deleteMonthlyNote(id, noteMonth) {
+  if (document.getElementById('monthPicker').value !== noteMonth) return;
+  if (!confirm('Delete this note?')) return;
+  const month = document.getElementById('monthPicker').value;
+  const status = document.getElementById('monthlyNotesStatus');
+  try {
+    const res = await fetch(`/api/monthly-notes/${id}?month=${encodeURIComponent(noteMonth)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Unable to delete note');
+    if (document.getElementById('monthPicker').value === month) await loadMonthlyNotes(month);
+  } catch (error) {
+    if (document.getElementById('monthPicker').value === month) status.textContent = 'Could not delete note';
+  }
+}
+
+// ─── End Monthly Notes ──────────────────────────────────────────────────────
 
 let chartsVisible = false;
 let merchantsVisible = false;
@@ -3552,7 +3643,7 @@ function renderBudget() {
         : '<span class="cell-empty">No tracker categories mapped</span>';
       const mappingAction = readOnly
         ? '<span class="cell-empty">—</span>'
-        : `<button type="button" class="btn-secondary small" ${editLocked ? 'disabled ' : ''}data-budget-map data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">Map</button>`;
+        : `<button type="button" class="btn-secondary small" ${budgetState.saving ? 'disabled ' : ''}data-budget-map data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">Map</button>`;
       return `
         <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
           <td class="budget-category-cell" data-label="Category"><strong>${esc(line.category)}</strong><div class="budget-mapping-row">${mappings}</div></td>
@@ -3659,7 +3750,11 @@ function findBudgetLine({ section, category, kind }) {
 }
 
 function openBudgetMapping(target) {
-  if (budgetState.editing || budgetState.person === 'all' || !budgetState.data?.hasBudget) return;
+  if (budgetState.editing) {
+    showBudgetError('Save or cancel your budget amount changes before editing mappings.');
+    return;
+  }
+  if (budgetState.person === 'all' || !budgetState.data?.hasBudget) return;
   const selected = target?.dataset
     ? findBudgetLine(target.dataset)
     : target;

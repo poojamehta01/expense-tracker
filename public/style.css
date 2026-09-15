@@ -122,6 +122,18 @@ body.dark .tx-count { background: #1e3a5f; color: #93c5fd; }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg);
@@ -1510,6 +1522,46 @@ body.dark .ai-response { background: #0f172a; border-color: #334155; }
 .dashboard-budget-card__usage { margin-top: 5px; color: var(--text-muted); font-size: 12px; }
 .dashboard-budget-card > .btn-secondary { flex-shrink: 0; }
 
+.monthly-notes-card {
+  margin-top: 18px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-left: 4px solid #8b5cf6;
+  border-radius: 10px;
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+.monthly-notes-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.monthly-notes-header h2 { margin: 2px 0 0; font-size: 17px; }
+.monthly-notes-status { min-height: 18px; color: var(--text-muted); font-size: 12px; }
+.monthly-notes-list { display: grid; gap: 9px; margin-top: 14px; }
+.monthly-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+.monthly-note__body { color: var(--text); font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.monthly-note__meta { color: var(--text-muted); font-size: 11px; }
+.monthly-note__delete { align-self: center; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 18px; }
+.monthly-note__delete:hover { color: var(--error); }
+.monthly-notes-empty { color: var(--text-muted); font-size: 13px; }
+.monthly-notes-compose { display: flex; align-items: stretch; gap: 10px; margin-top: 14px; }
+.monthly-notes-compose textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--text);
+  font: inherit;
+}
+.monthly-notes-compose .btn-primary { flex-shrink: 0; }
+
 .budget-progress {
   width: 100%;
   height: 8px;
@@ -1666,6 +1718,9 @@ body.dark .budget-edit-input { background: var(--bg); }
   .dashboard-budget-card { align-items: stretch; flex-direction: column; gap: 14px; padding: 16px; }
   .dashboard-budget-card__amount { font-size: 20px; overflow-wrap: anywhere; }
   .dashboard-budget-card > .btn-secondary { width: 100%; }
+  .monthly-notes-card { padding: 16px; }
+  .monthly-notes-compose { flex-direction: column; }
+  .monthly-notes-compose .btn-primary { width: 100%; }
   .budget-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .budget-summary-card { padding: 14px 12px; }
   .budget-section .table-header-row { align-items: stretch; }

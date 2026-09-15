@@ -8,6 +8,7 @@ const multer = require('multer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('./db');
 const { createBudgetService } = require('./budget-service');
+const { createMonthlyNotesService } = require('./monthly-notes-service');
 const { normalizeHouseholdPoolTransaction, calculateSettlement } = require('./household-pool');
 
 const app = express();
@@ -164,6 +165,51 @@ function registerBudgetRoutes(app, service) {
   });
 }
 
+function canonicalPersonForEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  const configuredPooja = String(process.env.POOJA_EMAIL || '').trim().toLowerCase();
+  const configuredKunal = String(process.env.KUNAL_EMAIL || '').trim().toLowerCase();
+  if (configuredPooja && normalized === configuredPooja) return 'Pooja';
+  if (configuredKunal && normalized === configuredKunal) return 'Kunal';
+  const localPart = normalized.split('@')[0] || '';
+  if (localPart.includes('pooja')) return 'Pooja';
+  if (localPart.includes('kunal')) return 'Kunal';
+  return null;
+}
+
+function registerMonthlyNotesRoutes(app, service) {
+  const authorFor = req => {
+    const author = canonicalPersonForEmail(req.user?.email);
+    if (author) return author;
+    const error = new Error('Account is not mapped to Pooja or Kunal');
+    error.code = 'forbidden';
+    throw error;
+  };
+  const sendResult = (res, operation, successStatus = 200) => {
+    try {
+      res.status(successStatus).json(operation());
+    } catch (error) {
+      const statusByCode = { validation: 400, forbidden: 403, not_found: 404 };
+      const status = statusByCode[error.code] || 500;
+      res.status(status).json({ error: status === 500 ? 'Monthly notes operation failed' : error.message });
+    }
+  };
+
+  app.get('/api/monthly-notes', (req, res) => {
+    sendResult(res, () => ({ notes: service.listNotes({ month: req.query.month }) }));
+  });
+  app.post('/api/monthly-notes', (req, res) => {
+    sendResult(res, () => service.addNote({
+      month: req.body?.month,
+      author: authorFor(req),
+      body: req.body?.body,
+    }), 201);
+  });
+  app.delete('/api/monthly-notes/:id', (req, res) => {
+    sendResult(res, () => service.deleteNote({ id: req.params.id, month: req.query.month, author: authorFor(req) }));
+  });
+}
+
 // ─── App routes (protected) ───────────────────────────────────────────────────
 
 app.use(requireAuth);
@@ -177,7 +223,7 @@ app.use(express.static('public', {
 
 // Pass current user info to frontend
 app.get('/api/me', (req, res) => {
-  res.json({ email: req.user.email, name: req.user.name, photo: req.user.photo });
+  res.json({ email: req.user.email, name: req.user.name, photo: req.user.photo, person: canonicalPersonForEmail(req.user.email) });
 });
 
 // ─── Admin / diagnostics ──────────────────────────────────────────────────────
@@ -661,6 +707,7 @@ const CATEGORIES = [
 ];
 
 registerBudgetRoutes(app, createBudgetService(db, { validCategories: CATEGORIES }));
+registerMonthlyNotesRoutes(app, createMonthlyNotesService(db));
 
 const EXPENSE_TYPES = [
   'Pooja_Personal', 'Kunal_Personal', 'Common_50_50',
@@ -945,5 +992,7 @@ if (require.main === module) {
 
 module.exports = {
   registerBudgetRoutes,
+  registerMonthlyNotesRoutes,
+  canonicalPersonForEmail,
   generateExtractionContent,
 };
