@@ -21,9 +21,9 @@ test('upload payment selector supports deterministic file overrides but SMS rema
   assert.match(html, /id="uploadPaymentMethod"/);
   assert.match(html, />Auto-detect</);
   assert.match(app, /function applyUploadPaymentMethodOverride/);
-  assert.match(app, /applyUploadPaymentMethodOverride\(extracted/);
+  assert.match(app, /applyUploadPaymentMethodOverride\(extraction\.transactions/);
   assert.match(app, /const paymentMethodOverride[\s\S]*for \(let i = 0; i < files\.length; i\+\+\)/);
-  assert.match(app, /applyUploadPaymentMethodOverride\(extracted, paymentMethodOverride\)/);
+  assert.match(app, /applyUploadPaymentMethodOverride\(extraction\.transactions, paymentMethodOverride\)/);
   const sms = app.slice(app.indexOf('async function extractFromTextArea'), app.indexOf('async function extractFromText', app.indexOf('async function extractFromTextArea') + 10));
   assert.doesNotMatch(sms, /applyUploadPaymentMethodOverride/);
 });

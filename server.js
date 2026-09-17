@@ -686,6 +686,23 @@ function isTransientGeminiError(err) {
     || /\b(?:429|500|503|504)\b/.test(err?.message || '');
 }
 
+function filterOutgoingTransactions(rows) {
+  const incomingDescription = /\b(?:credited|credit received|received (?:from|via|by)|deposit(?:ed)?|salary (?:credit(?:ed)?|received)|cashback received|refund received)\b/i;
+  const incomingDirections = new Set(['incoming', 'credit', 'credited', 'deposit', 'received', 'receipt', 'cr']);
+  const included = [];
+  let excludedCount = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const direction = String(row?.direction || '').trim().toLowerCase();
+    if (incomingDirections.has(direction) || incomingDescription.test(String(row?.description || ''))) {
+      excludedCount++;
+      continue;
+    }
+    const { direction: _direction, ...transaction } = row;
+    included.push(transaction);
+  }
+  return { included, excludedCount };
+}
+
 async function generateExtractionContent(parts, ai = genAI, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))) {
   let lastError;
   for (const modelName of EXTRACTION_MODELS) {
@@ -809,7 +826,8 @@ function buildExtractionPrompt() {
     if (r.list_name === 'payment_methods' && !payMethods.includes(r.value)) payMethods.push(r.value);
   }
   return `You are an expense extraction assistant for an Indian household budget tracker.
-Analyze this payment screenshot or bank/credit card statement and extract ALL transactions shown.
+Analyze this payment screenshot or bank/credit card statement and extract transactions shown.
+Include only outgoing debits, purchases, withdrawals, and payments. Do not include incoming credits, deposits, salary, received transfers, cashback, or refunds.
 
 For each transaction return a JSON object with exactly these fields:
 - date: string in format "D Month YYYY" (e.g. "21 March 2026"). If year is unclear assume 2026.
@@ -819,6 +837,7 @@ For each transaction return a JSON object with exactly these fields:
 - expense_type: pick from: ${expTypes.join(', ')} — default "Pooja_Personal" unless clearly joint or Kunal's
 - payment_method: pick from: ${payMethods.join(', ')} — infer from card/app shown in screenshot
 - paid_by: "Pooja" or "Kunal" — default "Pooja" unless Kunal is clearly the payer
+- direction: "outgoing" or "incoming" — use "incoming" for any credit, deposit, received transfer, salary, cashback, or refund
 
 Category hints:
 - Uber, Ola, rapido cab rides → "Ola/Uber"
@@ -837,7 +856,7 @@ Category hints:
 - Salon, haircut → "Salon"
 
 Return ONLY a valid JSON array. No explanation, no markdown, no code blocks.
-Example: [{"date":"21 March 2026","amount":358,"description":"Uber","category":"Ola/Uber","expense_type":"Pooja_Personal","payment_method":"HDFC_Credit_Card","paid_by":"Pooja"}]
+Example: [{"date":"21 March 2026","amount":358,"description":"Uber","category":"Ola/Uber","expense_type":"Pooja_Personal","payment_method":"HDFC_Credit_Card","paid_by":"Pooja","direction":"outgoing"}]
 If no transactions found, return: []${learnedBlock}`;
 }
 
@@ -857,8 +876,8 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return res.json({ transactions: [] });
 
-    const transactions = JSON.parse(jsonMatch[0]);
-    res.json({ transactions });
+    const filtered = filterOutgoingTransactions(JSON.parse(jsonMatch[0]));
+    res.json({ transactions: filtered.included, excludedCount: filtered.excludedCount });
   } catch (err) {
     console.error('Extraction error:', err.message);
     if (/timeout|timed out|aborted/i.test(err.message)) {
@@ -884,8 +903,8 @@ app.post('/api/extract-text', express.json(), async (req, res) => {
     const jsonMatch = raw.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return res.json({ transactions: [] });
 
-    const transactions = JSON.parse(jsonMatch[0]);
-    res.json({ transactions });
+    const filtered = filterOutgoingTransactions(JSON.parse(jsonMatch[0]));
+    res.json({ transactions: filtered.included, excludedCount: filtered.excludedCount });
   } catch (err) {
     console.error('Text extraction error:', err.message);
     if (/timeout|timed out|aborted/i.test(err.message)) {
@@ -1004,5 +1023,6 @@ module.exports = {
   registerBudgetRoutes,
   registerMonthlyNotesRoutes,
   canonicalPersonForEmail,
+  filterOutgoingTransactions,
   generateExtractionContent,
 };

@@ -469,10 +469,11 @@ async function handleFiles(files) {
   for (let i = 0; i < files.length; i++) {
     setLoadingText(`Processing file ${i + 1} of ${files.length}: ${files[i].name}…`);
     try {
-      const extracted = isSpreadsheetFile(files[i])
+      const extraction = isSpreadsheetFile(files[i])
         ? await parseSpreadsheetFile(files[i])
         : await extractFromFile(files[i]);
-      const overridden = applyUploadPaymentMethodOverride(extracted, paymentMethodOverride);
+      excludedCount += extraction.excludedCount || 0;
+      const overridden = applyUploadPaymentMethodOverride(extraction.transactions, paymentMethodOverride);
       const filtered = filterTransactionsByDateRange(overridden, fromISO, toISO);
       excludedCount += filtered.excludedCount;
       const uploadMonth = getUploadMonth(); // e.g. "March_2026"
@@ -540,7 +541,8 @@ async function extractFromTextArea() {
   hideResult();
 
   try {
-    const extracted = await extractFromText(text);
+    const extraction = await extractFromText(text);
+    const extracted = extraction.transactions;
     const uploadMonth = getUploadMonth();
     const [uMon, uYr] = uploadMonth ? uploadMonth.split('_') : [null, null];
     extracted.forEach(tx => {
@@ -560,11 +562,14 @@ async function extractFromTextArea() {
     showLoading(false);
 
     if (extracted.length === 0 && transactions.length === 0) {
-      showError('No transactions found in the pasted text.');
+      showError(extraction.excludedCount > 0
+        ? `${extraction.excludedCount} incoming transaction${extraction.excludedCount === 1 ? ' was' : 's were'} skipped.`
+        : 'No transactions found in the pasted text.');
     } else {
       transactions.push(...extracted);
       renderTable();
       document.getElementById('smsTextarea').value = '';
+      showResult(`${extracted.length} transaction${extracted.length === 1 ? '' : 's'} included; ${extraction.excludedCount || 0} incoming excluded.`, 'success');
     }
   } catch (err) {
     showLoading(false);
@@ -585,7 +590,7 @@ async function extractFromText(text) {
     throw new Error(err.error || 'Server error');
   }
   const data = await res.json();
-  return data.transactions || [];
+  return { transactions: data.transactions || [], excludedCount: data.excludedCount || 0 };
 }
 
 async function extractFromFile(file) {
@@ -610,7 +615,7 @@ async function extractFromFile(file) {
     throw new Error(err.error || 'Server error');
   }
   const data = await res.json();
-  return data.transactions || [];
+  return { transactions: data.transactions || [], excludedCount: data.excludedCount || 0 };
 }
 
 // ─── CSV / XLSX Parsing ───────────────────────────────────────────────────────
@@ -637,7 +642,7 @@ async function parseSpreadsheetFile(file) {
     rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
   }
 
-  return rawRows.map(mapSpreadsheetRow).filter(tx => tx.amount > 0);
+  return filterOutgoingTransactions(rawRows.map(mapSpreadsheetRow).filter(tx => tx.amount > 0));
 }
 
 function parseCSVToObjects(text) {
@@ -672,6 +677,23 @@ function parseCSVLine(line) {
   }
   result.push(cur);
   return result;
+}
+
+function filterOutgoingTransactions(rows) {
+  const incomingDescription = /\b(?:credited|credit received|received (?:from|via|by)|deposit(?:ed)?|salary (?:credit(?:ed)?|received)|cashback received|refund received)\b/i;
+  const incomingDirections = new Set(['incoming', 'credit', 'credited', 'deposit', 'received', 'receipt', 'cr']);
+  const included = [];
+  let excludedCount = 0;
+  for (const row of rows || []) {
+    const direction = String(row?.direction || '').trim().toLowerCase();
+    if (incomingDirections.has(direction) || incomingDescription.test(String(row?.description || ''))) {
+      excludedCount++;
+      continue;
+    }
+    const { direction: _direction, ...transaction } = row;
+    included.push(transaction);
+  }
+  return { included, excludedCount };
 }
 
 function mapSpreadsheetRow(rawRow) {
@@ -714,12 +736,27 @@ function mapSpreadsheetRow(rawRow) {
     }
   }
 
-  const amount = parseFloat(String(find('amount','amt','value','debit','credit','debit amount','credit amount','withdrawal amount','deposit amount','dr amount','cr amount')).replace(/[^0-9.]/g, '')) || 0;
+  const numberFrom = value => parseFloat(String(value ?? '').replace(/[^0-9.]/g, '')) || 0;
+  const debitValue = find('debit','debit amount','withdrawal amount','dr amount');
+  const creditValue = find('credit','credit amount','deposit amount','cr amount');
+  const debitAmount = numberFrom(debitValue);
+  const creditAmount = numberFrom(creditValue);
+  const genericAmount = numberFrom(find('amount','amt','value'));
+  const directionLabel = String(find('direction','transaction direction','dr/cr','debit/credit','credit/debit','transaction type','txn type')).trim().toLowerCase();
+  const direction = debitAmount > 0
+    ? 'outgoing'
+    : creditAmount > 0
+      ? 'incoming'
+      : /^(?:cr|credit|credited|deposit|incoming|received)$/.test(directionLabel)
+        ? 'incoming'
+        : 'outgoing';
+  const amount = debitAmount || creditAmount || genericAmount;
   const str = v => String(v ?? '').trim();
 
   return {
     date: dateVal,
     amount,
+    direction,
     description: str(find('description','desc','merchant','narration','particulars','note','detail','details','transaction')),
     payment_method: str(find('payment_method','payment method','method','mode','instrument')),
     paid_by: str(find('paid_by','paid by','paidby','who','person')),
