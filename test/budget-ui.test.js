@@ -165,6 +165,18 @@ function budgetFixture(person = 'Pooja') {
       plannedInvestments: 0,
       actualInvestments: 0,
     },
+    future: {
+      people: [{
+        person: person === 'all' ? 'Pooja' : person,
+        hasSalary: true,
+        salary: 5000,
+        target: 1000,
+        actual: 1250,
+        difference: 250,
+        usage: 1.25,
+        status: 'above_target',
+      }],
+    },
     sections: [{
       section: 'Home',
       budget: 1000,
@@ -411,6 +423,64 @@ test('a personal budget edit renders numeric inputs without blanking zero', () =
 
   assert.equal(workflow.getState().editing, true);
   assert.match(elements.budgetSections.innerHTML, /class="[^"]*budget-amount-input[^"]*"[^>]*type="number"[^>]*value="0"/);
+});
+
+test('renders Future as a read-only mandatory investment section', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  workflow.setData(budgetFixture());
+
+  workflow.renderBudget();
+
+  assert.match(elements.budgetSections.innerHTML, />Future</);
+  assert.match(elements.budgetSections.innerHTML, /Pooja · 20% of salary/);
+  assert.match(elements.budgetSections.innerHTML, /Above target/);
+  assert.match(elements.budgetSections.innerHTML, /\+₹250/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /data-section="Future"[^]*data-budget-map/);
+});
+
+test('Combined Future keeps separate mandatory targets for Pooja and Kunal', () => {
+  const { workflow, elements } = createBudgetWorkflow({ person: 'all' });
+  const data = budgetFixture('all');
+  data.future.people = [
+    { person: 'Pooja', hasSalary: true, salary: 100000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' },
+    { person: 'Kunal', hasSalary: true, salary: 50000, target: 10000, actual: 5000, difference: -5000, usage: 0.5, status: 'below_target' },
+  ];
+  workflow.setData(data, 'all');
+
+  workflow.renderBudget();
+
+  assert.match(elements.budgetSections.innerHTML, /Pooja · 20% of salary/);
+  assert.match(elements.budgetSections.innerHTML, /Kunal · 20% of salary/);
+  assert.match(elements.budgetSections.innerHTML, /Above target/);
+  assert.match(elements.budgetSections.innerHTML, /Below mandatory target/);
+});
+
+test('renders Future even when no ordinary budget exists', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.hasBudget = false;
+  data.sections = [];
+  workflow.setData(data);
+
+  workflow.renderBudget();
+
+  assert.match(elements.budgetSections.innerHTML, />Future</);
+  assert.equal(elements.budgetEmpty.classList.contains('hidden'), false);
+});
+
+test('Future header keeps the minimum unavailable when any salary is missing', () => {
+  const { workflow, elements } = createBudgetWorkflow({ person: 'all' });
+  const data = budgetFixture('all');
+  data.future.people = [
+    { person: 'Pooja', hasSalary: true, salary: 100000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' },
+    { person: 'Kunal', hasSalary: false, salary: 0, target: null, actual: 5000, difference: null, usage: null, status: 'salary_missing' },
+  ];
+  workflow.setData(data, 'all');
+
+  workflow.renderBudget();
+
+  assert.match(elements.budgetSections.innerHTML, /₹30000 invested · minimum unavailable/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /₹20000 minimum/);
 });
 
 test('editing locks navigation but Map explains how to preserve unsaved budget amounts', () => {

@@ -1592,6 +1592,8 @@ body.dark .budget-summary-card { background: var(--white) !important; }
 
 #budgetSections { display: flex; flex-direction: column; gap: 16px; }
 .budget-section { min-width: 0; }
+.budget-future-section { border-left: 4px solid var(--success); }
+.budget-future-section .table-header-row { background: var(--budget-good-bg); }
 .budget-section-toggle { display:flex; align-items:center; gap:8px; border:0; padding:0; background:transparent; color:inherit; cursor:pointer; text-align:left; }
 .budget-section-toggle:focus-visible { outline:2px solid var(--primary); outline-offset:4px; border-radius:4px; }
 .budget-section-indicator { width:1em; color:var(--text-muted); }

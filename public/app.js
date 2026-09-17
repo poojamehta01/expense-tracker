@@ -3236,6 +3236,18 @@ function budgetUsagePresentation({ budget, actual, usage }) {
   };
 }
 
+const FUTURE_STATUS = {
+  below_target: ['Below mandatory target', 'budget-status--bad'],
+  target_met: ['Target met', 'budget-status--good'],
+  above_target: ['Above target', 'budget-status--good'],
+  salary_missing: ['Salary needed', 'budget-status--watch'],
+};
+
+function futureStatusPresentation(status) {
+  const presentation = FUTURE_STATUS[status] || FUTURE_STATUS.salary_missing;
+  return { label: presentation[0], className: presentation[1] };
+}
+
 function buildBudgetSaveLines(sections) {
   return (sections || []).flatMap(section =>
     (section.lines || []).map((line, index) => ({
@@ -3580,6 +3592,7 @@ function renderBudget() {
   const cancelButton = document.getElementById('budgetCancelBtn');
   const readOnly = budgetState.person === 'all';
   const editLocked = budgetState.editing || budgetState.saving;
+  const futurePeople = data?.future?.people || [];
 
   applyBudgetInteractionLock(editLocked);
 
@@ -3607,9 +3620,10 @@ function renderBudget() {
     summary.innerHTML = '';
     sections.innerHTML = '';
     empty.classList.remove('hidden');
-    return;
+    if (!futurePeople.length) return;
+  } else {
+    empty.classList.add('hidden');
   }
-  empty.classList.add('hidden');
 
   const values = data.summary || {};
   const investmentValue = `${formatCurrency(values.plannedInvestments)} planned · ${formatCurrency(values.actualInvestments)} actual`;
@@ -3621,15 +3635,17 @@ function renderBudget() {
     ['Monthly savings', data.hasSalary ? formatCurrency(values.netMonthlySavings) : '—'],
     ['Investments', investmentValue],
   ];
-  summary.innerHTML = cards.map(([label, value]) => `
-    <div class="kpi-card budget-summary-card">
-      <div class="kpi-label">${label}</div>
-      <div class="kpi-value small">${value}</div>
-    </div>
-  `).join('');
+  if (data.hasBudget) {
+    summary.innerHTML = cards.map(([label, value]) => `
+      <div class="kpi-card budget-summary-card">
+        <div class="kpi-label">${label}</div>
+        <div class="kpi-value small">${value}</div>
+      </div>
+    `).join('');
+  }
 
   let inputIndex = 0;
-  sections.innerHTML = (data.sections || []).filter(section => section.section !== 'Education/Child Care').map(section => {
+  const budgetSectionsHtml = (data.sections || []).filter(section => section.section !== 'Education/Child Care').map(section => {
     const sectionUsage = budgetUsagePresentation(section);
     const collapsed = collapsedBudgetSections.has(section.section);
     const rows = (section.lines || []).filter(line => line.section !== 'Education/Child Care' && section.section !== 'Education/Child Care').map(line => {
@@ -3672,6 +3688,52 @@ function renderBudget() {
         </div>
       </section>`;
   }).join('');
+
+  const futureCollapsed = collapsedBudgetSections.has('Future');
+  const hasUnavailableFutureTarget = futurePeople.some(row => row.target === null);
+  const futureTarget = futurePeople.reduce((total, row) => total + Number(row.target || 0), 0);
+  const futureTargetLabel = hasUnavailableFutureTarget
+    ? 'minimum unavailable'
+    : `${formatCurrency(futureTarget)} minimum`;
+  const futureActual = futurePeople.reduce((total, row) => total + Number(row.actual || 0), 0);
+  const futureRows = futurePeople.map(row => {
+    const status = futureStatusPresentation(row.status);
+    const progress = row.target === null
+      ? { label: 'Salary required', width: 0 }
+      : budgetUsagePresentation({ budget: row.target, actual: row.actual, usage: row.usage });
+    const difference = row.difference === null
+      ? '—'
+      : row.difference >= 0
+        ? `+${formatCurrency(row.difference)} surplus`
+        : `${formatCurrency(Math.abs(row.difference))} shortfall`;
+    return `
+      <tr data-section="Future" data-person="${esc(row.person)}">
+        <td class="budget-category-cell" data-label="Goal"><strong>${esc(row.person)} · 20% of salary</strong><div class="budget-mapping-row"><span class="budget-mapping-chip">Mandatory monthly minimum</span></div></td>
+        <td data-label="Minimum target">${row.target === null ? '—' : formatCurrency(row.target)}</td>
+        <td data-label="Invested">${formatCurrency(row.actual)}</td>
+        <td data-label="Result">${difference}</td>
+        <td data-label="Status">
+          <span class="budget-status ${status.className}">${status.label}</span>
+          <div class="budget-progress"><span class="budget-progress__fill" style="width:${progress.width}%"></span></div>
+          <span class="cell-empty">${progress.label}</span>
+        </td>
+        <td data-label="Source"><span class="budget-mapping-chip">Investment transactions</span></td>
+      </tr>`;
+  }).join('');
+  const futureSectionHtml = futurePeople.length ? `
+    <section class="table-section budget-section budget-future-section" data-section="Future">
+      <div class="table-header-row">
+        <button type="button" class="budget-section-toggle" aria-expanded="${!futureCollapsed}" aria-label="${futureCollapsed ? 'Expand' : 'Collapse'} Future" onclick="toggleBudgetSection('Future')"><span class="budget-section-indicator" aria-hidden="true">${futureCollapsed ? '▶' : '▼'}</span><h2>Future</h2></button>
+        <span>${formatCurrency(futureActual)} invested · ${futureTargetLabel}</span>
+      </div>
+      <div class="table-wrapper" ${futureCollapsed ? 'hidden' : ''}>
+        <table class="budget-table">
+          <thead><tr><th>Goal</th><th>Minimum target</th><th>Invested</th><th>Result</th><th>Status</th><th>Source</th></tr></thead>
+          <tbody>${futureRows}</tbody>
+        </table>
+      </div>
+    </section>` : '';
+  sections.innerHTML = budgetSectionsHtml + futureSectionHtml;
 }
 
 function toggleBudgetSection(sectionName) {

@@ -118,6 +118,40 @@ test('splits household-pool spending equally across both personal budgets', () =
   db.close();
 });
 
+test('future targets require each person to invest twenty percent of salary', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Investment'] });
+  for (const [person, salary, invested] of [['Pooja', 100000, 25000], ['Kunal', 50000, 5000]]) {
+    insertLine(db, { month: 'September_2026', person, section: 'Home', category: 'Placeholder', kind: 'expense', amount: 0, sort_order: 0 });
+    db.prepare(`INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)`).run(person, 'September_2026', salary);
+    db.prepare(`INSERT INTO transactions (amount, paid_by, category, month) VALUES (?, ?, ?, ?)`).run(invested, person, 'Investment', 'September_2026');
+  }
+
+  const pooja = service.getBudget({ month: 'September_2026', person: 'Pooja' });
+  assert.deepEqual(pooja.future, {
+    people: [{ person: 'Pooja', hasSalary: true, salary: 100000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' }],
+  });
+
+  const combined = service.getBudget({ month: 'September_2026', person: 'all' });
+  assert.deepEqual(combined.future.people, [
+    { person: 'Pooja', hasSalary: true, salary: 100000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' },
+    { person: 'Kunal', hasSalary: true, salary: 50000, target: 10000, actual: 5000, difference: -5000, usage: 0.5, status: 'below_target' },
+  ]);
+  db.close();
+});
+
+test('future target stays unavailable when salary is missing', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: [] });
+  insertLine(db, { month: 'September_2026', person: 'Kunal', section: 'Home', category: 'Placeholder', kind: 'expense', amount: 0, sort_order: 0 });
+  db.prepare(`INSERT INTO transactions (amount, paid_by, category, month) VALUES (?, ?, ?, ?)`).run(1200, 'Kunal', 'Investment', 'September_2026');
+
+  assert.deepEqual(service.getBudget({ month: 'September_2026', person: 'Kunal' }).future, {
+    people: [{ person: 'Kunal', hasSalary: false, salary: 0, target: null, actual: 1200, difference: null, usage: null, status: 'salary_missing' }],
+  });
+  db.close();
+});
+
 test('replaceBudget validates every line before atomically replacing existing rows', () => {
   const db = createFixture();
   const service = createBudgetService(db, { validCategories: ['Rent'] });

@@ -5,6 +5,7 @@ const MONTH_NAMES = new Set([
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]);
+const FUTURE_TARGET_RATE = 0.2;
 
 function serviceError(code, message) {
   const error = new Error(message);
@@ -115,6 +116,22 @@ function buildSummary(lines, salary) {
   };
 }
 
+function buildFuturePerson({ person, salary, hasSalary, actual }) {
+  if (!hasSalary) {
+    return {
+      person, hasSalary: false, salary: 0, target: null, actual,
+      difference: null, usage: null, status: 'salary_missing',
+    };
+  }
+  const target = salary * FUTURE_TARGET_RATE;
+  const difference = actual - target;
+  return {
+    person, hasSalary: true, salary, target, actual, difference,
+    usage: usage(actual, target),
+    status: difference > 0 ? 'above_target' : difference === 0 ? 'target_met' : 'below_target',
+  };
+}
+
 function combineBudgetResponses(first, second) {
   const responses = [first, second].filter(Boolean);
   if (!responses.length) throw serviceError('validation', 'At least one budget response is required');
@@ -147,6 +164,7 @@ function combineBudgetResponses(first, second) {
     hasSalary: responses.length === PEOPLE.length && responses.every(response => response.hasSalary),
     summary: buildSummary(lines, salary),
     sections: sectionFromLines(lines),
+    future: { people: responses.flatMap(response => response.future?.people || []) },
     unmappedCount: lines.filter(line => !line.hasMappings).length,
   };
 }
@@ -229,6 +247,12 @@ function createBudgetService(db, { validCategories = [] } = {}) {
     });
     const salaryRow = db.prepare('SELECT amount FROM salaries WHERE person = ? AND month = ?').get(person, month);
     const salary = salaryRow ? Number(salaryRow.amount) : 0;
+    const future = buildFuturePerson({
+      person,
+      salary,
+      hasSalary: Boolean(salaryRow),
+      actual: totals.get('Investment') || 0,
+    });
     return {
       month,
       person,
@@ -236,6 +260,7 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       hasSalary: Boolean(salaryRow),
       summary: buildSummary(lines, salary),
       sections: sectionFromLines(lines),
+      future: { people: [future] },
       unmappedCount: lines.filter(line => !line.hasMappings).length,
     };
   }

@@ -183,6 +183,12 @@ September planned investments are ₹0. Combined is calculated from the two pers
 - **Monthly savings** — recorded salary minus qualifying actual spending. Missing salary displays `—`, while a recorded zero salary remains a valid value.
 - **Investments** — planned and actual investment totals, kept separate from ordinary expense budget and spending.
 
+### Future: Mandatory Monthly Investing
+
+The read-only **Future** section sets a minimum investment target equal to 20% of each person's recorded monthly salary. Actual progress comes only from that person's transactions categorized as `Investment`; unspent salary does not count. The section reports the remaining shortfall, exact target completion, or any surplus above the target.
+
+Combined keeps separate Pooja and Kunal rows, so one person's additional investing cannot hide the other person's shortfall. If a salary has not been recorded for the selected month, the target is shown as unavailable until the salary is added.
+
 Budget actuals exclude `Credit Card Payment`, `Settlement`, and `Refunded`. Unmapped tracker categories are not silently assigned, and investment actuals do not increase ordinary expense actuals.
 
 ### Edit One Person's Budget
