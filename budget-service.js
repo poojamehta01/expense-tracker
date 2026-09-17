@@ -8,6 +8,8 @@ const MONTH_NAMES = new Set([
 const FUTURE_TARGET_RATE = 0.2;
 const FUTURE_SECTION = 'Future';
 const FUTURE_CATEGORY = 'Investment goal';
+const MISCELLANEOUS_SECTION = 'Miscellaneous';
+const UNMAPPED_CATEGORY = 'Unmapped expenses';
 
 function serviceError(code, message) {
   const error = new Error(message);
@@ -63,6 +65,9 @@ function validateLines(lines) {
     const section = nonEmptyString(line.section, 'Section');
     const category = nonEmptyString(line.category, 'Category');
     const kind = validateKind(line.kind);
+    if (section === MISCELLANEOUS_SECTION && category === UNMAPPED_CATEGORY && kind === 'expense') {
+      throw serviceError('validation', 'Miscellaneous / Unmapped expenses is reserved for calculated expenses');
+    }
     const amount = Number(line.amount);
     if (!Number.isFinite(amount) || amount < 0) {
       throw serviceError('validation', 'Budget amount must be a finite non-negative number');
@@ -99,11 +104,11 @@ function sectionFromLines(lines) {
   return sections;
 }
 
-function buildSummary(lines, salary) {
+function buildSummary(lines, salary, unmappedActual = 0) {
   const expenseLines = lines.filter(line => line.kind === 'expense');
   const investmentLines = lines.filter(line => line.kind === 'investment');
   const expenseBudget = expenseLines.reduce((total, line) => total + line.budget, 0);
-  const actualSpending = expenseLines.reduce((total, line) => total + line.actual, 0);
+  const actualSpending = expenseLines.reduce((total, line) => total + line.actual, 0) + unmappedActual;
   const plannedInvestments = investmentLines.reduce((total, line) => total + line.budget, 0);
   const actualInvestments = investmentLines.reduce((total, line) => total + line.actual, 0);
   return {
@@ -116,6 +121,19 @@ function buildSummary(lines, salary) {
     plannedInvestments,
     actualInvestments,
   };
+}
+
+function combineUnmappedExpenses(responses) {
+  const totals = new Map();
+  for (const response of responses) {
+    for (const row of response.unmappedExpenses?.categories || []) {
+      totals.set(row.category, (totals.get(row.category) || 0) + Number(row.total));
+    }
+  }
+  const categories = [...totals.entries()]
+    .map(([category, total]) => ({ category, total }))
+    .sort((a, b) => b.total - a.total || a.category.localeCompare(b.category));
+  return { total: categories.reduce((sum, row) => sum + row.total, 0), categories };
 }
 
 function buildFuturePerson({ person, salary, hasSalary, actual, allocation }) {
@@ -173,14 +191,16 @@ function combineBudgetResponses(first, second) {
   const lines = [...linesByKey.values()];
   const salary = responses.reduce((total, response) => total + response.summary.salary, 0);
   const futurePeople = responses.flatMap(response => response.future?.people || []);
+  const unmappedExpenses = combineUnmappedExpenses(responses);
   return {
     month: responses[0].month,
     person: 'all',
     hasBudget: responses.some(response => response.hasBudget),
     hasSalary: responses.length === PEOPLE.length && responses.every(response => response.hasSalary),
-    summary: applyFutureInvestmentSummary(buildSummary(lines, salary), futurePeople),
+    summary: applyFutureInvestmentSummary(buildSummary(lines, salary, unmappedExpenses.total), futurePeople),
     sections: sectionFromLines(lines),
     future: { people: futurePeople },
+    unmappedExpenses,
     unmappedCount: lines.filter(line => !line.hasMappings).length,
   };
 }
@@ -271,6 +291,18 @@ function createBudgetService(db, { validCategories = [] } = {}) {
         status: lineStatus({ budget, actual, hasMappings: lineMappings.length > 0 }),
       };
     });
+    const mappedExpenseCategories = new Set(lines
+      .filter(line => line.kind === 'expense')
+      .flatMap(line => line.mappings)
+      .filter(category => category !== 'Investment' && !EXCLUDED_CATEGORIES.includes(category)));
+    const unmappedCategories = [...totals.entries()]
+      .filter(([category]) => category !== 'Investment' && !EXCLUDED_CATEGORIES.includes(category) && !mappedExpenseCategories.has(category))
+      .map(([category, total]) => ({ category, total }))
+      .sort((a, b) => b.total - a.total || a.category.localeCompare(b.category));
+    const unmappedExpenses = {
+      total: unmappedCategories.reduce((sum, row) => sum + row.total, 0),
+      categories: unmappedCategories,
+    };
     const salaryRow = db.prepare('SELECT amount FROM salaries WHERE person = ? AND month = ?').get(person, month);
     const salary = salaryRow ? Number(salaryRow.amount) : 0;
     const future = buildFuturePerson({
@@ -285,9 +317,10 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       person,
       hasBudget: budgetRows.length > 0,
       hasSalary: Boolean(salaryRow),
-      summary: applyFutureInvestmentSummary(buildSummary(lines, salary), [future]),
+      summary: applyFutureInvestmentSummary(buildSummary(lines, salary, unmappedExpenses.total), [future]),
       sections: sectionFromLines(lines),
       future: { people: [future] },
+      unmappedExpenses,
       unmappedCount: lines.filter(line => !line.hasMappings).length,
     };
   }
@@ -295,7 +328,30 @@ function createBudgetService(db, { validCategories = [] } = {}) {
   function getBudget({ month, person }) {
     validateMonth(month);
     validatePerson(person, { allowAll: true });
-    if (person === 'all') return combineBudgetResponses(getSingleBudget(month, 'Pooja'), getSingleBudget(month, 'Kunal'));
+    if (person === 'all') {
+      const response = combineBudgetResponses(getSingleBudget(month, 'Pooja'), getSingleBudget(month, 'Kunal'));
+      const excluded = [...EXCLUDED_CATEGORIES, 'Investment'];
+      const unassignedCategories = db.prepare(`
+        SELECT category, COALESCE(SUM(amount), 0) AS total
+        FROM transactions
+        WHERE month = ?
+          AND (paid_by IS NULL OR paid_by NOT IN ('Pooja','Kunal','Household Pool'))
+          AND category NOT IN (${excluded.map(() => '?').join(', ')})
+        GROUP BY category
+      `).all(month, ...excluded).map(row => ({ category: row.category, total: Number(row.total) }));
+      const totals = new Map(response.unmappedExpenses.categories.map(row => [row.category, row.total]));
+      for (const row of unassignedCategories) totals.set(row.category, (totals.get(row.category) || 0) + row.total);
+      response.unmappedExpenses.categories = [...totals.entries()]
+        .map(([category, total]) => ({ category, total }))
+        .sort((a, b) => b.total - a.total || a.category.localeCompare(b.category));
+      const unassignedTotal = unassignedCategories.reduce((sum, row) => sum + row.total, 0);
+      response.unmappedExpenses.total += unassignedTotal;
+      response.summary.actualSpending += unassignedTotal;
+      response.summary.variance -= unassignedTotal;
+      response.summary.usage = usage(response.summary.actualSpending, response.summary.expenseBudget);
+      response.summary.netMonthlySavings -= unassignedTotal;
+      return response;
+    }
     return getSingleBudget(month, person);
   }
 
@@ -307,7 +363,47 @@ function createBudgetService(db, { validCategories = [] } = {}) {
     validateKind(kind);
 
     let transactionCategories;
-    if (section === 'Future' && kind === 'investment') {
+    if (section === MISCELLANEOUS_SECTION && budgetCategory === UNMAPPED_CATEGORY && kind === 'expense') {
+      const requestedPeople = person === 'all' ? PEOPLE : [person];
+      const mappedByPerson = new Map(requestedPeople.map(requestedPerson => {
+        const mapped = db.prepare(`
+          SELECT DISTINCT mapping.transaction_category
+          FROM budget_category_mappings AS mapping
+          JOIN budgets AS budget
+            ON budget.section = mapping.section
+           AND budget.category = mapping.budget_category
+           AND budget.kind = mapping.kind
+          WHERE budget.month = ? AND budget.person = ? AND budget.kind = 'expense'
+        `).all(month, requestedPerson).map(row => row.transaction_category);
+        return [requestedPerson, new Set(mapped)];
+      }));
+      const excluded = [...EXCLUDED_CATEGORIES, 'Investment'];
+      const rows = db.prepare(`
+        SELECT id, date, amount, description, payment_method, paid_by, expense_type,
+               category, mood, impulse, remarks, month
+        FROM transactions
+        WHERE month = ?
+          AND category NOT IN (${excluded.map(() => '?').join(', ')})
+        ORDER BY id
+      `).all(month, ...excluded).map(row => {
+        let countedAmount = 0;
+        if (row.paid_by === 'Household Pool') {
+          const unmappedPeople = requestedPeople.filter(requestedPerson => !mappedByPerson.get(requestedPerson).has(row.category));
+          countedAmount = Number(row.amount) * unmappedPeople.length / PEOPLE.length;
+        } else if (requestedPeople.includes(row.paid_by) && !mappedByPerson.get(row.paid_by).has(row.category)) {
+          countedAmount = Number(row.amount);
+        } else if (person === 'all' && !PEOPLE.includes(row.paid_by)) {
+          countedAmount = Number(row.amount);
+        }
+        return { ...row, amount: Number(row.amount), countedAmount };
+      }).filter(row => row.countedAmount !== 0);
+      transactionCategories = [...new Set(rows.map(row => row.category))];
+      return {
+        month, person, section, budgetCategory, kind, transactionCategories,
+        total: rows.reduce((sum, row) => sum + row.countedAmount, 0),
+        transactions: rows,
+      };
+    } else if (section === 'Future' && kind === 'investment') {
       if (person === 'all') throw serviceError('validation', 'Future transaction details require a person');
       transactionCategories = ['Investment'];
     } else {
@@ -364,6 +460,9 @@ function createBudgetService(db, { validCategories = [] } = {}) {
     section = nonEmptyString(section, 'Section');
     budgetCategory = nonEmptyString(budgetCategory, 'Budget category');
     validateKind(kind);
+    if (section === MISCELLANEOUS_SECTION && budgetCategory === UNMAPPED_CATEGORY && kind === 'expense') {
+      throw serviceError('validation', 'Miscellaneous / Unmapped expenses is reserved for calculated expenses');
+    }
     const budgetLineExists = db.prepare(`
       SELECT 1 FROM budgets
       WHERE section = ? AND category = ? AND kind = ?

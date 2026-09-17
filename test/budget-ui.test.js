@@ -404,6 +404,28 @@ test('transaction details show an empty state for an unmapped budget item', asyn
   assert.match(elements.budgetTransactionsBody.innerHTML, /No transactions to show/);
 });
 
+test('renders unmapped expenses in a final Miscellaneous section with transaction drill-down', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.unmappedExpenses = {
+    total: 175,
+    categories: [{ category: 'Groceries', total: 125 }, { category: 'Medicines', total: 50 }],
+  };
+  workflow.setData(data);
+
+  workflow.renderBudget();
+
+  const miscIndex = elements.budgetSections.innerHTML.indexOf('data-section="Miscellaneous"');
+  const futureIndex = elements.budgetSections.innerHTML.indexOf('data-section="Future"');
+  assert.ok(miscIndex > futureIndex, 'Miscellaneous must be the final section');
+  assert.match(elements.budgetSections.innerHTML, /Unmapped expenses/);
+  assert.match(elements.budgetSections.innerHTML, /₹175/);
+  assert.match(elements.budgetSections.innerHTML, /Groceries/);
+  assert.match(elements.budgetSections.innerHTML, /Mapping needed/);
+  assert.match(elements.budgetSections.innerHTML, /data-budget-transactions[^>]*data-section="Miscellaneous"/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML.slice(miscIndex), /data-budget-map/);
+});
+
 test('Future rows request investment transactions for their specific person', async () => {
   const { workflow, elements, requests } = createBudgetWorkflow({
     person: 'all',
@@ -950,12 +972,14 @@ test('Dashboard loads and renders budget in the same refresh even without transa
   assert.equal(elements.dashboardBudgetAmount.textContent, '₹250 of ₹1000');
 });
 
-test('Dashboard budget requests Combined data for the Common filter', async () => {
-  const { workflow, requests } = createDashboardWorkflow({ person: 'Common', budget: budgetFixture('all') });
+test('Dashboard explains that a Common-only budget comparison is unavailable', async () => {
+  const { workflow, requests, elements } = createDashboardWorkflow({ person: 'Common', budget: budgetFixture('all') });
 
   await workflow.loadDashboard('September_2026');
 
-  assert.equal(requests[3], '/api/budget?month=September_2026&person=all');
+  assert.equal(requests.some(url => url.startsWith('/api/budget?')), false);
+  assert.equal(elements.dashboardBudgetTitle.textContent, 'Budget comparison unavailable');
+  assert.match(elements.dashboardBudgetVariance.textContent, /Common filter/);
 });
 
 test('a late Dashboard budget success cannot replace the active month', async () => {
@@ -1002,7 +1026,7 @@ test('changing the global person filter refreshes Dashboard budget context', () 
 
   workflow.setGlobalFilter('Common');
 
-  assert.deepEqual(requests, ['/api/budget?month=September_2026&person=all']);
+  assert.deepEqual(requests, []);
 });
 
 test('Dashboard budget renders positive totals, remaining variance, and clamped progress', () => {

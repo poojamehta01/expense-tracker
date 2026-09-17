@@ -2177,6 +2177,16 @@ function setGlobalFilter(person) {
   }
 }
 
+function budgetAttributedExpenseList(list, person) {
+  return (list || []).flatMap(transaction => {
+    if (transaction.paid_by === person) return [{ ...transaction }];
+    if (transaction.paid_by === 'Household Pool') {
+      return [{ ...transaction, amount: (parseFloat(transaction.amount) || 0) / 2 }];
+    }
+    return [];
+  });
+}
+
 function applyGlobalFilter() {
   if (!_lastDashData) return;
   const gList = getGlobalFiltered(savedTxList);
@@ -2186,11 +2196,18 @@ function applyGlobalFilter() {
     renderChartsFromData(_lastDashData);
     renderTopMerchants(_lastDashData);
   } else {
-    const expenseList = gList.filter(t => !['Credit Card Payment', 'Settlement', 'Investment'].includes(t.category));
-    const investments = gList.filter(t => t.category === 'Investment').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    const attributedList = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'
+      ? budgetAttributedExpenseList(savedTxList, globalPersonFilter)
+      : gList;
+    const expenseList = attributedList.filter(t => !['Credit Card Payment', 'Settlement', 'Investment', 'Refunded'].includes(t.category));
+    const investments = attributedList.filter(t => t.category === 'Investment').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
     const totalSpend = expenseList.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-    const byPaidBy = {};
-    for (const t of expenseList) byPaidBy[t.paid_by] = (byPaidBy[t.paid_by] || 0) + (parseFloat(t.amount) || 0);
+    const byPaidBy = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'
+      ? { [globalPersonFilter]: totalSpend }
+      : {};
+    if (globalPersonFilter === 'Common') {
+      for (const t of expenseList) byPaidBy[t.paid_by] = (byPaidBy[t.paid_by] || 0) + (parseFloat(t.amount) || 0);
+    }
     renderKPIs({ totalSpend, investments, transactionCount: expenseList.length, byPaidBy, settlement: null });
     renderChartsFromData(aggregateFromTxList(expenseList, _lastDashData));
     renderTopMerchantsFromList(expenseList);
@@ -3364,6 +3381,13 @@ const dashboardBudgetLoadState = {
 
 async function loadDashboardBudget(month) {
   if (!month) return;
+  if (globalPersonFilter === 'Common') {
+    dashboardBudgetLoadState.sequence++;
+    dashboardBudgetLoadState.month = month;
+    dashboardBudgetLoadState.person = 'Common';
+    renderDashboardBudget(null, { commonFilter: true });
+    return;
+  }
   const person = globalPersonFilter === 'Pooja' || globalPersonFilter === 'Kunal'
     ? globalPersonFilter
     : 'all';
@@ -3391,7 +3415,7 @@ async function loadDashboardBudget(month) {
   }
 }
 
-function renderDashboardBudget(data, { unavailable = false } = {}) {
+function renderDashboardBudget(data, { unavailable = false, commonFilter = false } = {}) {
   const card = document.getElementById('dashboardBudgetCard');
   const title = document.getElementById('dashboardBudgetTitle');
   const amount = document.getElementById('dashboardBudgetAmount');
@@ -3411,6 +3435,16 @@ function renderDashboardBudget(data, { unavailable = false } = {}) {
     progress.removeAttribute('aria-valuetext');
     usageText.textContent = '';
   };
+
+  if (commonFilter) {
+    card.dataset.state = 'empty';
+    title.textContent = 'Budget comparison unavailable';
+    amount.textContent = '';
+    variance.textContent = 'Common filter has no separate budget. Choose All, Pooja, or Kunal.';
+    hideProgress();
+    action.textContent = 'Open combined budget';
+    return;
+  }
 
   if (unavailable) {
     card.dataset.state = 'error';
@@ -3795,7 +3829,31 @@ function renderBudget() {
         </table>
       </div>
     </section>` : '';
-  sections.innerHTML = budgetSectionsHtml + futureSectionHtml;
+  const unmapped = data.unmappedExpenses || { total: 0, categories: [] };
+  const miscellaneousSectionHtml = unmapped.total ? `
+    <section class="table-section budget-section" data-section="Miscellaneous">
+      <div class="table-header-row">
+        <div class="budget-section-toggle"><h2>Miscellaneous</h2></div>
+        <span>${formatCurrency(unmapped.total)} needs mapping</span>
+      </div>
+      <div class="table-wrapper">
+        <table class="budget-table">
+          <thead><tr><th>Category</th><th>Budget</th><th>Actual</th><th>Remaining</th><th>Status</th><th>Mapping</th></tr></thead>
+          <tbody><tr data-section="Miscellaneous" data-category="Unmapped expenses" data-kind="expense">
+            <td class="budget-category-cell" data-label="Category">
+              <button type="button" class="budget-category-button" data-budget-transactions data-section="Miscellaneous" data-category="Unmapped expenses" data-kind="expense" aria-label="View unmapped expense transactions">Unmapped expenses <span aria-hidden="true">›</span></button>
+              <div class="budget-mapping-row">${(unmapped.categories || []).map(row => `<span class="budget-mapping-chip">${esc(row.category)} · ${formatCurrency(row.total)}</span>`).join('')}</div>
+            </td>
+            <td data-label="Budget">${formatCurrency(0)}</td>
+            <td data-label="Actual">${formatCurrency(unmapped.total)}</td>
+            <td data-label="Remaining">${formatCurrency(-unmapped.total)}</td>
+            <td data-label="Status"><span class="budget-status budget-status--mapping">Mapping needed</span></td>
+            <td data-label="Mapping"><span class="cell-empty">Map from the target budget item</span></td>
+          </tr></tbody>
+        </table>
+      </div>
+    </section>` : '';
+  sections.innerHTML = budgetSectionsHtml + futureSectionHtml + miscellaneousSectionHtml;
 }
 
 function toggleBudgetSection(sectionName) {

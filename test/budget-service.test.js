@@ -122,6 +122,47 @@ test('splits household-pool spending equally across both personal budgets', () =
   db.close();
 });
 
+test('unmapped expenses reconcile Actual spending and preserve household shares', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Rent', 'Groceries'] });
+  for (const person of ['Pooja', 'Kunal']) {
+    insertLine(db, { month: 'September_2026', person, section: 'Home', category: 'House Rent', kind: 'expense', amount: 1000, sort_order: 0 });
+  }
+  insertMapping(db, { section: 'Home', budget_category: 'House Rent', transaction_category: 'Rent', kind: 'expense' });
+  const addTransaction = db.prepare(`INSERT INTO transactions (date, amount, description, paid_by, category, month) VALUES (?, ?, ?, ?, ?, ?)`);
+  addTransaction.run('1 September 2026', 100, 'Rent', 'Pooja', 'Rent', 'September_2026');
+  addTransaction.run('2 September 2026', 50, 'Pooja groceries', 'Pooja', 'Groceries', 'September_2026');
+  addTransaction.run('3 September 2026', 70, 'Kunal groceries', 'Kunal', 'Groceries', 'September_2026');
+  addTransaction.run('4 September 2026', 80, 'Shared groceries', 'Household Pool', 'Groceries', 'September_2026');
+  addTransaction.run('5 September 2026', 999, 'Refund', 'Pooja', 'Refunded', 'September_2026');
+  addTransaction.run('6 September 2026', 888, 'Fund', 'Pooja', 'Investment', 'September_2026');
+  addTransaction.run('7 September 2026', 30, 'Unknown payer', '', 'Utilities', 'September_2026');
+
+  const pooja = service.getBudget({ month: 'September_2026', person: 'Pooja' });
+  const combined = service.getBudget({ month: 'September_2026', person: 'all' });
+
+  assert.deepEqual(pooja.unmappedExpenses, { total: 90, categories: [{ category: 'Groceries', total: 90 }] });
+  assert.equal(pooja.summary.actualSpending, 190);
+  assert.deepEqual(combined.unmappedExpenses, {
+    total: 230,
+    categories: [{ category: 'Groceries', total: 200 }, { category: 'Utilities', total: 30 }],
+  });
+  assert.equal(combined.summary.actualSpending, 330);
+
+  const details = service.getBudgetTransactions({
+    month: 'September_2026', person: 'all', section: 'Miscellaneous', budgetCategory: 'Unmapped expenses', kind: 'expense',
+  });
+  assert.equal(details.total, 230);
+  assert.deepEqual(details.transactionCategories, ['Groceries', 'Utilities']);
+  assert.deepEqual(details.transactions.map(row => ({ description: row.description, countedAmount: row.countedAmount })), [
+    { description: 'Pooja groceries', countedAmount: 50 },
+    { description: 'Kunal groceries', countedAmount: 70 },
+    { description: 'Shared groceries', countedAmount: 80 },
+    { description: 'Unknown payer', countedAmount: 30 },
+  ]);
+  db.close();
+});
+
 test('budget transaction details reconcile personal spending including half of household-pool amounts', () => {
   const db = createFixture();
   const service = createBudgetService(db, { validCategories: ['Outside Food'] });
@@ -313,6 +354,10 @@ test('replaceBudget validates every line before atomically replacing existing ro
     assert.equal(db.prepare(`SELECT COUNT(*) count FROM budgets WHERE month = 'September_2026' AND person = 'Pooja'`).get().count, 1);
   }
   assert.throws(() => service.replaceBudget({ month: 'September_2026', person: 'Pooja', lines: [base, { ...base, amount: 200 }] }), /Duplicate budget line/);
+  assert.throws(() => service.replaceBudget({
+    month: 'September_2026', person: 'Pooja',
+    lines: [{ ...base, section: 'Miscellaneous', category: 'Unmapped expenses' }],
+  }), /reserved/i);
   assert.throws(() => service.replaceBudget({ month: 'September_2026', person: 'Common', lines: [base] }), /Person must be/);
   assert.throws(() => service.replaceBudget({ month: '2026-09', person: 'Pooja', lines: [base] }), /Month must use Month_YYYY/);
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM budgets WHERE month = 'September_2026' AND person = 'Pooja'`).get().count, 1);
@@ -337,7 +382,7 @@ test('replaceBudget removes a mapping only after its final budget line is delete
   db.close();
 });
 
-test('attributes only mapped qualifying transactions and separates investment totals', () => {
+test('attributes mapped lines and reports eligible unmapped expenses separately', () => {
   const db = createFixture();
   const service = createBudgetService(db, { validCategories: ['Rent', 'Outside Food', 'SIP', 'Unmapped'] });
   insertLine(db, { month: 'September_2026', person: 'Pooja', section: 'Home', category: 'House Rent', kind: 'expense', amount: 111177, sort_order: 0 });
@@ -356,10 +401,14 @@ test('attributes only mapped qualifying transactions and separates investment to
   db.prepare(`INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)`).run('Pooja', 'September_2026', 337292);
   const pooja = service.getBudget({ month: 'September_2026', person: 'Pooja' });
   assert.equal(pooja.month, 'September_2026'); assert.equal(pooja.person, 'Pooja'); assert.equal(pooja.hasBudget, true); assert.equal(pooja.hasSalary, true);
-  assert.equal(pooja.summary.expenseBudget, 111177); assert.equal(pooja.summary.actualSpending, 21000); assert.equal(pooja.summary.variance, 90177);
-  assert.equal(pooja.summary.salary, 337292); assert.equal(pooja.summary.netMonthlySavings, 316292);
+  assert.equal(pooja.summary.expenseBudget, 111177); assert.equal(pooja.summary.actualSpending, 29789); assert.equal(pooja.summary.variance, 81388);
+  assert.equal(pooja.summary.salary, 337292); assert.equal(pooja.summary.netMonthlySavings, 307503);
   assert.equal(pooja.summary.plannedInvestments, 337292 * 0.2); assert.equal(pooja.summary.actualInvestments, 0);
   assert.equal(pooja.sections[0].lines[0].actual, 21000); assert.equal(pooja.sections[0].lines[0].usage, 21000 / 111177); assert.equal(pooja.sections[1].lines[0].actual, 2000); assert.equal(pooja.unmappedCount, 0);
+  assert.deepEqual(pooja.unmappedExpenses, {
+    total: 8789,
+    categories: [{ category: 'Unmapped', total: 6789 }, { category: 'SIP', total: 2000 }],
+  });
   const kunal = service.getBudget({ month: 'September_2026', person: 'Kunal' });
   const combined = service.getBudget({ month: 'September_2026', person: 'all' });
   assert.equal(combined.summary.expenseBudget, 226824); assert.equal(combined.summary.actualSpending, pooja.summary.actualSpending + kunal.summary.actualSpending);
@@ -396,6 +445,15 @@ test('replaceMappings rejects a target that is not a real budget line', () => {
     error => error.code === 'not_found' && /Budget line not found/.test(error.message)
   );
   assert.equal(db.prepare('SELECT COUNT(*) count FROM budget_category_mappings').get().count, 0);
+  db.close();
+});
+
+test('replaceMappings rejects the reserved synthetic unmapped row', () => {
+  const db = createFixture();
+  const service = createBudgetService(db, { validCategories: ['Groceries'] });
+  assert.throws(() => service.replaceMappings({
+    section: 'Miscellaneous', budgetCategory: 'Unmapped expenses', kind: 'expense', transactionCategories: ['Groceries'],
+  }), /reserved/i);
   db.close();
 });
 

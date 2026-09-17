@@ -456,7 +456,7 @@ const MONTH_SORT = `
     WHEN 'October' THEN 10 WHEN 'November' THEN 11 WHEN 'December' THEN 12
   END`;
 
-const EXPENSE_EXCLUDE = " AND category != 'Credit Card Payment' AND category != 'Settlement' AND category != 'Investment'";
+const EXPENSE_EXCLUDE = " AND category != 'Credit Card Payment' AND category != 'Settlement' AND category != 'Investment' AND category != 'Refunded'";
 
 app.get('/api/trends', (req, res) => {
   const { person } = req.query;

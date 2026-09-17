@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
@@ -44,5 +45,24 @@ test('budget sections are accessible, stateful, and hide Education only at rende
 });
 
 test('filtered Dashboard applies the same non-expense categories as the server', () => {
-  assert.match(app, /expenseList = gList\.filter\(t => !\['Credit Card Payment', 'Settlement', 'Investment'\]\.includes\(t\.category\)\)/);
+  assert.match(app, /expenseList = attributedList\.filter\(t => !\['Credit Card Payment', 'Settlement', 'Investment', 'Refunded'\]\.includes\(t\.category\)\)/);
+  assert.match(server, /EXPENSE_EXCLUDE[\s\S]*category != 'Refunded'/);
+});
+
+test('personal Dashboard spend includes half of Household Pool expenses', () => {
+  const start = app.indexOf('function budgetAttributedExpenseList');
+  const end = app.indexOf('function applyGlobalFilter()', start);
+  assert.notEqual(start, -1, 'budget attribution helper must exist');
+  const context = vm.createContext({});
+  vm.runInContext(`${app.slice(start, end)}; globalThis.helper = budgetAttributedExpenseList;`, context);
+  const rows = [
+    { paid_by: 'Pooja', amount: 100 },
+    { paid_by: 'Kunal', amount: 200 },
+    { paid_by: 'Household Pool', amount: 80 },
+  ];
+
+  assert.deepEqual(
+    Array.from(context.helper(rows, 'Pooja'), row => ({ paid_by: row.paid_by, amount: row.amount })),
+    [{ paid_by: 'Pooja', amount: 100 }, { paid_by: 'Household Pool', amount: 40 }],
+  );
 });
