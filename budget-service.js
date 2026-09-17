@@ -6,6 +6,8 @@ const MONTH_NAMES = new Set([
   'July', 'August', 'September', 'October', 'November', 'December',
 ]);
 const FUTURE_TARGET_RATE = 0.2;
+const FUTURE_SECTION = 'Future';
+const FUTURE_CATEGORY = 'Investment goal';
 
 function serviceError(code, message) {
   const error = new Error(message);
@@ -116,19 +118,32 @@ function buildSummary(lines, salary) {
   };
 }
 
-function buildFuturePerson({ person, salary, hasSalary, actual }) {
+function buildFuturePerson({ person, salary, hasSalary, actual, allocation }) {
   if (!hasSalary) {
     return {
-      person, hasSalary: false, salary: 0, target: null, actual,
+      person, hasSalary: false, salary: 0, minimum: null, target: null,
+      storedAllocation: allocation === undefined ? null : allocation, actual,
       difference: null, usage: null, status: 'salary_missing',
     };
   }
-  const target = salary * FUTURE_TARGET_RATE;
+  const minimum = salary * FUTURE_TARGET_RATE;
+  const target = Math.max(allocation === undefined ? minimum : allocation, minimum);
   const difference = actual - target;
   return {
-    person, hasSalary: true, salary, target, actual, difference,
+    person, hasSalary: true, salary, minimum, target, actual, difference,
     usage: usage(actual, target),
     status: difference > 0 ? 'above_target' : difference === 0 ? 'target_met' : 'below_target',
+  };
+}
+
+function applyFutureInvestmentSummary(summary, people) {
+  const targetsAvailable = people.length > 0 && people.every(person => person.target !== null);
+  return {
+    ...summary,
+    plannedInvestments: targetsAvailable
+      ? people.reduce((total, person) => total + person.target, 0)
+      : null,
+    actualInvestments: people.reduce((total, person) => total + person.actual, 0),
   };
 }
 
@@ -157,14 +172,15 @@ function combineBudgetResponses(first, second) {
   }
   const lines = [...linesByKey.values()];
   const salary = responses.reduce((total, response) => total + response.summary.salary, 0);
+  const futurePeople = responses.flatMap(response => response.future?.people || []);
   return {
     month: responses[0].month,
     person: 'all',
     hasBudget: responses.some(response => response.hasBudget),
     hasSalary: responses.length === PEOPLE.length && responses.every(response => response.hasSalary),
-    summary: buildSummary(lines, salary),
+    summary: applyFutureInvestmentSummary(buildSummary(lines, salary), futurePeople),
     sections: sectionFromLines(lines),
-    future: { people: responses.flatMap(response => response.future?.people || []) },
+    future: { people: futurePeople },
     unmappedCount: lines.filter(line => !line.hasMappings).length,
   };
 }
@@ -192,7 +208,14 @@ function createBudgetService(db, { validCategories = [] } = {}) {
   function replaceBudget({ month, person, lines }) {
     validateMonth(month);
     validatePerson(person);
-    return replaceLines({ month, person, lines: validateLines(lines) });
+    const validatedLines = validateLines(lines);
+    const futureLine = validatedLines.find(line =>
+      line.section === FUTURE_SECTION && line.category === FUTURE_CATEGORY && line.kind === 'investment');
+    const salaryRow = db.prepare('SELECT amount FROM salaries WHERE person = ? AND month = ?').get(person, month);
+    if (futureLine && salaryRow && futureLine.amount < Number(salaryRow.amount) * FUTURE_TARGET_RATE) {
+      throw serviceError('validation', 'Future allocation must be at least 20% of salary');
+    }
+    return replaceLines({ month, person, lines: validatedLines });
   }
 
   function getSingleBudget(month, person) {
@@ -225,7 +248,10 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       const share = Number(row.total) * (row.paid_by === 'Household Pool' ? 0.5 : 1);
       totals.set(row.category, (totals.get(row.category) || 0) + share);
     }
-    const lines = budgetRows.map(row => {
+    const futureBudgetRow = budgetRows.find(row =>
+      row.section === FUTURE_SECTION && row.category === FUTURE_CATEGORY && row.kind === 'investment');
+    const ordinaryBudgetRows = budgetRows.filter(row => row !== futureBudgetRow);
+    const lines = ordinaryBudgetRows.map(row => {
       const mappingKey = `${row.section}\u0000${row.category}\u0000${row.kind}`;
       const lineMappings = mappings.get(mappingKey) || [];
       const actual = lineMappings.reduce((total, category) =>
@@ -252,13 +278,14 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       salary,
       hasSalary: Boolean(salaryRow),
       actual: totals.get('Investment') || 0,
+      allocation: futureBudgetRow ? Number(futureBudgetRow.amount) : undefined,
     });
     return {
       month,
       person,
       hasBudget: budgetRows.length > 0,
       hasSalary: Boolean(salaryRow),
-      summary: buildSummary(lines, salary),
+      summary: applyFutureInvestmentSummary(buildSummary(lines, salary), [future]),
       sections: sectionFromLines(lines),
       future: { people: [future] },
       unmappedCount: lines.filter(line => !line.hasMappings).length,
@@ -270,6 +297,67 @@ function createBudgetService(db, { validCategories = [] } = {}) {
     validatePerson(person, { allowAll: true });
     if (person === 'all') return combineBudgetResponses(getSingleBudget(month, 'Pooja'), getSingleBudget(month, 'Kunal'));
     return getSingleBudget(month, person);
+  }
+
+  function getBudgetTransactions({ month, person, section, budgetCategory, kind }) {
+    validateMonth(month);
+    validatePerson(person, { allowAll: true });
+    section = nonEmptyString(section, 'Section');
+    budgetCategory = nonEmptyString(budgetCategory, 'Budget category');
+    validateKind(kind);
+
+    let transactionCategories;
+    if (section === 'Future' && kind === 'investment') {
+      if (person === 'all') throw serviceError('validation', 'Future transaction details require a person');
+      transactionCategories = ['Investment'];
+    } else {
+      const requestedPeople = person === 'all' ? PEOPLE : [person];
+      const contributingPeople = db.prepare(`
+        SELECT DISTINCT person FROM budgets
+        WHERE month = ? AND person IN (${requestedPeople.map(() => '?').join(', ')})
+          AND section = ? AND category = ? AND kind = ?
+      `).get(month, ...requestedPeople, section, budgetCategory, kind);
+      if (!contributingPeople) throw serviceError('not_found', 'Budget line not found');
+      transactionCategories = db.prepare(`
+        SELECT transaction_category FROM budget_category_mappings
+        WHERE section = ? AND budget_category = ? AND kind = ?
+        ORDER BY id
+      `).all(section, budgetCategory, kind).map(row => row.transaction_category);
+      transactionCategories = transactionCategories.filter(category =>
+        !EXCLUDED_CATEGORIES.includes(category) && !(kind === 'expense' && category === 'Investment'));
+    }
+
+    if (!transactionCategories.length) {
+      return { month, person, section, budgetCategory, kind, transactionCategories, total: 0, transactions: [] };
+    }
+    const contributingPeople = section === 'Future'
+      ? [person]
+      : db.prepare(`
+        SELECT DISTINCT person FROM budgets
+        WHERE month = ? AND person IN (${(person === 'all' ? PEOPLE : [person]).map(() => '?').join(', ')})
+          AND section = ? AND category = ? AND kind = ?
+      `).all(month, ...(person === 'all' ? PEOPLE : [person]), section, budgetCategory, kind).map(row => row.person);
+    const householdShare = contributingPeople.length / PEOPLE.length;
+    const rows = db.prepare(`
+      SELECT id, date, amount, description, payment_method, paid_by, expense_type,
+             category, mood, impulse, remarks, month
+      FROM transactions
+      WHERE month = ?
+        AND category IN (${transactionCategories.map(() => '?').join(', ')})
+        AND paid_by IN ('Pooja','Kunal','Household Pool')
+      ORDER BY id
+    `).all(month, ...transactionCategories).filter(row =>
+      contributingPeople.includes(row.paid_by) || row.paid_by === 'Household Pool'
+    ).map(row => ({
+      ...row,
+      amount: Number(row.amount),
+      countedAmount: Number(row.amount) * (row.paid_by === 'Household Pool' ? householdShare : 1),
+    }));
+    return {
+      month, person, section, budgetCategory, kind, transactionCategories,
+      total: rows.reduce((sum, row) => sum + row.countedAmount, 0),
+      transactions: rows,
+    };
   }
 
   function replaceMappings({ section, budgetCategory, kind, transactionCategories }) {
@@ -336,12 +424,27 @@ function createBudgetService(db, { validCategories = [] } = {}) {
         FROM budgets WHERE month = ? AND person = ?
       `);
       let count = 0;
-      for (const sourcePerson of sourcePeople) count += copy.run(targetMonth, sourceMonth, sourcePerson).changes;
+      const targetSalary = db.prepare(`SELECT amount FROM salaries WHERE month = ? AND person = ?`);
+      const raiseFutureAllocation = db.prepare(`
+        UPDATE budgets
+        SET amount = ?, updated_at = datetime('now')
+        WHERE month = ? AND person = ? AND section = ? AND category = ? AND kind = 'investment' AND amount < ?
+      `);
+      for (const sourcePerson of sourcePeople) {
+        count += copy.run(targetMonth, sourceMonth, sourcePerson).changes;
+        const salaryRow = targetSalary.get(targetMonth, sourcePerson);
+        if (salaryRow) {
+          const minimum = Number(salaryRow.amount) * FUTURE_TARGET_RATE;
+          raiseFutureAllocation.run(
+            minimum, targetMonth, sourcePerson, FUTURE_SECTION, FUTURE_CATEGORY, minimum,
+          );
+        }
+      }
       return { saved: true, count };
     })();
   }
 
-  return { getBudget, replaceBudget, replaceMappings, copyBudget };
+  return { getBudget, getBudgetTransactions, replaceBudget, replaceMappings, copyBudget };
 }
 
 module.exports = { createBudgetService, validateMonth, validatePerson, lineStatus, combineBudgetResponses };

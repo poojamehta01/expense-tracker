@@ -145,6 +145,16 @@ function registerBudgetRoutes(app, service) {
     }));
   });
 
+  app.get('/api/budget-transactions', (req, res) => {
+    sendServiceResult(res, () => service.getBudgetTransactions({
+      month: req.query.month,
+      person: req.query.person || 'all',
+      section: req.query.section,
+      budgetCategory: req.query.budgetCategory,
+      kind: req.query.kind,
+    }));
+  });
+
   app.put('/api/budget/:month', (req, res) => {
     const { person, lines } = req.body || {};
     sendServiceResult(res, () => service.replaceBudget({ month: req.params.month, person, lines }));

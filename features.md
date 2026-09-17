@@ -181,13 +181,13 @@ September planned investments are ₹0. Combined is calculated from the two pers
 - **Actual spending** — qualifying transactions attributed through tracker-category mappings.
 - **Remaining** — expense budget minus actual spending. A negative result is overspent; it is not savings.
 - **Monthly savings** — recorded salary minus qualifying actual spending. Missing salary displays `—`, while a recorded zero salary remains a valid value.
-- **Investments** — planned and actual investment totals, kept separate from ordinary expense budget and spending.
+- **Investments** — the planned value is the saved Future allocation (defaulting to the mandatory 20% salary minimum) and the actual value is the total of transactions categorized as `Investment`, kept separate from ordinary expense budget and spending.
 
-### Future: Mandatory Monthly Investing
+### Future: Monthly Investment Allocation
 
-The read-only **Future** section sets a minimum investment target equal to 20% of each person's recorded monthly salary. Actual progress comes only from that person's transactions categorized as `Investment`; unspent salary does not count. The section reports the remaining shortfall, exact target completion, or any surplus above the target.
+The **Future** section defaults each person's monthly investment allocation to 20% of recorded salary. In personal Edit budget mode, the allocation may be increased manually but cannot be saved below that mandatory minimum. Actual progress comes only from that person's transactions categorized as `Investment`; unspent salary does not count. The section reports the remaining shortfall, exact plan completion, or any surplus above the allocation.
 
-Combined keeps separate Pooja and Kunal rows, so one person's additional investing cannot hide the other person's shortfall. If a salary has not been recorded for the selected month, the target is shown as unavailable until the salary is added.
+The allocation is stored with the person's monthly budget, so copying a month also copies the Future plan. Combined keeps separate Pooja and Kunal rows, so one person's additional investing cannot hide the other person's shortfall. If a salary has not been recorded for the selected month, the plan is shown as unavailable until the salary is added.
 
 Budget actuals exclude `Credit Card Payment`, `Settlement`, and `Refunded`. Unmapped tracker categories are not silently assigned, and investment actuals do not increase ordinary expense actuals.
 

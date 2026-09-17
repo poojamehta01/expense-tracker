@@ -61,6 +61,8 @@ test('Budget navigation and render targets are present', () => {
   assert.match(html, /id="budgetPersonPicker"/);
   assert.match(html, /id="budgetSummary"/);
   assert.match(html, /id="budgetSections"/);
+  assert.match(html, /id="budgetTransactionsModal"/);
+  assert.match(html, /id="budgetTransactionsBody"/);
 });
 
 test('budget status presentation uses the mapping warning treatment', () => {
@@ -170,6 +172,7 @@ function budgetFixture(person = 'Pooja') {
         person: person === 'all' ? 'Pooja' : person,
         hasSalary: true,
         salary: 5000,
+        minimum: 1000,
         target: 1000,
         actual: 1250,
         difference: 250,
@@ -210,6 +213,7 @@ function createBudgetWorkflow({
   responses = [],
   person = 'Pooja',
   amountValues = ['0', '1000'],
+  futureAmountValues = ['1000'],
   checkedCategories = [],
   monthOptions = null,
   selectedMonth = 'September_2026',
@@ -222,6 +226,7 @@ function createBudgetWorkflow({
   assert.notEqual(end, -1, 'budget workflow slice must have an end marker');
 
   const amountInputs = amountValues.map(value => element({ value }));
+  const futureAmountInputs = futureAmountValues.map(value => element({ value }));
   const mappingInputs = checkedCategories.map(value => element({ value, checked: true }));
   const dashboardOptions = monthOptions || [
     { value: 'August_2026', textContent: 'August 2026' },
@@ -244,6 +249,11 @@ function createBudgetWorkflow({
     budgetMappingHint: element(),
     budgetMappingCategories: element(),
     budgetMappingSaveBtn: element(),
+    budgetTransactionsModal: element({ hidden: true }),
+    budgetTransactionsTitle: element(),
+    budgetTransactionsSubtitle: element(),
+    budgetTransactionsTotal: element(),
+    budgetTransactionsBody: element(),
     budgetCopyModal: element({ hidden: true }),
     budgetCopyTargetMonth: element({ value: 'October_2026' }),
     budgetCopyMessage: element(),
@@ -264,6 +274,7 @@ function createBudgetWorkflow({
       createElement: tag => element({ tagName: tag.toUpperCase() }),
       querySelectorAll: selector => {
         if (selector === '.budget-amount-input') return amountInputs;
+        if (selector === '.budget-future-input') return futureAmountInputs;
         if (selector === '#budgetMappingCategories input:checked') return mappingInputs;
         if (selector === '.tab-btn') return tabButtons;
         if (selector === '.global-filter-btn') return globalFilterButtons;
@@ -296,6 +307,7 @@ function createBudgetWorkflow({
      globalThis.workflowForTest = {
        initBudgetTab, loadBudget, renderBudget, beginBudgetEdit, cancelBudgetEdit,
        saveBudget, openBudgetMapping, saveBudgetMapping, copyBudgetMonth,
+       openBudgetTransactions, closeBudgetTransactions,
        openBudgetCopy, closeBudgetCopy,
        setData(data, selectedPerson = data.person) {
          budgetState.month = data.month;
@@ -310,7 +322,7 @@ function createBudgetWorkflow({
      };`,
     context
   );
-  return { workflow: context.workflowForTest, elements, amountInputs, requests, dashboardLoads, dashboardBudgetLoads, tabButtons, globalFilterButtons, documentListeners };
+  return { workflow: context.workflowForTest, elements, amountInputs, futureAmountInputs, requests, dashboardLoads, dashboardBudgetLoads, tabButtons, globalFilterButtons, documentListeners };
 }
 
 test('clicking a rendered Map button opens the mapping modal through delegated handling', () => {
@@ -325,6 +337,66 @@ test('clicking a rendered Map button opens the mapping modal through delegated h
 
   assert.equal(elements.budgetMappingModal.classList.contains('hidden'), false);
   assert.equal(elements.budgetMappingLabel.textContent, 'Home · Utilities');
+});
+
+test('clicking a budget item opens transaction details that explain household-pool sharing', async () => {
+  const details = {
+    total: 700,
+    transactionCategories: ['Outside Food'],
+    transactions: [
+      { id: 1, date: '2 September 2026', description: 'Dinner', category: 'Outside Food', paid_by: 'Pooja', payment_method: 'HDFC_Credit_Card', amount: 300, countedAmount: 300 },
+      { id: 2, date: '3 September 2026', description: 'Groceries', category: 'Outside Food', paid_by: 'Household Pool', payment_method: 'SBI_Debit_Card', amount: 800, countedAmount: 400 },
+    ],
+  };
+  const { workflow, elements, requests, documentListeners } = createBudgetWorkflow({
+    responses: [{ ok: true, status: 200, body: details }],
+  });
+  workflow.setData(budgetFixture());
+  workflow.renderBudget();
+  assert.match(elements.budgetSections.innerHTML, /data-budget-transactions/);
+  const row = element({ dataset: { section: 'Home', category: 'Rent', kind: 'expense' } });
+
+  await documentListeners.click({
+    target: { closest: selector => selector === '[data-budget-transactions]' ? row : null },
+  });
+
+  assert.equal(elements.budgetTransactionsModal.classList.contains('hidden'), false);
+  assert.equal(elements.budgetTransactionsTitle.textContent, 'Home · Rent');
+  assert.equal(elements.budgetTransactionsTotal.textContent, '₹700 counted');
+  assert.match(elements.budgetTransactionsBody.innerHTML, /Dinner/);
+  assert.match(elements.budgetTransactionsBody.innerHTML, /Groceries/);
+  assert.match(elements.budgetTransactionsBody.innerHTML, /₹800/);
+  assert.match(elements.budgetTransactionsBody.innerHTML, /₹400 counted/);
+  assert.match(elements.budgetTransactionsBody.innerHTML, /50% household share/);
+  assert.match(requests[0].url, /\/api\/budget-transactions\?/);
+  assert.match(requests[0].url, /budgetCategory=Rent/);
+});
+
+test('transaction details show an empty state for an unmapped budget item', async () => {
+  const { workflow, elements } = createBudgetWorkflow({
+    responses: [{ ok: true, status: 200, body: { total: 0, transactionCategories: [], transactions: [] } }],
+  });
+  workflow.setData(budgetFixture());
+
+  await workflow.openBudgetTransactions(element({ dataset: { section: 'Home', category: 'Utilities', kind: 'expense' } }));
+
+  assert.match(elements.budgetTransactionsSubtitle.textContent, /No tracker categories mapped/);
+  assert.match(elements.budgetTransactionsBody.innerHTML, /No transactions to show/);
+});
+
+test('Future rows request investment transactions for their specific person', async () => {
+  const { workflow, elements, requests } = createBudgetWorkflow({
+    person: 'all',
+    responses: [{ ok: true, status: 200, body: { total: 5000, transactionCategories: ['Investment'], transactions: [] } }],
+  });
+  workflow.setData(budgetFixture('all'), 'all');
+  workflow.renderBudget();
+  const futureRow = element({ dataset: { section: 'Future', category: '20% of salary', kind: 'investment', person: 'Pooja' } });
+
+  await workflow.openBudgetTransactions(futureRow);
+
+  assert.match(requests[0].url, /person=Pooja/);
+  assert.equal(elements.budgetTransactionsTitle.textContent, 'Future · Pooja');
 });
 
 test('Combined budgets remain read-only and server labels are escaped in API order', () => {
@@ -425,34 +497,63 @@ test('a personal budget edit renders numeric inputs without blanking zero', () =
   assert.match(elements.budgetSections.innerHTML, /class="[^"]*budget-amount-input[^"]*"[^>]*type="number"[^>]*value="0"/);
 });
 
-test('renders Future as a read-only mandatory investment section', () => {
+test('renders Future allocation as editable only during personal budget editing', () => {
   const { workflow, elements } = createBudgetWorkflow();
   workflow.setData(budgetFixture());
 
   workflow.renderBudget();
 
   assert.match(elements.budgetSections.innerHTML, />Future</);
-  assert.match(elements.budgetSections.innerHTML, /Pooja · 20% of salary/);
+  assert.match(elements.budgetSections.innerHTML, /Pooja · Future investment/);
   assert.match(elements.budgetSections.innerHTML, /Above target/);
   assert.match(elements.budgetSections.innerHTML, /\+₹250/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /budget-future-input/);
   assert.doesNotMatch(elements.budgetSections.innerHTML, /data-section="Future"[^]*data-budget-map/);
+
+  workflow.beginBudgetEdit();
+  assert.match(elements.budgetSections.innerHTML, /class="[^"]*budget-future-input[^"]*"[^>]*value="1000"/);
+  assert.match(elements.budgetSections.innerHTML, /Minimum ₹1000/);
+});
+
+test('Investments summary uses the Future target and transaction actual', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.summary.plannedInvestments = 1000;
+  data.summary.actualInvestments = 1250;
+  workflow.setData(data);
+
+  workflow.renderBudget();
+
+  assert.match(elements.budgetSummary.innerHTML, /₹1000 planned · ₹1250 actual/);
+});
+
+test('Investments summary shows an unavailable plan when salary is missing', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.summary.plannedInvestments = null;
+  data.summary.actualInvestments = 1250;
+  workflow.setData(data);
+
+  workflow.renderBudget();
+
+  assert.match(elements.budgetSummary.innerHTML, /— planned · ₹1250 actual/);
 });
 
 test('Combined Future keeps separate mandatory targets for Pooja and Kunal', () => {
   const { workflow, elements } = createBudgetWorkflow({ person: 'all' });
   const data = budgetFixture('all');
   data.future.people = [
-    { person: 'Pooja', hasSalary: true, salary: 100000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' },
-    { person: 'Kunal', hasSalary: true, salary: 50000, target: 10000, actual: 5000, difference: -5000, usage: 0.5, status: 'below_target' },
+    { person: 'Pooja', hasSalary: true, salary: 100000, minimum: 20000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' },
+    { person: 'Kunal', hasSalary: true, salary: 50000, minimum: 10000, target: 10000, actual: 5000, difference: -5000, usage: 0.5, status: 'below_target' },
   ];
   workflow.setData(data, 'all');
 
   workflow.renderBudget();
 
-  assert.match(elements.budgetSections.innerHTML, /Pooja · 20% of salary/);
-  assert.match(elements.budgetSections.innerHTML, /Kunal · 20% of salary/);
+  assert.match(elements.budgetSections.innerHTML, /Pooja · Future investment/);
+  assert.match(elements.budgetSections.innerHTML, /Kunal · Future investment/);
   assert.match(elements.budgetSections.innerHTML, /Above target/);
-  assert.match(elements.budgetSections.innerHTML, /Below mandatory target/);
+  assert.match(elements.budgetSections.innerHTML, /Below plan/);
 });
 
 test('renders Future even when no ordinary budget exists', () => {
@@ -468,19 +569,19 @@ test('renders Future even when no ordinary budget exists', () => {
   assert.equal(elements.budgetEmpty.classList.contains('hidden'), false);
 });
 
-test('Future header keeps the minimum unavailable when any salary is missing', () => {
+test('Future header keeps the plan unavailable when any salary is missing', () => {
   const { workflow, elements } = createBudgetWorkflow({ person: 'all' });
   const data = budgetFixture('all');
   data.future.people = [
-    { person: 'Pooja', hasSalary: true, salary: 100000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' },
-    { person: 'Kunal', hasSalary: false, salary: 0, target: null, actual: 5000, difference: null, usage: null, status: 'salary_missing' },
+    { person: 'Pooja', hasSalary: true, salary: 100000, minimum: 20000, target: 20000, actual: 25000, difference: 5000, usage: 1.25, status: 'above_target' },
+    { person: 'Kunal', hasSalary: false, salary: 0, minimum: null, target: null, actual: 5000, difference: null, usage: null, status: 'salary_missing' },
   ];
   workflow.setData(data, 'all');
 
   workflow.renderBudget();
 
-  assert.match(elements.budgetSections.innerHTML, /₹30000 invested · minimum unavailable/);
-  assert.doesNotMatch(elements.budgetSections.innerHTML, /₹20000 minimum/);
+  assert.match(elements.budgetSections.innerHTML, /₹30000 invested · plan unavailable/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /₹20000 planned/);
 });
 
 test('editing locks navigation but Map explains how to preserve unsaved budget amounts', () => {
@@ -512,6 +613,7 @@ test('editing locks navigation but Map explains how to preserve unsaved budget a
 test('saving sends the complete person line set, refreshes the card, and unlocks navigation', async () => {
   const { workflow, elements, requests, dashboardLoads, tabButtons, globalFilterButtons } = createBudgetWorkflow({
     amountValues: ['0', '1250'],
+    futureAmountValues: ['1500'],
     responses: [
       { ok: true, status: 200, body: { saved: true, count: 2 } },
       { ok: true, status: 200, body: budgetFixture() },
@@ -529,6 +631,7 @@ test('saving sends the complete person line set, refreshes the card, and unlocks
     lines: [
       { section: 'Home', category: 'Rent', kind: 'expense', amount: 0, sort_order: 0 },
       { section: 'Home', category: 'Utilities', kind: 'expense', amount: 1250, sort_order: 1 },
+      { section: 'Future', category: 'Investment goal', kind: 'investment', amount: 1500, sort_order: 0 },
     ],
   });
   assert.deepEqual(dashboardLoads, []);
@@ -554,6 +657,32 @@ test('a failed save retains edited values and displays the server error', async 
   assert.equal(amountInputs[0].value, '75');
   assert.equal(elements.budgetError.textContent, 'Budget amount is invalid');
   assert.equal(elements.budgetError.classList.contains('hidden'), false);
+});
+
+test('saving ordinary edits preserves a stored Future allocation when salary is missing', async () => {
+  const { workflow, requests } = createBudgetWorkflow({
+    amountValues: ['0', '1000'],
+    futureAmountValues: [],
+    responses: [
+      { ok: true, status: 200, body: { saved: true, count: 3 } },
+      { ok: true, status: 200, body: budgetFixture() },
+    ],
+  });
+  const data = budgetFixture();
+  data.hasSalary = false;
+  data.future.people = [{
+    person: 'Pooja', hasSalary: false, salary: 0, minimum: null, target: null,
+    storedAllocation: 1500, actual: 0, difference: null, usage: null, status: 'salary_missing',
+  }];
+  workflow.setData(data);
+  workflow.beginBudgetEdit();
+
+  await workflow.saveBudget();
+
+  const payload = JSON.parse(requests.find(request => request.options.method === 'PUT').options.body);
+  assert.deepEqual(payload.lines.at(-1), {
+    section: 'Future', category: 'Investment goal', kind: 'investment', amount: 1500, sort_order: 0,
+  });
 });
 
 test('saving a different Budget month refreshes only the Dashboard card for its selected month', async () => {

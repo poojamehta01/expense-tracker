@@ -1607,6 +1607,29 @@ body.dark .budget-summary-card { background: var(--white) !important; }
 .budget-table th:last-child { width: 15%; }
 .budget-table td { padding: 10px 8px; vertical-align: top; overflow-wrap: anywhere; }
 .budget-category-cell strong { color: var(--text); }
+.budget-transaction-row { cursor: pointer; transition: background 0.15s ease; }
+.budget-transaction-row:hover { background: var(--bg); }
+.budget-transaction-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.budget-transactions-modal { max-width: 820px; }
+.budget-transactions-subtitle { margin: 4px 0 0; color: var(--text-muted); font-size: 12px; }
+.budget-transactions-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 20px; color: var(--text-muted); background: var(--bg);
+  border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.budget-transactions-summary strong { color: var(--text); font-size: 16px; }
+.budget-transactions-body { padding: 0; gap: 0; }
+.budget-transactions-table-wrap { overflow: auto; }
+.budget-transactions-table { width: 100%; }
+.budget-transactions-table th:first-child { width: 18%; }
+.budget-transactions-table th:nth-child(2) { width: 40%; }
+.budget-transactions-table th:nth-child(3) { width: 20%; }
+.budget-transactions-table th:last-child { width: 22%; text-align: right; }
+.budget-transactions-table td:last-child { text-align: right; }
+.budget-transactions-table td span { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+.budget-transactions-empty { padding: 32px 20px; color: var(--text-muted); text-align: center; }
+.budget-transactions-error { color: var(--error); }
 
 .budget-status {
   display: inline-flex;
@@ -1764,6 +1787,19 @@ body.dark .budget-edit-input { background: var(--bg); }
   .budget-category-cell strong { font-size: 15px; }
   .budget-edit-input { min-width: 0; max-width: none; }
   .budget-table td:last-child .btn-secondary { width: 100%; }
+  .budget-transactions-summary { align-items: flex-start; flex-direction: column; gap: 4px; padding: 12px 16px; }
+  .budget-transactions-table,
+  .budget-transactions-table tbody { display: block; width: 100%; }
+  .budget-transactions-table thead { display: none; }
+  .budget-transactions-table tbody { padding: 10px; }
+  .budget-transactions-table tr { display: block; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+  .budget-transactions-table tr + tr { margin-top: 10px; }
+  .budget-transactions-table td,
+  .budget-transactions-table td:last-child { display: block; padding: 4px 0; border: 0; text-align: left; }
+  .budget-transactions-table td::before {
+    content: attr(data-label); display: block; margin-bottom: 2px; color: var(--text-muted);
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  }
   #budgetMappingCategories { grid-template-columns: 1fr; }
   .budget-modal { padding: 8px; }
   .budget-modal .modal-card { max-height: calc(100dvh - 16px); }

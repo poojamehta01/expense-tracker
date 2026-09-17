@@ -3237,7 +3237,7 @@ function budgetUsagePresentation({ budget, actual, usage }) {
 }
 
 const FUTURE_STATUS = {
-  below_target: ['Below mandatory target', 'budget-status--bad'],
+  below_target: ['Below plan', 'budget-status--bad'],
   target_met: ['Target met', 'budget-status--good'],
   above_target: ['Above target', 'budget-status--good'],
   salary_missing: ['Salary needed', 'budget-status--watch'],
@@ -3454,6 +3454,7 @@ const budgetState = {
   copySourceMonth: '',
   copySourceStatus: 'idle',
   loadSequence: 0,
+  transactionLoadSequence: 0,
 };
 const collapsedBudgetSections = new Set();
 
@@ -3527,6 +3528,7 @@ async function loadBudget() {
   document.getElementById('budgetCopyBtn').disabled = true;
   document.getElementById('budgetCancelBtn')?.classList.add('hidden');
   document.getElementById('budgetMappingModal')?.classList.add('hidden');
+  closeBudgetTransactions();
 
   const isActiveLoad = () =>
     loadSequence === budgetState.loadSequence &&
@@ -3626,7 +3628,10 @@ function renderBudget() {
   }
 
   const values = data.summary || {};
-  const investmentValue = `${formatCurrency(values.plannedInvestments)} planned · ${formatCurrency(values.actualInvestments)} actual`;
+  const plannedInvestmentValue = values.plannedInvestments === null || values.plannedInvestments === undefined
+    ? '—'
+    : formatCurrency(values.plannedInvestments);
+  const investmentValue = `${plannedInvestmentValue} planned · ${formatCurrency(values.actualInvestments)} actual`;
   const cards = [
     ['Expense budget', formatCurrency(values.expenseBudget)],
     ['Actual spending', formatCurrency(values.actualSpending)],
@@ -3660,8 +3665,11 @@ function renderBudget() {
       const mappingAction = readOnly
         ? '<span class="cell-empty">—</span>'
         : `<button type="button" class="btn-secondary small" ${budgetState.saving ? 'disabled ' : ''}data-budget-map data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">Map</button>`;
+      const transactionAction = budgetState.editing
+        ? ''
+        : ' class="budget-transaction-row" data-budget-transactions tabindex="0" role="button"';
       return `
-        <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
+        <tr${transactionAction} data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
           <td class="budget-category-cell" data-label="Category"><strong>${esc(line.category)}</strong><div class="budget-mapping-row">${mappings}</div></td>
           <td data-label="Budget">${amount}</td>
           <td data-label="Actual">${formatCurrency(line.actual)}</td>
@@ -3693,8 +3701,8 @@ function renderBudget() {
   const hasUnavailableFutureTarget = futurePeople.some(row => row.target === null);
   const futureTarget = futurePeople.reduce((total, row) => total + Number(row.target || 0), 0);
   const futureTargetLabel = hasUnavailableFutureTarget
-    ? 'minimum unavailable'
-    : `${formatCurrency(futureTarget)} minimum`;
+    ? 'plan unavailable'
+    : `${formatCurrency(futureTarget)} planned`;
   const futureActual = futurePeople.reduce((total, row) => total + Number(row.actual || 0), 0);
   const futureRows = futurePeople.map(row => {
     const status = futureStatusPresentation(row.status);
@@ -3706,10 +3714,17 @@ function renderBudget() {
       : row.difference >= 0
         ? `+${formatCurrency(row.difference)} surplus`
         : `${formatCurrency(Math.abs(row.difference))} shortfall`;
+    const allocation = budgetState.editing && !readOnly && row.target !== null
+      ? `<input class="budget-future-input budget-edit-input" type="number" min="${esc(row.minimum)}" step="1" value="${esc(row.target)}" data-future-person="${esc(row.person)}">`
+      : row.target === null ? '—' : formatCurrency(row.target);
+    const minimumLabel = row.minimum === null ? 'Salary required' : `Minimum ${formatCurrency(row.minimum)}`;
+    const transactionAction = budgetState.editing
+      ? ''
+      : ' class="budget-transaction-row" data-budget-transactions tabindex="0" role="button"';
     return `
-      <tr data-section="Future" data-person="${esc(row.person)}">
-        <td class="budget-category-cell" data-label="Goal"><strong>${esc(row.person)} · 20% of salary</strong><div class="budget-mapping-row"><span class="budget-mapping-chip">Mandatory monthly minimum</span></div></td>
-        <td data-label="Minimum target">${row.target === null ? '—' : formatCurrency(row.target)}</td>
+      <tr${transactionAction} data-section="Future" data-category="20% of salary" data-kind="investment" data-person="${esc(row.person)}">
+        <td class="budget-category-cell" data-label="Goal"><strong>${esc(row.person)} · Future investment</strong><div class="budget-mapping-row"><span class="budget-mapping-chip">${minimumLabel}</span></div></td>
+        <td data-label="Planned allocation">${allocation}</td>
         <td data-label="Invested">${formatCurrency(row.actual)}</td>
         <td data-label="Result">${difference}</td>
         <td data-label="Status">
@@ -3728,7 +3743,7 @@ function renderBudget() {
       </div>
       <div class="table-wrapper" ${futureCollapsed ? 'hidden' : ''}>
         <table class="budget-table">
-          <thead><tr><th>Goal</th><th>Minimum target</th><th>Invested</th><th>Result</th><th>Status</th><th>Source</th></tr></thead>
+          <thead><tr><th>Goal</th><th>Planned allocation</th><th>Invested</th><th>Result</th><th>Status</th><th>Source</th></tr></thead>
           <tbody>${futureRows}</tbody>
         </table>
       </div>
@@ -3770,6 +3785,24 @@ async function saveBudget() {
     }),
   }));
   const lines = buildBudgetSaveLines(editedSections);
+  const futureInput = document.querySelectorAll('.budget-future-input')[0];
+  const futurePerson = (budgetState.data.future?.people || []).find(row => row.person === budgetState.person);
+  if (futureInput && futurePerson) {
+    const futureAmount = Number(futureInput.value);
+    if (!Number.isFinite(futureAmount) || futureAmount < Number(futurePerson.minimum)) {
+      showBudgetError(`Future allocation must be at least ${formatCurrency(futurePerson.minimum)} (20% of salary)`);
+      return;
+    }
+    lines.push({
+      section: 'Future', category: 'Investment goal', kind: 'investment',
+      amount: futureAmount, sort_order: 0,
+    });
+  } else if (futurePerson?.storedAllocation !== null && futurePerson?.storedAllocation !== undefined) {
+    lines.push({
+      section: 'Future', category: 'Investment goal', kind: 'investment',
+      amount: Number(futurePerson.storedAllocation), sort_order: 0,
+    });
+  }
   if (lines.some(line => !Number.isFinite(line.amount) || line.amount < 0)) {
     showBudgetError('Budget amounts must be non-negative numbers');
     return;
@@ -3846,8 +3879,87 @@ function openBudgetMapping(target) {
 
 document.addEventListener('click', event => {
   const button = event.target?.closest?.('[data-budget-map]');
-  if (button) openBudgetMapping(button);
+  if (button) {
+    openBudgetMapping(button);
+    return;
+  }
+  const row = event.target?.closest?.('[data-budget-transactions]');
+  if (row) return openBudgetTransactions(row);
 });
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const row = event.target?.closest?.('[data-budget-transactions]');
+  if (!row || event.target?.closest?.('button, input, select, textarea')) return;
+  event.preventDefault();
+  openBudgetTransactions(row);
+});
+
+async function openBudgetTransactions(target) {
+  if (budgetState.editing || !target?.dataset) return;
+  const selectedPerson = target.dataset.person || budgetState.person;
+  const section = target.dataset.section;
+  const category = target.dataset.category;
+  const kind = target.dataset.kind;
+  if (!section || !category || !kind) return;
+
+  const modal = document.getElementById('budgetTransactionsModal');
+  const title = document.getElementById('budgetTransactionsTitle');
+  const subtitle = document.getElementById('budgetTransactionsSubtitle');
+  const total = document.getElementById('budgetTransactionsTotal');
+  const body = document.getElementById('budgetTransactionsBody');
+  const loadSequence = ++budgetState.transactionLoadSequence;
+  title.textContent = section === 'Future' ? `Future · ${selectedPerson}` : `${section} · ${category}`;
+  subtitle.textContent = 'Loading mapped transactions…';
+  total.textContent = '';
+  body.innerHTML = '<div class="budget-transactions-empty">Loading transactions…</div>';
+  modal.classList.remove('hidden');
+
+  const query = [
+    ['month', budgetState.month], ['person', selectedPerson], ['section', section],
+    ['budgetCategory', category], ['kind', kind],
+  ].map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
+  try {
+    const response = await fetch(`/api/budget-transactions?${query}`);
+    const data = await budgetResponseJson(response);
+    if (loadSequence !== budgetState.transactionLoadSequence) return;
+    if (!response.ok) throw new Error(data.error || 'Failed to load transactions');
+    const mappings = data.transactionCategories || [];
+    subtitle.textContent = mappings.length
+      ? `Tracker categories: ${mappings.join(', ')}`
+      : 'No tracker categories mapped to this budget item.';
+    total.textContent = `${formatCurrency(data.total || 0)} counted`;
+    if (!(data.transactions || []).length) {
+      body.innerHTML = '<div class="budget-transactions-empty">No transactions to show for this item and month.</div>';
+      return;
+    }
+    body.innerHTML = `
+      <div class="budget-transactions-table-wrap">
+        <table class="budget-transactions-table">
+          <thead><tr><th>Date</th><th>Transaction</th><th>Paid by</th><th>Amount</th></tr></thead>
+          <tbody>${data.transactions.map(transaction => {
+            const shared = transaction.paid_by === 'Household Pool' && Number(transaction.countedAmount) !== Number(transaction.amount);
+            return `<tr>
+              <td data-label="Date">${esc(transaction.date || '—')}</td>
+              <td data-label="Transaction"><strong>${esc(transaction.description || '—')}</strong><span>${esc(transaction.category || '—')} · ${esc(String(transaction.payment_method || '—').replace(/_/g, ' '))}</span></td>
+              <td data-label="Paid by">${esc(transaction.paid_by || '—')}</td>
+              <td data-label="Amount"><strong>${formatCurrency(transaction.amount)}</strong>${shared ? `<span>${formatCurrency(transaction.countedAmount)} counted · 50% household share</span>` : ''}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+  } catch (error) {
+    if (loadSequence !== budgetState.transactionLoadSequence) return;
+    subtitle.textContent = '';
+    total.textContent = '';
+    body.innerHTML = `<div class="budget-transactions-empty budget-transactions-error">${esc(error.message || 'Failed to load transactions')}</div>`;
+  }
+}
+
+function closeBudgetTransactions() {
+  budgetState.transactionLoadSequence++;
+  document.getElementById('budgetTransactionsModal')?.classList.add('hidden');
+}
 
 function closeBudgetMapping() {
   document.getElementById('budgetMappingModal').classList.add('hidden');

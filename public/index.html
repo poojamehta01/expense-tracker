@@ -629,6 +629,27 @@
     </main>
   </div>
 
+  <!-- Budget Transactions Modal -->
+  <div id="budgetTransactionsModal" class="modal-overlay budget-modal hidden" onclick="if(event.target===this)closeBudgetTransactions()">
+    <div class="modal-card budget-transactions-modal">
+      <div class="modal-header">
+        <div>
+          <h2 id="budgetTransactionsTitle">Transactions</h2>
+          <p id="budgetTransactionsSubtitle" class="budget-transactions-subtitle"></p>
+        </div>
+        <button class="modal-close" onclick="closeBudgetTransactions()" aria-label="Close transaction details">×</button>
+      </div>
+      <div class="budget-transactions-summary">
+        <span>Amount contributing to this budget item</span>
+        <strong id="budgetTransactionsTotal"></strong>
+      </div>
+      <div id="budgetTransactionsBody" class="modal-body budget-transactions-body"></div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeBudgetTransactions()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Budget Mapping Modal -->
   <div id="budgetMappingModal" class="modal-overlay budget-modal hidden" onclick="if(event.target===this)closeBudgetMapping()">
     <div class="modal-card modal-card--sm">

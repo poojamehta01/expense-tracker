@@ -29,6 +29,7 @@ function createResponse() {
 function createService(overrides = {}) {
   return {
     getBudget: (...args) => ({ operation: 'get', args }),
+    getBudgetTransactions: (...args) => ({ operation: 'transactions', args }),
     replaceBudget: (...args) => ({ operation: 'replace', args }),
     replaceMappings: (...args) => ({ operation: 'mappings', args }),
     copyBudget: (...args) => ({ operation: 'copy', args }),
@@ -52,6 +53,24 @@ test('GET budget defaults person to all and returns service data', () => {
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { month: 'September_2026', person: 'all', hasBudget: true });
+});
+
+test('GET budget transactions forwards the selected budget item', () => {
+  const app = createApp();
+  let received;
+  registerBudgetRoutes(app, createService({
+    getBudgetTransactions: input => { received = input; return { total: 700, transactions: [] }; },
+  }));
+
+  const res = createResponse();
+  route(app, 'GET', '/api/budget-transactions')({ query: {
+    month: 'September_2026', person: 'Pooja', section: 'Food', budgetCategory: 'Dining', kind: 'expense',
+  } }, res);
+
+  assert.deepEqual(received, {
+    month: 'September_2026', person: 'Pooja', section: 'Food', budgetCategory: 'Dining', kind: 'expense',
+  });
+  assert.deepEqual(res.body, { total: 700, transactions: [] });
 });
 
 test('PUT budget uses path month and body person/lines', () => {
