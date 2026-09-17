@@ -874,6 +874,7 @@ function createDashboardWorkflow({
     document: {
       getElementById: id => elements[id] || null,
       querySelectorAll: () => [],
+      addEventListener() {},
     },
     fetch: async url => {
       requests.push(url);

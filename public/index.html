@@ -35,11 +35,11 @@
 
     <!-- Tab nav -->
     <nav class="tab-nav">
-      <button class="tab-btn active" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
-      <button class="tab-btn" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
-      <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
-      <button class="tab-btn" onclick="switchTab('salary')" id="tab-btn-salary">Salary</button>
+      <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
+      <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
       <button class="tab-btn" id="tab-btn-budget" onclick="switchTab('budget')">Budget</button>
+      <button class="tab-btn" onclick="switchTab('salary')" id="tab-btn-salary">Salary</button>
+      <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
       <button class="tab-btn" onclick="switchTab('ask')" id="tab-btn-ask">Ask AI</button>
       <button class="tab-btn" onclick="switchTab('ai-memory')" id="tab-btn-ai-memory">🧠 AI Memory</button>
       <div class="tab-nav-spacer"></div>
@@ -63,6 +63,7 @@
             <select id="monthPicker" onchange="loadDashboard(this.value)"></select>
           </div>
           <div class="toolbar-right">
+            <button class="btn-secondary" id="monthlyNotesButton" type="button" onclick="openMonthlyNotes()">Notes</button>
             <button class="btn-secondary" onclick="openAuditModal()">Edit History</button>
             <button class="btn-secondary" onclick="exportToSheets()">Export to Google Sheets</button>
           </div>
@@ -100,22 +101,6 @@
             <div id="dashboardBudgetUsage" class="dashboard-budget-card__usage"></div>
           </div>
           <button id="dashboardBudgetAction" class="btn-secondary" type="button" onclick="openBudgetDetails()">View budget</button>
-        </section>
-
-        <section class="monthly-notes-card" aria-labelledby="monthlyNotesTitle">
-          <div class="monthly-notes-header">
-            <div>
-              <div class="kpi-label">Shared</div>
-              <h2 id="monthlyNotesTitle">Notes</h2>
-            </div>
-            <span id="monthlyNotesStatus" class="monthly-notes-status" aria-live="polite"></span>
-          </div>
-          <div id="monthlyNotesList" class="monthly-notes-list"></div>
-          <div class="monthly-notes-compose">
-            <label class="sr-only" for="monthlyNoteInput">Add a shared note for this month</label>
-            <textarea id="monthlyNoteInput" rows="2" maxlength="1000" placeholder="Add a note for this month…"></textarea>
-            <button id="monthlyNoteAdd" class="btn-primary" type="button" onclick="addMonthlyNote()">Add note</button>
-          </div>
         </section>
 
         <!-- Charts grid -->
@@ -627,6 +612,30 @@
       </div><!-- /tab-ai-memory -->
 
     </main>
+  </div>
+
+  <!-- Monthly Notes Modal -->
+  <div id="monthlyNotesModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="monthlyNotesTitle" onclick="if(event.target===this)closeMonthlyNotes()">
+    <div class="modal-card monthly-notes-modal">
+      <div class="modal-header monthly-notes-header">
+        <div>
+          <div class="kpi-label">Shared · Selected month</div>
+          <h2 id="monthlyNotesTitle">Notes</h2>
+        </div>
+        <div class="monthly-notes-header-actions">
+          <span id="monthlyNotesStatus" class="monthly-notes-status" aria-live="polite"></span>
+          <button id="monthlyNotesCloseBtn" class="modal-close" type="button" onclick="closeMonthlyNotes()" aria-label="Close notes">×</button>
+        </div>
+      </div>
+      <div class="modal-body monthly-notes-modal-body">
+        <div id="monthlyNotesList" class="monthly-notes-list"></div>
+        <div class="monthly-notes-compose">
+          <label class="sr-only" for="monthlyNoteInput">Add a shared note for this month</label>
+          <textarea id="monthlyNoteInput" rows="2" maxlength="1000" placeholder="Add a note for this month…"></textarea>
+          <button id="monthlyNoteAdd" class="btn-primary" type="button" onclick="addMonthlyNote()">Add note</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Budget Transactions Modal -->

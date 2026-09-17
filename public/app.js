@@ -102,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupUpload();
   populateUploadPaymentMethods();
   initUploadMonthPicker();
-  switchTab('add');
+  switchTab('dashboard');
   renderMotdQuote();
   loadUser().finally(loadMonths);
 
@@ -1698,6 +1698,47 @@ async function loadDashboard(month) {
 
 // ─── Monthly Notes ──────────────────────────────────────────────────────────
 
+let monthlyNotesLoadSequence = 0;
+
+function openMonthlyNotes() {
+  const modal = document.getElementById('monthlyNotesModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  document.getElementById('monthlyNotesCloseBtn')?.focus();
+}
+
+function closeMonthlyNotes() {
+  const modal = document.getElementById('monthlyNotesModal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  document.getElementById('monthlyNotesButton')?.focus();
+}
+
+document.addEventListener('keydown', event => {
+  const modal = document.getElementById('monthlyNotesModal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault?.();
+    closeMonthlyNotes();
+    return;
+  }
+  if (event.key !== 'Tab' || !modal.querySelectorAll) return;
+  const focusable = Array.from(modal.querySelectorAll('button:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (!focusable.includes(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
 function formatMonthlyNoteTime(value) {
   if (!value) return '';
   const date = new Date(`${value.replace(' ', 'T')}Z`);
@@ -1708,6 +1749,8 @@ function formatMonthlyNoteTime(value) {
 
 function renderMonthlyNotes(notes) {
   const list = document.getElementById('monthlyNotesList');
+  const trigger = document.getElementById('monthlyNotesButton');
+  if (trigger) trigger.textContent = `Notes (${notes.length})`;
   if (!list) return;
   if (!notes.length) {
     list.innerHTML = '<div class="monthly-notes-empty">No notes for this month yet.</div>';
@@ -1728,18 +1771,21 @@ function renderMonthlyNotes(notes) {
 async function loadMonthlyNotes(month) {
   if (!month) return;
   if (document.getElementById('monthPicker').value !== month) return;
+  const loadSequence = ++monthlyNotesLoadSequence;
   const status = document.getElementById('monthlyNotesStatus');
   const list = document.getElementById('monthlyNotesList');
+  const trigger = document.getElementById('monthlyNotesButton');
+  if (trigger) trigger.textContent = 'Notes';
   if (list) list.innerHTML = '<div class="monthly-notes-empty">Loading notes…</div>';
   try {
     const res = await fetch(`/api/monthly-notes?month=${encodeURIComponent(month)}`);
     if (!res.ok) throw new Error('Unable to load notes');
     const data = await res.json();
-    if (document.getElementById('monthPicker').value !== month) return;
+    if (loadSequence !== monthlyNotesLoadSequence || document.getElementById('monthPicker').value !== month) return;
     renderMonthlyNotes(data.notes || []);
     if (status) status.textContent = '';
   } catch (error) {
-    if (document.getElementById('monthPicker').value !== month) return;
+    if (loadSequence !== monthlyNotesLoadSequence || document.getElementById('monthPicker').value !== month) return;
     if (list) list.innerHTML = '<div class="monthly-notes-empty">Could not load notes.</div>';
     if (status) status.textContent = 'Could not load notes';
   }
