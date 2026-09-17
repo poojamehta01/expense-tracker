@@ -630,14 +630,14 @@
   </div>
 
   <!-- Budget Transactions Modal -->
-  <div id="budgetTransactionsModal" class="modal-overlay budget-modal hidden" onclick="if(event.target===this)closeBudgetTransactions()">
+  <div id="budgetTransactionsModal" class="modal-overlay budget-modal hidden" role="dialog" aria-modal="true" aria-labelledby="budgetTransactionsTitle" onclick="if(event.target===this)closeBudgetTransactions()">
     <div class="modal-card budget-transactions-modal">
       <div class="modal-header">
         <div>
           <h2 id="budgetTransactionsTitle">Transactions</h2>
           <p id="budgetTransactionsSubtitle" class="budget-transactions-subtitle"></p>
         </div>
-        <button class="modal-close" onclick="closeBudgetTransactions()" aria-label="Close transaction details">×</button>
+        <button id="budgetTransactionsCloseBtn" class="modal-close" onclick="closeBudgetTransactions()" aria-label="Close transaction details">×</button>
       </div>
       <div class="budget-transactions-summary">
         <span>Amount contributing to this budget item</span>

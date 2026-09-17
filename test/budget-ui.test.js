@@ -63,6 +63,7 @@ test('Budget navigation and render targets are present', () => {
   assert.match(html, /id="budgetSections"/);
   assert.match(html, /id="budgetTransactionsModal"/);
   assert.match(html, /id="budgetTransactionsBody"/);
+  assert.match(html, /id="budgetTransactionsModal"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="budgetTransactionsTitle"/);
 });
 
 test('budget status presentation uses the mapping warning treatment', () => {
@@ -147,6 +148,7 @@ function element(initial = {}) {
     setAttribute(name, value) { this.attributes[name] = String(value); },
     removeAttribute(name) { delete this.attributes[name]; },
     appendChild(child) { this.options.push(child); },
+    focus() { this.focused = true; },
     ...initial,
   };
 }
@@ -254,6 +256,7 @@ function createBudgetWorkflow({
     budgetTransactionsSubtitle: element(),
     budgetTransactionsTotal: element(),
     budgetTransactionsBody: element(),
+    budgetTransactionsCloseBtn: element(),
     budgetCopyModal: element({ hidden: true }),
     budgetCopyTargetMonth: element({ value: 'October_2026' }),
     budgetCopyMessage: element(),
@@ -354,6 +357,8 @@ test('clicking a budget item opens transaction details that explain household-po
   workflow.setData(budgetFixture());
   workflow.renderBudget();
   assert.match(elements.budgetSections.innerHTML, /data-budget-transactions/);
+  assert.match(elements.budgetSections.innerHTML, /budget-category-button/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /<tr[^>]*role="button"/);
   const row = element({ dataset: { section: 'Home', category: 'Rent', kind: 'expense' } });
 
   await documentListeners.click({
@@ -370,6 +375,21 @@ test('clicking a budget item opens transaction details that explain household-po
   assert.match(elements.budgetTransactionsBody.innerHTML, /50% household share/);
   assert.match(requests[0].url, /\/api\/budget-transactions\?/);
   assert.match(requests[0].url, /budgetCategory=Rent/);
+});
+
+test('transaction modal receives focus, closes with Escape, and restores its trigger', async () => {
+  const { workflow, elements, documentListeners } = createBudgetWorkflow({
+    responses: [{ ok: true, status: 200, body: { total: 0, transactionCategories: [], transactions: [] } }],
+  });
+  workflow.setData(budgetFixture());
+  const trigger = element({ dataset: { section: 'Home', category: 'Rent', kind: 'expense' } });
+
+  await workflow.openBudgetTransactions(trigger);
+  assert.equal(elements.budgetTransactionsCloseBtn.focused, true);
+  documentListeners.keydown({ key: 'Escape', target: trigger });
+
+  assert.equal(elements.budgetTransactionsModal.classList.contains('hidden'), true);
+  assert.equal(trigger.focused, true);
 });
 
 test('transaction details show an empty state for an unmapped budget item', async () => {

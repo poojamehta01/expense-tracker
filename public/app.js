@@ -3455,6 +3455,7 @@ const budgetState = {
   copySourceStatus: 'idle',
   loadSequence: 0,
   transactionLoadSequence: 0,
+  transactionTrigger: null,
 };
 const collapsedBudgetSections = new Set();
 
@@ -3665,12 +3666,12 @@ function renderBudget() {
       const mappingAction = readOnly
         ? '<span class="cell-empty">—</span>'
         : `<button type="button" class="btn-secondary small" ${budgetState.saving ? 'disabled ' : ''}data-budget-map data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">Map</button>`;
-      const transactionAction = budgetState.editing
-        ? ''
-        : ' class="budget-transaction-row" data-budget-transactions tabindex="0" role="button"';
+      const categoryLabel = budgetState.editing
+        ? `<strong>${esc(line.category)}</strong>`
+        : `<button type="button" class="budget-category-button" data-budget-transactions data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" aria-label="View transactions for ${esc(line.category)}">${esc(line.category)} <span aria-hidden="true">›</span></button>`;
       return `
-        <tr${transactionAction} data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
-          <td class="budget-category-cell" data-label="Category"><strong>${esc(line.category)}</strong><div class="budget-mapping-row">${mappings}</div></td>
+        <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
+          <td class="budget-category-cell" data-label="Category">${categoryLabel}<div class="budget-mapping-row">${mappings}</div></td>
           <td data-label="Budget">${amount}</td>
           <td data-label="Actual">${formatCurrency(line.actual)}</td>
           <td data-label="Remaining">${formatCurrency(line.variance)}</td>
@@ -3718,12 +3719,12 @@ function renderBudget() {
       ? `<input class="budget-future-input budget-edit-input" type="number" min="${esc(row.minimum)}" step="1" value="${esc(row.target)}" data-future-person="${esc(row.person)}">`
       : row.target === null ? '—' : formatCurrency(row.target);
     const minimumLabel = row.minimum === null ? 'Salary required' : `Minimum ${formatCurrency(row.minimum)}`;
-    const transactionAction = budgetState.editing
-      ? ''
-      : ' class="budget-transaction-row" data-budget-transactions tabindex="0" role="button"';
+    const goalLabel = budgetState.editing
+      ? `<strong>${esc(row.person)} · Future investment</strong>`
+      : `<button type="button" class="budget-category-button" data-budget-transactions data-section="Future" data-category="20% of salary" data-kind="investment" data-person="${esc(row.person)}" aria-label="View investment transactions for ${esc(row.person)}">${esc(row.person)} · Future investment <span aria-hidden="true">›</span></button>`;
     return `
-      <tr${transactionAction} data-section="Future" data-category="20% of salary" data-kind="investment" data-person="${esc(row.person)}">
-        <td class="budget-category-cell" data-label="Goal"><strong>${esc(row.person)} · Future investment</strong><div class="budget-mapping-row"><span class="budget-mapping-chip">${minimumLabel}</span></div></td>
+      <tr data-section="Future" data-person="${esc(row.person)}">
+        <td class="budget-category-cell" data-label="Goal">${goalLabel}<div class="budget-mapping-row"><span class="budget-mapping-chip">${minimumLabel}</span></div></td>
         <td data-label="Planned allocation">${allocation}</td>
         <td data-label="Invested">${formatCurrency(row.actual)}</td>
         <td data-label="Result">${difference}</td>
@@ -3888,11 +3889,25 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('keydown', event => {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  const row = event.target?.closest?.('[data-budget-transactions]');
-  if (!row || event.target?.closest?.('button, input, select, textarea')) return;
-  event.preventDefault();
-  openBudgetTransactions(row);
+  const modal = document.getElementById('budgetTransactionsModal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault?.();
+    closeBudgetTransactions();
+    return;
+  }
+  if (event.key !== 'Tab' || !modal.querySelectorAll) return;
+  const focusable = Array.from(modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 });
 
 async function openBudgetTransactions(target) {
@@ -3909,11 +3924,13 @@ async function openBudgetTransactions(target) {
   const total = document.getElementById('budgetTransactionsTotal');
   const body = document.getElementById('budgetTransactionsBody');
   const loadSequence = ++budgetState.transactionLoadSequence;
+  budgetState.transactionTrigger = target;
   title.textContent = section === 'Future' ? `Future · ${selectedPerson}` : `${section} · ${category}`;
   subtitle.textContent = 'Loading mapped transactions…';
   total.textContent = '';
   body.innerHTML = '<div class="budget-transactions-empty">Loading transactions…</div>';
   modal.classList.remove('hidden');
+  document.getElementById('budgetTransactionsCloseBtn')?.focus();
 
   const query = [
     ['month', budgetState.month], ['person', selectedPerson], ['section', section],
@@ -3958,7 +3975,12 @@ async function openBudgetTransactions(target) {
 
 function closeBudgetTransactions() {
   budgetState.transactionLoadSequence++;
-  document.getElementById('budgetTransactionsModal')?.classList.add('hidden');
+  const modal = document.getElementById('budgetTransactionsModal');
+  const wasOpen = modal && !modal.classList.contains('hidden');
+  modal?.classList.add('hidden');
+  const trigger = budgetState.transactionTrigger;
+  budgetState.transactionTrigger = null;
+  if (wasOpen) trigger?.focus?.();
 }
 
 function closeBudgetMapping() {
