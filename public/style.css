@@ -683,7 +683,7 @@ body.dark .btn-primary:disabled { background: #1e40af; color: #bfdbfe; }
 /* ─── KPI Cards ────────────────────────────────────────────────────────────── */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 @media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
