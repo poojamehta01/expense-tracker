@@ -45,6 +45,60 @@ function monthToDateDisplayDates(period) {
   return dates;
 }
 
+function budgetUsage(actual, budget) {
+  return budget === 0 ? null : actual / budget;
+}
+
+function boundBudgetToReportDate(budgetResult, db, period, monthDates) {
+  if (!budgetResult.hasBudget) return budgetResult;
+  const excluded = new Set(EXPENSE_EXCLUSIONS);
+  const lateRows = db.prepare(`
+    SELECT amount, category, paid_by, date
+    FROM transactions
+    WHERE month = ? AND date NOT IN (${monthDates.map(() => '?').join(', ')})
+  `).all(period.month, ...monthDates);
+  const lateUnmapped = new Map();
+  for (const row of lateRows) {
+    if (excluded.has(row.category) || row.category === null) continue;
+    const amount = Number(row.amount);
+    const mappedLine = ['Pooja', 'Kunal', 'Household Pool'].includes(row.paid_by)
+      ? budgetResult.sections.flatMap(section => section.lines)
+        .find(line => line.kind === 'expense' && line.mappings.includes(row.category))
+      : null;
+    if (mappedLine) {
+      mappedLine.actual -= amount;
+      mappedLine.variance = mappedLine.budget - mappedLine.actual;
+      mappedLine.usage = budgetUsage(mappedLine.actual, mappedLine.budget);
+    } else {
+      lateUnmapped.set(row.category, (lateUnmapped.get(row.category) || 0) + amount);
+    }
+  }
+  for (const section of budgetResult.sections) {
+    section.actual = section.lines.reduce((total, line) => total + line.actual, 0);
+    section.variance = section.budget - section.actual;
+    section.usage = budgetUsage(section.actual, section.budget);
+  }
+  const unmappedCategories = budgetResult.unmappedExpenses.categories
+    .map(row => ({ category: row.category, total: row.total - (lateUnmapped.get(row.category) || 0) }))
+    .filter(row => row.total > 0);
+  const lateUnmappedTotal = [...lateUnmapped.values()].reduce((total, value) => total + value, 0);
+  budgetResult.unmappedExpenses = {
+    categories: unmappedCategories,
+    total: Math.max(0, budgetResult.unmappedExpenses.total - lateUnmappedTotal),
+  };
+  budgetResult.summary.actualSpending = budgetResult.sections
+    .filter(section => section.lines.some(line => line.kind === 'expense'))
+    .reduce((total, section) => total + section.lines
+      .filter(line => line.kind === 'expense')
+      .reduce((sum, line) => sum + line.actual, 0), 0) + budgetResult.unmappedExpenses.total;
+  budgetResult.summary.variance = budgetResult.summary.expenseBudget - budgetResult.summary.actualSpending;
+  budgetResult.summary.usage = budgetUsage(
+    budgetResult.summary.actualSpending,
+    budgetResult.summary.expenseBudget,
+  );
+  return budgetResult;
+}
+
 function createDailyEmailService({ db, budgetService, transport, config, now = () => new Date() }) {
   void transport;
   void config;
@@ -80,7 +134,12 @@ function createDailyEmailService({ db, budgetService, transport, config, now = (
       FROM transactions
       WHERE month = ? AND date IN (${monthDatePlaceholders}) AND category = 'Investment'
     `).get(period.month, ...monthDates).total);
-    const budgetResult = budgetService.getBudget({ month: period.month, person: 'all' });
+    const budgetResult = boundBudgetToReportDate(
+      budgetService.getBudget({ month: period.month, person: 'all' }),
+      db,
+      period,
+      monthDates,
+    );
     const budget = budgetResult.hasBudget ? {
       configured: true,
       expenseBudget: budgetResult.summary.expenseBudget,

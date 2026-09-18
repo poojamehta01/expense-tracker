@@ -61,6 +61,8 @@ test('aggregates previous-day and month-to-date expense and investment data', ()
   addTransaction.run('10 September 2026', 700, 'Utilities', 'Kunal', 'Utilities', month);
   addTransaction.run('17 September 2026', 3000, 'Investment', 'Pooja', 'Investment', month);
   addTransaction.run('10 September 2026', 2000, 'Investment', 'Kunal', 'Investment', month);
+  addTransaction.run('18 September 2026', 400, 'Late taxi', 'Pooja', 'Taxi', month);
+  addTransaction.run('18 September 2026', 400, 'Late unmapped', 'Pooja', 'Late category', month);
   addTransaction.run('18 August 2026', 999, 'Out of day', 'Pooja', 'Taxi', 'August_2026');
   addTransaction.run('17 September 2026', 9999, 'Card payment', 'Pooja', 'Credit Card Payment', month);
   addTransaction.run('17 September 2026', 9999, 'Settlement', 'Pooja', 'Settlement', month);
@@ -96,6 +98,7 @@ test('aggregates previous-day and month-to-date expense and investment data', ()
   assert.equal(data.budget.actualSpending, 2200);
   assert.equal(data.budget.remaining, 7800);
   assert.equal(data.budget.usage, 0.22);
+  assert.equal(data.budget.unmappedTotal, 0);
   for (const excluded of ['Credit Card Payment', 'Settlement', 'Refunded', 'Investment']) {
     assert.equal(data.dailyExpenses.some(row => row.category === excluded), false);
   }
