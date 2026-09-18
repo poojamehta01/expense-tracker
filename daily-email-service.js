@@ -1,4 +1,13 @@
+const nodemailer = require('nodemailer');
+
 const INDIA_TIME_ZONE = 'Asia/Kolkata';
+
+function createGmailTransport({ user, appPassword }) {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass: appPassword },
+  });
+}
 
 function reportingPeriod(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -251,11 +260,7 @@ function renderReport(data, { baseUrl }) {
 }
 
 function createDailyEmailService({ db, budgetService, transport, config, now = () => new Date() }) {
-  void transport;
-  void config;
-
-  function getReportData() {
-    const period = reportingPeriod(now());
+  function getReportData(period = reportingPeriod(now())) {
     const placeholders = EXPENSE_EXCLUSIONS.map(() => '?').join(', ');
     const expenseWhere = `month = ? AND date = ? AND category NOT IN (${placeholders})`;
     const expenseParams = [period.month, period.displayDate, ...EXPENSE_EXCLUSIONS];
@@ -312,10 +317,79 @@ function createDailyEmailService({ db, budgetService, transport, config, now = (
     };
   }
 
-  return { getReportData };
+  const persistSuccessfulSend = db.transaction(({ kind, reportDate, messageId, thread }) => {
+    db.prepare(`
+      INSERT INTO daily_email_sends (kind, report_date, message_id)
+      VALUES (?, ?, ?)
+    `).run(kind, reportDate, messageId);
+    db.prepare(`
+      INSERT INTO daily_email_threads (kind, root_message_id, last_message_id)
+      VALUES (?, ?, ?)
+      ON CONFLICT(kind) DO UPDATE SET
+        last_message_id = excluded.last_message_id,
+        updated_at = datetime('now')
+    `).run(kind, thread?.root_message_id || messageId, messageId);
+  });
+
+  async function send(kind) {
+    const period = reportingPeriod(now());
+    const previousSend = db.prepare(`
+      SELECT message_id
+      FROM daily_email_sends
+      WHERE kind = ? AND report_date = ?
+    `).get(kind, period.reportDate);
+    if (previousSend) {
+      return { status: 'already_sent', kind, reportDate: period.reportDate };
+    }
+    const data = kind === 'report' ? getReportData(period) : null;
+    const rendered = kind === 'report'
+      ? renderReport(data, { baseUrl: config.baseUrl })
+      : renderReminder({ period, baseUrl: config.baseUrl });
+    const thread = db.prepare(`
+      SELECT root_message_id, last_message_id
+      FROM daily_email_threads
+      WHERE kind = ?
+    `).get(kind);
+    const info = await transport.sendMail({
+      from: config.sender,
+      to: config.recipients,
+      ...rendered,
+      ...(thread ? {
+        inReplyTo: thread.last_message_id,
+        references: thread.root_message_id,
+      } : {}),
+    });
+    if (typeof info?.messageId !== 'string' || info.messageId.trim() === '') {
+      throw new Error('Mail transport did not return a message ID');
+    }
+    const messageId = info.messageId.trim();
+    try {
+      persistSuccessfulSend({ kind, reportDate: period.reportDate, messageId, thread });
+    } catch (error) {
+      const racedSend = db.prepare(`
+        SELECT message_id
+        FROM daily_email_sends
+        WHERE kind = ? AND report_date = ?
+      `).get(kind, period.reportDate);
+      const isUniqueConstraint = error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY'
+        || error.code === 'SQLITE_CONSTRAINT_UNIQUE';
+      if (racedSend && isUniqueConstraint) {
+        return { status: 'already_sent', kind, reportDate: period.reportDate };
+      }
+      throw error;
+    }
+    return { status: 'sent', kind, reportDate: period.reportDate };
+  }
+
+  return {
+    getReportData,
+    sendReminder: () => send('reminder'),
+    sendReport: () => send('report'),
+  };
 }
 
 module.exports = {
+  createGmailTransport,
   createDailyEmailService,
   reportingPeriod,
   renderReminder,

@@ -4,11 +4,25 @@ const Database = require('better-sqlite3');
 
 const { createBudgetService } = require('../budget-service');
 const {
+  createGmailTransport,
   createDailyEmailService,
   reportingPeriod,
   renderReminder,
   renderReport,
 } = require('../daily-email-service');
+
+test('creates a Gmail SMTP transport from injected environment configuration', () => {
+  const transport = createGmailTransport({
+    user: 'sender@example.com',
+    appPassword: 'fake-app-password',
+  });
+
+  assert.equal(transport.options.service, 'gmail');
+  assert.deepEqual(transport.options.auth, {
+    user: 'sender@example.com',
+    pass: 'fake-app-password',
+  });
+});
 
 test('uses the previous Asia Kolkata calendar day', () => {
   assert.deepEqual(reportingPeriod(new Date('2026-09-18T15:45:00.000Z')), {
@@ -52,6 +66,19 @@ function createFixture() {
     );
     CREATE TABLE lists (id INTEGER PRIMARY KEY AUTOINCREMENT, list_name TEXT NOT NULL, value TEXT NOT NULL,
       UNIQUE(list_name, value));
+    CREATE TABLE daily_email_threads (
+      kind TEXT PRIMARY KEY CHECK(kind IN ('reminder','report')),
+      root_message_id TEXT NOT NULL,
+      last_message_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE daily_email_sends (
+      kind TEXT NOT NULL CHECK(kind IN ('reminder','report')),
+      report_date TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(kind, report_date)
+    );
   `);
   return db;
 }
@@ -267,4 +294,224 @@ test('labels a negative remaining budget as overspent', () => {
   assert.match(report.text, /Overspent: ₹2,000/);
   assert.match(report.text, /120% used/);
   assert.match(report.html, /Overspent: ₹2,000/);
+});
+
+function createDeliveryService({
+  db,
+  messages,
+  messageIds,
+  currentTime,
+  budgetService = createBudgetService(db, { validCategories: [] }),
+}) {
+  return createDailyEmailService({
+    db,
+    budgetService,
+    transport: {
+      async sendMail(message) {
+        messages.push(message);
+        return { messageId: messageIds.shift() };
+      },
+    },
+    config: {
+      sender: 'pooja0111mehta@gmail.com',
+      recipients: ['poojamehta1197@gmail.com', 'kunal.mukte03@gmail.com'],
+      baseUrl: 'https://expense.example',
+    },
+    now: () => currentTime.value,
+  });
+}
+
+test('sends the first reminder as a root and later reminders as replies to its persisted thread', async () => {
+  const db = createFixture();
+  const messages = [];
+  const currentTime = { value: new Date('2026-09-18T15:45:00.000Z') };
+  const service = createDeliveryService({
+    db,
+    messages,
+    messageIds: ['<reminder-1@example>', '<reminder-2@example>'],
+    currentTime,
+  });
+
+  const first = await service.sendReminder();
+  currentTime.value = new Date('2026-09-19T15:45:00.000Z');
+  const second = await service.sendReminder();
+
+  assert.deepEqual(first, { status: 'sent', kind: 'reminder', reportDate: '2026-09-17' });
+  assert.deepEqual(second, { status: 'sent', kind: 'reminder', reportDate: '2026-09-18' });
+  assert.equal(messages[0].from, 'pooja0111mehta@gmail.com');
+  assert.deepEqual(messages[0].to, ['poojamehta1197@gmail.com', 'kunal.mukte03@gmail.com']);
+  assert.equal(messages[0].inReplyTo, undefined);
+  assert.equal(messages[0].references, undefined);
+  assert.equal(messages[1].inReplyTo, '<reminder-1@example>');
+  assert.equal(messages[1].references, '<reminder-1@example>');
+  assert.deepEqual(db.prepare(`
+    SELECT kind, root_message_id, last_message_id
+    FROM daily_email_threads WHERE kind = ?
+  `).get('reminder'), {
+    kind: 'reminder',
+    root_message_id: '<reminder-1@example>',
+    last_message_id: '<reminder-2@example>',
+  });
+});
+
+test('keeps report replies in a persistent thread independent from reminders', async () => {
+  const db = createFixture();
+  const messages = [];
+  const currentTime = { value: new Date('2026-09-18T15:45:00.000Z') };
+  const service = createDeliveryService({
+    db,
+    messages,
+    messageIds: ['<reminder-root@example>', '<report-root@example>', '<report-reply@example>'],
+    currentTime,
+  });
+
+  await service.sendReminder();
+  await service.sendReport();
+  currentTime.value = new Date('2026-09-19T15:45:00.000Z');
+  const reply = await service.sendReport();
+
+  assert.deepEqual(reply, { status: 'sent', kind: 'report', reportDate: '2026-09-18' });
+  assert.equal(messages[1].from, 'pooja0111mehta@gmail.com');
+  assert.deepEqual(messages[1].to, ['poojamehta1197@gmail.com', 'kunal.mukte03@gmail.com']);
+  assert.equal(messages[1].inReplyTo, undefined);
+  assert.equal(messages[1].references, undefined);
+  assert.equal(messages[2].inReplyTo, '<report-root@example>');
+  assert.equal(messages[2].references, '<report-root@example>');
+  assert.deepEqual(
+    db.prepare('SELECT kind, root_message_id, last_message_id FROM daily_email_threads ORDER BY kind').all(),
+    [
+      { kind: 'reminder', root_message_id: '<reminder-root@example>', last_message_id: '<reminder-root@example>' },
+      { kind: 'report', root_message_id: '<report-root@example>', last_message_id: '<report-reply@example>' },
+    ],
+  );
+});
+
+for (const kind of ['reminder', 'report']) {
+  test(`does not send a duplicate ${kind} for the same report date`, async () => {
+    const db = createFixture();
+    const messages = [];
+    const currentTime = { value: new Date('2026-09-18T15:45:00.000Z') };
+    let budgetCalls = 0;
+    const service = createDeliveryService({
+      db,
+      messages,
+      messageIds: [`<${kind}-1@example>`, `<${kind}-2@example>`],
+      currentTime,
+      budgetService: {
+        getBudget() {
+          budgetCalls += 1;
+          return { hasBudget: false };
+        },
+      },
+    });
+
+    await service[kind === 'reminder' ? 'sendReminder' : 'sendReport']();
+    const duplicate = await service[kind === 'reminder' ? 'sendReminder' : 'sendReport']();
+
+    assert.deepEqual(duplicate, {
+      status: 'already_sent',
+      kind,
+      reportDate: '2026-09-17',
+    });
+    assert.equal(messages.length, 1);
+    assert.equal(budgetCalls, kind === 'report' ? 1 : 0);
+    assert.deepEqual(
+      db.prepare('SELECT kind, report_date, message_id FROM daily_email_sends').all(),
+      [{ kind, report_date: '2026-09-17', message_id: `<${kind}-1@example>` }],
+    );
+  });
+}
+
+test('leaves a failed SMTP send unrecorded and allows a successful retry', async () => {
+  const db = createFixture();
+  const messages = [];
+  let attempt = 0;
+  const service = createDailyEmailService({
+    db,
+    budgetService: createBudgetService(db, { validCategories: [] }),
+    transport: {
+      async sendMail(message) {
+        messages.push(message);
+        attempt += 1;
+        if (attempt === 1) throw new Error('temporary SMTP failure');
+        return { messageId: '<report-retry@example>' };
+      },
+    },
+    config: {
+      sender: 'pooja0111mehta@gmail.com',
+      recipients: ['poojamehta1197@gmail.com', 'kunal.mukte03@gmail.com'],
+      baseUrl: 'https://expense.example',
+    },
+    now: () => new Date('2026-09-18T15:45:00.000Z'),
+  });
+
+  await assert.rejects(service.sendReport(), /temporary SMTP failure/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_sends').get().count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_threads').get().count, 0);
+
+  assert.deepEqual(await service.sendReport(), {
+    status: 'sent',
+    kind: 'report',
+    reportDate: '2026-09-17',
+  });
+  assert.equal(messages.length, 2);
+  assert.deepEqual(
+    db.prepare('SELECT kind, report_date, message_id FROM daily_email_sends').all(),
+    [{ kind: 'report', report_date: '2026-09-17', message_id: '<report-retry@example>' }],
+  );
+});
+
+test('rejects an empty SMTP message ID without recording delivery success', async () => {
+  const db = createFixture();
+  const service = createDeliveryService({
+    db,
+    messages: [],
+    messageIds: ['   '],
+    currentTime: { value: new Date('2026-09-18T15:45:00.000Z') },
+  });
+
+  await assert.rejects(service.sendReminder(), /message ID/i);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_sends').get().count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_threads').get().count, 0);
+});
+
+test('converts a send-ledger unique-constraint race into already_sent', async () => {
+  const db = createFixture();
+  const service = createDailyEmailService({
+    db,
+    budgetService: createBudgetService(db, { validCategories: [] }),
+    transport: {
+      async sendMail() {
+        db.prepare(`
+          INSERT INTO daily_email_sends (kind, report_date, message_id)
+          VALUES ('reminder', '2026-09-17', '<winner@example>')
+        `).run();
+        db.prepare(`
+          INSERT INTO daily_email_threads (kind, root_message_id, last_message_id)
+          VALUES ('reminder', '<winner@example>', '<winner@example>')
+        `).run();
+        return { messageId: '<racing-send@example>' };
+      },
+    },
+    config: {
+      sender: 'pooja0111mehta@gmail.com',
+      recipients: ['poojamehta1197@gmail.com', 'kunal.mukte03@gmail.com'],
+      baseUrl: 'https://expense.example',
+    },
+    now: () => new Date('2026-09-18T15:45:00.000Z'),
+  });
+
+  assert.deepEqual(await service.sendReminder(), {
+    status: 'already_sent',
+    kind: 'reminder',
+    reportDate: '2026-09-17',
+  });
+  assert.deepEqual(
+    db.prepare('SELECT kind, report_date, message_id FROM daily_email_sends').all(),
+    [{ kind: 'reminder', report_date: '2026-09-17', message_id: '<winner@example>' }],
+  );
+  assert.deepEqual(
+    db.prepare('SELECT kind, root_message_id, last_message_id FROM daily_email_threads').all(),
+    [{ kind: 'reminder', root_message_id: '<winner@example>', last_message_id: '<winner@example>' }],
+  );
 });
