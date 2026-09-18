@@ -1,0 +1,50 @@
+name: Daily Expense Email
+
+on:
+  schedule:
+    # 8:30 p.m. IST (UTC+05:30) every day, including weekends.
+    - cron: '0 15 * * *'
+    # 9:00 p.m. IST (UTC+05:30) every day, including weekends.
+    - cron: '30 15 * * *'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Job to run manually
+        required: true
+        default: both
+        type: choice
+        options:
+          - reminder
+          - report
+          - both
+
+jobs:
+  reminder:
+    if: >-
+      ${{ (github.event_name == 'schedule' && github.event.schedule == '0 15 * * *') ||
+          (github.event_name == 'workflow_dispatch' &&
+            (github.event.inputs.job == 'reminder' || github.event.inputs.job == 'both')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: daily-expense-email-reminder
+      cancel-in-progress: false
+    steps:
+      - name: Trigger reminder email
+        run: >-
+          curl --fail-with-body --retry 2 --retry-all-errors -X POST -H "Authorization: Bearer ${{ secrets.REPORT_SCHEDULER_SECRET }}" "${{ secrets.EXPENSE_TRACKER_BASE_URL }}/api/internal/daily-email/reminder"
+
+  report:
+    if: >-
+      ${{ (github.event_name == 'schedule' && github.event.schedule == '30 15 * * *') ||
+          (github.event_name == 'workflow_dispatch' &&
+            (github.event.inputs.job == 'report' || github.event.inputs.job == 'both')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: daily-expense-email-report
+      cancel-in-progress: false
+    steps:
+      - name: Trigger report email
+        run: >-
+          curl --fail-with-body --retry 2 --retry-all-errors -X POST -H "Authorization: Bearer ${{ secrets.REPORT_SCHEDULER_SECRET }}" "${{ secrets.EXPENSE_TRACKER_BASE_URL }}/api/internal/daily-email/report"
