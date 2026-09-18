@@ -105,6 +105,17 @@ db.exec(`
     PRIMARY KEY(kind, report_date)
   );
 
+  CREATE TABLE IF NOT EXISTS daily_email_delivery_claims (
+    kind        TEXT NOT NULL CHECK(kind IN ('reminder','report')),
+    report_date TEXT NOT NULL CHECK(report_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    status      TEXT NOT NULL CHECK(status IN ('sending','delivery_unknown','sent')),
+    message_id  TEXT,
+    claimed_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    CHECK(status != 'sent' OR (typeof(message_id) = 'text' AND length(trim(message_id)) > 0)),
+    PRIMARY KEY(kind, report_date)
+  );
+
   CREATE TABLE IF NOT EXISTS budgets (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     month      TEXT NOT NULL CHECK(month GLOB '[A-Z]*_[0-9][0-9][0-9][0-9]'),

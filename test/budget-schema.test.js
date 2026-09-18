@@ -49,10 +49,24 @@ test('creates daily email persistence tables with delivery uniqueness', () => {
 
   const sendColumns = db.prepare(`PRAGMA table_info(daily_email_sends)`).all().map(row => row.name);
   assert.deepEqual(sendColumns, ['kind', 'report_date', 'message_id', 'sent_at']);
+  const claimColumns = db.prepare(`PRAGMA table_info(daily_email_delivery_claims)`).all().map(row => row.name);
+  assert.deepEqual(claimColumns, [
+    'kind', 'report_date', 'status', 'message_id', 'claimed_at', 'updated_at',
+  ]);
   assert.throws(() => {
     db.prepare(`INSERT INTO daily_email_sends (kind, report_date, message_id) VALUES ('report','2026-09-17','<two>')`).run();
     db.prepare(`INSERT INTO daily_email_sends (kind, report_date, message_id) VALUES ('report','2026-09-17','<three>')`).run();
   }, /UNIQUE constraint failed/);
+  assert.throws(() => db.prepare(`
+    INSERT INTO daily_email_delivery_claims
+      (kind, report_date, status, claimed_at, updated_at)
+    VALUES ('report', '2026-09-17', 'retryable', '2026-09-18T15:30:00.000Z', '2026-09-18T15:30:00.000Z')
+  `).run(), /CHECK constraint failed/);
+  assert.throws(() => db.prepare(`
+    INSERT INTO daily_email_delivery_claims
+      (kind, report_date, status, message_id, claimed_at, updated_at)
+    VALUES ('report', '2026-09-17', 'sent', NULL, '2026-09-18T15:30:00.000Z', '2026-09-18T15:30:00.000Z')
+  `).run(), /CHECK constraint failed/);
 });
 
 test('creates constrained mapping table', () => {

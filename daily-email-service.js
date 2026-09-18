@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 
 const INDIA_TIME_ZONE = 'Asia/Kolkata';
+const DELIVERY_CLAIM_STALE_AFTER_MS = 15 * 60 * 1000;
 
 function createGmailTransport({ user, appPassword }) {
   return nodemailer.createTransport({
@@ -317,7 +318,70 @@ function createDailyEmailService({ db, budgetService, transport, config, now = (
     };
   }
 
-  const persistSuccessfulSend = db.transaction(({ kind, reportDate, messageId, thread }) => {
+  const acquireDeliveryClaim = db.transaction(({ kind, reportDate, claimedAt, claimedAtMs }) => {
+    const previousSend = db.prepare(`
+      SELECT message_id
+      FROM daily_email_sends
+      WHERE kind = ? AND report_date = ?
+    `).get(kind, reportDate);
+    if (previousSend) return 'already_sent';
+
+    const inserted = db.prepare(`
+      INSERT OR IGNORE INTO daily_email_delivery_claims
+        (kind, report_date, status, message_id, claimed_at, updated_at)
+      VALUES (?, ?, 'sending', NULL, ?, ?)
+    `).run(kind, reportDate, claimedAt, claimedAt);
+    if (inserted.changes === 1) return 'claimed';
+
+    const claim = db.prepare(`
+      SELECT status, claimed_at
+      FROM daily_email_delivery_claims
+      WHERE kind = ? AND report_date = ?
+    `).get(kind, reportDate);
+    if (claim.status === 'sent') return 'already_sent';
+    if (claim.status === 'delivery_unknown') return 'delivery_unknown';
+
+    const priorClaimedAtMs = Date.parse(claim.claimed_at);
+    const stale = !Number.isFinite(priorClaimedAtMs)
+      || claimedAtMs - priorClaimedAtMs >= DELIVERY_CLAIM_STALE_AFTER_MS;
+    if (!stale) return 'in_progress';
+
+    // At-most-once policy: a crashed sender may have reached SMTP, so a stale
+    // claim becomes delivery_unknown and is never reclaimed automatically.
+    db.prepare(`
+      UPDATE daily_email_delivery_claims
+      SET status = 'delivery_unknown', updated_at = ?
+      WHERE kind = ? AND report_date = ? AND status = 'sending'
+    `).run(claimedAt, kind, reportDate);
+    return 'delivery_unknown';
+  });
+
+  const releaseDeliveryClaim = db.transaction(({ kind, reportDate }) => {
+    db.prepare(`
+      DELETE FROM daily_email_delivery_claims
+      WHERE kind = ? AND report_date = ? AND status = 'sending'
+    `).run(kind, reportDate);
+  });
+
+  function markDeliveryUnknown({ kind, reportDate, messageId, updatedAt }) {
+    db.prepare(`
+      UPDATE daily_email_delivery_claims
+      SET status = 'delivery_unknown', message_id = ?, updated_at = ?
+      WHERE kind = ? AND report_date = ? AND status = 'sending'
+    `).run(messageId, updatedAt, kind, reportDate);
+  }
+
+  const persistSuccessfulSend = db.transaction(({
+    kind, reportDate, messageId, thread, updatedAt,
+  }) => {
+    const transitioned = db.prepare(`
+      UPDATE daily_email_delivery_claims
+      SET status = 'sent', message_id = ?, updated_at = ?
+      WHERE kind = ? AND report_date = ? AND status = 'delivery_unknown'
+    `).run(messageId, updatedAt, kind, reportDate);
+    if (transitioned.changes !== 1) {
+      throw new Error('Daily email delivery claim could not transition to sent');
+    }
     db.prepare(`
       INSERT INTO daily_email_sends (kind, report_date, message_id)
       VALUES (?, ?, ?)
@@ -332,51 +396,81 @@ function createDailyEmailService({ db, budgetService, transport, config, now = (
   });
 
   async function send(kind) {
-    const period = reportingPeriod(now());
-    const previousSend = db.prepare(`
-      SELECT message_id
-      FROM daily_email_sends
-      WHERE kind = ? AND report_date = ?
-    `).get(kind, period.reportDate);
-    if (previousSend) {
-      return { status: 'already_sent', kind, reportDate: period.reportDate };
-    }
-    const data = kind === 'report' ? getReportData(period) : null;
-    const rendered = kind === 'report'
-      ? renderReport(data, { baseUrl: config.baseUrl })
-      : renderReminder({ period, baseUrl: config.baseUrl });
-    const thread = db.prepare(`
-      SELECT root_message_id, last_message_id
-      FROM daily_email_threads
-      WHERE kind = ?
-    `).get(kind);
-    const info = await transport.sendMail({
-      from: config.sender,
-      to: config.recipients,
-      ...rendered,
-      ...(thread ? {
-        inReplyTo: thread.last_message_id,
-        references: thread.root_message_id,
-      } : {}),
+    const currentTime = now();
+    const period = reportingPeriod(currentTime);
+    const claimedAt = currentTime.toISOString();
+    const claimResult = acquireDeliveryClaim({
+      kind,
+      reportDate: period.reportDate,
+      claimedAt,
+      claimedAtMs: currentTime.getTime(),
     });
-    if (typeof info?.messageId !== 'string' || info.messageId.trim() === '') {
-      throw new Error('Mail transport did not return a message ID');
+    if (claimResult !== 'claimed') {
+      return { status: claimResult, kind, reportDate: period.reportDate };
     }
-    const messageId = info.messageId.trim();
+
+    let rendered;
+    let thread;
     try {
-      persistSuccessfulSend({ kind, reportDate: period.reportDate, messageId, thread });
+      const data = kind === 'report' ? getReportData(period) : null;
+      rendered = kind === 'report'
+        ? renderReport(data, { baseUrl: config.baseUrl })
+        : renderReminder({ period, baseUrl: config.baseUrl });
+      thread = db.prepare(`
+        SELECT root_message_id, last_message_id
+        FROM daily_email_threads
+        WHERE kind = ?
+      `).get(kind);
     } catch (error) {
-      const racedSend = db.prepare(`
-        SELECT message_id
-        FROM daily_email_sends
-        WHERE kind = ? AND report_date = ?
-      `).get(kind, period.reportDate);
-      const isUniqueConstraint = error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY'
-        || error.code === 'SQLITE_CONSTRAINT_UNIQUE';
-      if (racedSend && isUniqueConstraint) {
-        return { status: 'already_sent', kind, reportDate: period.reportDate };
-      }
+      releaseDeliveryClaim({ kind, reportDate: period.reportDate });
       throw error;
+    }
+
+    let info;
+    try {
+      info = await transport.sendMail({
+        from: config.sender,
+        to: config.recipients,
+        ...rendered,
+        ...(thread ? {
+          inReplyTo: thread.last_message_id,
+          references: thread.root_message_id,
+        } : {}),
+      });
+    } catch (error) {
+      releaseDeliveryClaim({ kind, reportDate: period.reportDate });
+      throw error;
+    }
+
+    const messageId = typeof info?.messageId === 'string' && info.messageId.trim() !== ''
+      ? info.messageId.trim()
+      : null;
+    try {
+      // A resolved SMTP call may already have delivered. Persist ambiguity
+      // before any validation/finalization that could fail.
+      markDeliveryUnknown({
+        kind,
+        reportDate: period.reportDate,
+        messageId,
+        updatedAt: claimedAt,
+      });
+    } catch (error) {
+      return { status: 'delivery_unknown', kind, reportDate: period.reportDate };
+    }
+    if (!messageId) {
+      return { status: 'delivery_unknown', kind, reportDate: period.reportDate };
+    }
+
+    try {
+      persistSuccessfulSend({
+        kind,
+        reportDate: period.reportDate,
+        messageId,
+        thread,
+        updatedAt: claimedAt,
+      });
+    } catch (error) {
+      return { status: 'delivery_unknown', kind, reportDate: period.reportDate };
     }
     return { status: 'sent', kind, reportDate: period.reportDate };
   }

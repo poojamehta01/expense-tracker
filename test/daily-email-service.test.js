@@ -79,6 +79,16 @@ function createFixture() {
       sent_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY(kind, report_date)
     );
+    CREATE TABLE daily_email_delivery_claims (
+      kind TEXT NOT NULL CHECK(kind IN ('reminder','report')),
+      report_date TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('sending','delivery_unknown','sent')),
+      message_id TEXT,
+      claimed_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK(status != 'sent' OR (typeof(message_id) = 'text' AND length(trim(message_id)) > 0)),
+      PRIMARY KEY(kind, report_date)
+    );
   `);
   return db;
 }
@@ -352,6 +362,16 @@ test('sends the first reminder as a root and later reminders as replies to its p
     root_message_id: '<reminder-1@example>',
     last_message_id: '<reminder-2@example>',
   });
+  assert.deepEqual(db.prepare(`
+    SELECT kind, report_date, status, message_id
+    FROM daily_email_delivery_claims
+    WHERE kind = 'reminder' AND report_date = '2026-09-18'
+  `).get(), {
+    kind: 'reminder',
+    report_date: '2026-09-18',
+    status: 'sent',
+    message_id: '<reminder-2@example>',
+  });
 });
 
 test('keeps report replies in a persistent thread independent from reminders', async () => {
@@ -422,6 +442,29 @@ for (const kind of ['reminder', 'report']) {
   });
 }
 
+test('treats a legacy successful ledger row without a claim as already sent', async () => {
+  const db = createFixture();
+  db.prepare(`
+    INSERT INTO daily_email_sends (kind, report_date, message_id)
+    VALUES ('report', '2026-09-17', '<legacy-success@example>')
+  `).run();
+  const messages = [];
+  const service = createDeliveryService({
+    db,
+    messages,
+    messageIds: ['<must-not-send@example>'],
+    currentTime: { value: new Date('2026-09-18T15:45:00.000Z') },
+  });
+
+  assert.deepEqual(await service.sendReport(), {
+    status: 'already_sent',
+    kind: 'report',
+    reportDate: '2026-09-17',
+  });
+  assert.equal(messages.length, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_delivery_claims').get().count, 0);
+});
+
 test('leaves a failed SMTP send unrecorded and allows a successful retry', async () => {
   const db = createFixture();
   const messages = [];
@@ -448,6 +491,7 @@ test('leaves a failed SMTP send unrecorded and allows a successful retry', async
   await assert.rejects(service.sendReport(), /temporary SMTP failure/);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_sends').get().count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_threads').get().count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_delivery_claims').get().count, 0);
 
   assert.deepEqual(await service.sendReport(), {
     status: 'sent',
@@ -461,36 +505,50 @@ test('leaves a failed SMTP send unrecorded and allows a successful retry', async
   );
 });
 
-test('rejects an empty SMTP message ID without recording delivery success', async () => {
+test('blocks automatic retry when SMTP resolves without a usable message ID', async () => {
   const db = createFixture();
+  const messages = [];
   const service = createDeliveryService({
     db,
-    messages: [],
+    messages,
     messageIds: ['   '],
     currentTime: { value: new Date('2026-09-18T15:45:00.000Z') },
   });
 
-  await assert.rejects(service.sendReminder(), /message ID/i);
+  assert.deepEqual(await service.sendReminder(), {
+    status: 'delivery_unknown',
+    kind: 'reminder',
+    reportDate: '2026-09-17',
+  });
+  assert.deepEqual(await service.sendReminder(), {
+    status: 'delivery_unknown',
+    kind: 'reminder',
+    reportDate: '2026-09-17',
+  });
+  assert.equal(messages.length, 1);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_sends').get().count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_threads').get().count, 0);
+  assert.deepEqual(
+    db.prepare(`
+      SELECT kind, report_date, status, message_id
+      FROM daily_email_delivery_claims
+    `).all(),
+    [{ kind: 'reminder', report_date: '2026-09-17', status: 'delivery_unknown', message_id: null }],
+  );
 });
 
-test('converts a send-ledger unique-constraint race into already_sent', async () => {
+test('allows only one concurrent claimant to invoke SMTP', async () => {
   const db = createFixture();
+  let transportCalls = 0;
+  let resolveFirstSend;
   const service = createDailyEmailService({
     db,
     budgetService: createBudgetService(db, { validCategories: [] }),
     transport: {
       async sendMail() {
-        db.prepare(`
-          INSERT INTO daily_email_sends (kind, report_date, message_id)
-          VALUES ('reminder', '2026-09-17', '<winner@example>')
-        `).run();
-        db.prepare(`
-          INSERT INTO daily_email_threads (kind, root_message_id, last_message_id)
-          VALUES ('reminder', '<winner@example>', '<winner@example>')
-        `).run();
-        return { messageId: '<racing-send@example>' };
+        transportCalls += 1;
+        if (transportCalls > 1) return { messageId: '<duplicate@example>' };
+        return new Promise((resolve) => { resolveFirstSend = resolve; });
       },
     },
     config: {
@@ -501,17 +559,126 @@ test('converts a send-ledger unique-constraint race into already_sent', async ()
     now: () => new Date('2026-09-18T15:45:00.000Z'),
   });
 
-  assert.deepEqual(await service.sendReminder(), {
-    status: 'already_sent',
-    kind: 'reminder',
-    reportDate: '2026-09-17',
-  });
+  const first = service.sendReminder();
+  const second = service.sendReminder();
+  await Promise.resolve();
+  resolveFirstSend({ messageId: '<winner@example>' });
+  const results = await Promise.all([first, second]);
+
+  assert.equal(transportCalls, 1);
+  assert.deepEqual(results, [
+    { status: 'sent', kind: 'reminder', reportDate: '2026-09-17' },
+    { status: 'in_progress', kind: 'reminder', reportDate: '2026-09-17' },
+  ]);
   assert.deepEqual(
     db.prepare('SELECT kind, report_date, message_id FROM daily_email_sends').all(),
     [{ kind: 'reminder', report_date: '2026-09-17', message_id: '<winner@example>' }],
   );
+});
+
+test('clears a pre-send rendering claim so the job can be retried', async () => {
+  const db = createFixture();
+  let budgetCalls = 0;
+  const messages = [];
+  const service = createDailyEmailService({
+    db,
+    budgetService: {
+      getBudget() {
+        budgetCalls += 1;
+        if (budgetCalls === 1) throw new Error('render data failed');
+        return { hasBudget: false };
+      },
+    },
+    transport: {
+      async sendMail(message) {
+        messages.push(message);
+        return { messageId: '<render-retry@example>' };
+      },
+    },
+    config: {
+      sender: 'pooja0111mehta@gmail.com',
+      recipients: ['poojamehta1197@gmail.com', 'kunal.mukte03@gmail.com'],
+      baseUrl: 'https://expense.example',
+    },
+    now: () => new Date('2026-09-18T15:45:00.000Z'),
+  });
+
+  await assert.rejects(service.sendReport(), /render data failed/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_delivery_claims').get().count, 0);
+  assert.deepEqual(await service.sendReport(), {
+    status: 'sent',
+    kind: 'report',
+    reportDate: '2026-09-17',
+  });
+  assert.equal(messages.length, 1);
+});
+
+test('keeps a durable delivery_unknown claim when post-SMTP persistence fails', async () => {
+  const db = createFixture();
+  const messages = [];
+  db.exec(`
+    CREATE TRIGGER fail_daily_email_send
+    BEFORE INSERT ON daily_email_sends
+    BEGIN
+      SELECT RAISE(ABORT, 'forced persistence failure');
+    END;
+  `);
+  const service = createDeliveryService({
+    db,
+    messages,
+    messageIds: ['<accepted@example>'],
+    currentTime: { value: new Date('2026-09-18T15:45:00.000Z') },
+  });
+
+  assert.deepEqual(await service.sendReminder(), {
+    status: 'delivery_unknown',
+    kind: 'reminder',
+    reportDate: '2026-09-17',
+  });
+  assert.deepEqual(await service.sendReminder(), {
+    status: 'delivery_unknown',
+    kind: 'reminder',
+    reportDate: '2026-09-17',
+  });
+  assert.equal(messages.length, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_sends').get().count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_threads').get().count, 0);
   assert.deepEqual(
-    db.prepare('SELECT kind, root_message_id, last_message_id FROM daily_email_threads').all(),
-    [{ kind: 'reminder', root_message_id: '<winner@example>', last_message_id: '<winner@example>' }],
+    db.prepare('SELECT kind, report_date, status, message_id FROM daily_email_delivery_claims').all(),
+    [{ kind: 'reminder', report_date: '2026-09-17', status: 'delivery_unknown', message_id: '<accepted@example>' }],
+  );
+});
+
+test('keeps a fresh claim in_progress and turns it delivery_unknown at the 15-minute stale boundary', async () => {
+  const db = createFixture();
+  db.prepare(`
+    INSERT INTO daily_email_delivery_claims
+      (kind, report_date, status, message_id, claimed_at, updated_at)
+    VALUES ('reminder', '2026-09-17', 'sending', NULL, ?, ?)
+  `).run('2026-09-18T15:30:00.000Z', '2026-09-18T15:30:00.000Z');
+  const messages = [];
+  const currentTime = { value: new Date('2026-09-18T15:44:59.000Z') };
+  const service = createDeliveryService({
+    db,
+    messages,
+    messageIds: ['<must-not-send@example>'],
+    currentTime,
+  });
+
+  assert.deepEqual(await service.sendReminder(), {
+    status: 'in_progress',
+    kind: 'reminder',
+    reportDate: '2026-09-17',
+  });
+  currentTime.value = new Date('2026-09-18T15:45:00.000Z');
+  assert.deepEqual(await service.sendReminder(), {
+    status: 'delivery_unknown',
+    kind: 'reminder',
+    reportDate: '2026-09-17',
+  });
+  assert.equal(messages.length, 0);
+  assert.deepEqual(
+    db.prepare('SELECT status, message_id FROM daily_email_delivery_claims').get(),
+    { status: 'delivery_unknown', message_id: null },
   );
 });
