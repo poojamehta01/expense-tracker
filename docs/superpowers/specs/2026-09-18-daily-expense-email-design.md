@@ -115,7 +115,7 @@ Two internal POST endpoints trigger the jobs:
 
 Requests authenticate with `Authorization: Bearer <REPORT_SCHEDULER_SECRET>`. Authentication is checked before any report calculation or send attempt. The endpoints are not protected by the interactive Google login because GitHub Actions calls them without a browser session.
 
-Each endpoint returns a small JSON result indicating `sent`, `already_sent`, or an error. No credential or recipient detail is included in responses.
+Each endpoint returns a small JSON result indicating `sent`, `already_sent`, `in_progress`, `delivery_unknown`, or an error. No credential or recipient detail is included in responses.
 
 ### GitHub Actions scheduler
 
@@ -130,32 +130,40 @@ The workflow also supports manual dispatch so either job can be tested or retrie
 
 ## Persistence and Threading
 
-SQLite stores two kinds of state:
+SQLite stores three kinds of state:
 
 1. Thread state keyed by `reminder` or `report`, containing the root/reference message ID needed for the next reply.
 2. A send ledger keyed by job type and reporting date.
+3. A durable delivery claim keyed by job type and reporting date, with `sending`, `delivery_unknown`, or `sent` state.
 
 The send sequence is:
 
-1. Check the send ledger.
-2. If already successful, return `already_sent` without contacting Gmail.
+1. In one SQLite transaction, check the send ledger and atomically insert the `sending` claim.
+2. If a successful ledger row already exists, return `already_sent`. If another invocation owns a fresh claim, return `in_progress`. Neither path contacts Gmail.
 3. Build the email from a consistent database snapshot.
 4. Send through Gmail, adding thread headers when stored thread state exists.
-5. After Gmail confirms the send, persist the message ID/thread state and successful ledger entry in one database transaction.
+5. Once SMTP may have accepted the message, durably change the claim to `delivery_unknown` before validating or finalizing the result.
+6. For a confirmed result with a valid message ID, transition the claim to `sent`, insert the successful ledger row, and update thread state in one SQLite transaction.
 
-A failed send is not recorded as successful and may be retried. If thread metadata is unavailable, the job starts a new thread and stores its message ID for later sends.
+A demonstrably definite pre-acceptance failure is not recorded as successful: its claim is removed and the job may be retried. This includes local message/envelope/authentication failures and explicit 4xx/5xx SMTP rejection responses. Network, timeout, socket, connection, unclassified transport errors, invalid success metadata, and post-acceptance persistence errors are not known to be safe to retry. They remain `delivery_unknown` and block automatic resend. If thread metadata is unavailable, a confirmed job starts a new thread and stores its message ID for later sends.
+
+A `sending` claim is fresh for 15 minutes. A later invocation returns `in_progress` during that window. At the stale boundary it changes the claim to `delivery_unknown`; it does not reclaim or resend, because the interrupted process may have reached Gmail. There is no automatic recovery from `delivery_unknown` by design.
 
 ## Error Handling and Operations
 
 - Missing SMTP or scheduler configuration causes an explicit server error and no send attempt.
 - Unauthorized scheduler calls return HTTP 401.
 - Duplicate calls return success with `already_sent` so workflow retries remain safe.
-- Gmail errors return a failure status and leave the job retryable.
+- A concurrent call returns `in_progress` without contacting Gmail.
+- Definite pre-acceptance failures remain retryable.
+- Ambiguous SMTP and post-acceptance persistence outcomes return `delivery_unknown`, block automatic retry, and require manual reconciliation.
 - Report-generation errors do not send partial messages.
 - Empty transaction data and missing budgets are normal report states, not errors.
 - Server logs identify the job type, reporting date, and outcome without logging secrets or full email contents.
 
 Before enabling schedules, both endpoints are manually exercised against production with the real recipients. The schedule is enabled only after the reminder, report content, sender identity, and both persistent threads are confirmed.
+
+Operators reconcile `delivery_unknown` only with the [daily email production runbook](../../daily-expense-email-runbook.md). The procedure requires checking Gmail Sent and the exact SQLite claim/ledger/thread state before explicitly choosing to preserve the delivery as sent or clear the claim for one controlled retry.
 
 ## Testing
 
@@ -170,7 +178,9 @@ Automated tests cover:
 - Two independent persistent thread identities.
 - Correct reply headers after the first message.
 - Duplicate prevention for both job types.
-- Retry behavior after a failed SMTP send.
+- Retry behavior after a definite pre-acceptance failure.
+- At-most-once handling for concurrent claims, ambiguous SMTP failures, invalid success metadata, and post-acceptance persistence failures.
+- Fresh and stale claim behavior, including the 15-minute transition to `delivery_unknown`.
 - Authentication failure before report generation.
 - Workflow schedule expressions and manual dispatch configuration.
 
