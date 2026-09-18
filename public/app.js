@@ -92,6 +92,13 @@ let _catSortDir = 'desc';
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
+const PUBLIC_INITIAL_TABS = new Set(['add', 'dashboard', 'budget']);
+
+function initialTabFromLocation(location) {
+  const requestedTab = new URLSearchParams(location?.search || '').get('tab');
+  return PUBLIC_INITIAL_TABS.has(requestedTab) ? requestedTab : null;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Restore dark mode preference
   if (localStorage.getItem('darkMode') === '1') {
@@ -102,7 +109,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setupUpload();
   populateUploadPaymentMethods();
   initUploadMonthPicker();
-  switchTab('dashboard');
+  const initialTab = initialTabFromLocation(window.location);
+  if (initialTab) switchTab(initialTab);
+  else switchTab('dashboard');
   renderMotdQuote();
   loadUser().finally(loadMonths);
 
