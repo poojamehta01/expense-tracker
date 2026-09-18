@@ -46,6 +46,7 @@ function reportingPeriod(now = new Date()) {
     reportDate,
     displayDate,
     month: `${monthName}_${previous.getUTCFullYear()}`,
+    monthStart: `${reportDate.slice(0, 7)}-01`,
   };
 }
 

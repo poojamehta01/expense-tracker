@@ -29,6 +29,7 @@ test('uses the previous Asia Kolkata calendar day', () => {
     reportDate: '2026-09-17',
     displayDate: '17 September 2026',
     month: 'September_2026',
+    monthStart: '2026-09-01',
   });
 });
 
@@ -37,6 +38,34 @@ test('keeps month-to-date data in the previous day month at a month boundary', (
     reportDate: '2026-09-30',
     displayDate: '30 September 2026',
     month: 'September_2026',
+    monthStart: '2026-09-01',
+  });
+});
+
+test('keeps the previous India day just before the 18:30 UTC rollover', () => {
+  assert.deepEqual(reportingPeriod(new Date('2026-09-18T18:29:59.999Z')), {
+    reportDate: '2026-09-17',
+    displayDate: '17 September 2026',
+    month: 'September_2026',
+    monthStart: '2026-09-01',
+  });
+});
+
+test('uses the current India day exactly at the 18:30 UTC rollover', () => {
+  assert.deepEqual(reportingPeriod(new Date('2026-09-18T18:30:00.000Z')), {
+    reportDate: '2026-09-18',
+    displayDate: '18 September 2026',
+    month: 'September_2026',
+    monthStart: '2026-09-01',
+  });
+});
+
+test('crosses the December to January year boundary in India time', () => {
+  assert.deepEqual(reportingPeriod(new Date('2027-01-01T18:29:59.999Z')), {
+    reportDate: '2026-12-31',
+    displayDate: '31 December 2026',
+    month: 'December_2026',
+    monthStart: '2026-12-01',
   });
 });
 
