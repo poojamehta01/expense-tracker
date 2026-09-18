@@ -1,8 +1,8 @@
 const assert = require('node:assert/strict');
-const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const YAML = require('yaml');
 
 const workflowPath = path.join(__dirname, '..', '.github', 'workflows', 'daily-expense-email.yml');
 
@@ -11,12 +11,7 @@ function readWorkflow() {
 }
 
 function parseWorkflow() {
-  const json = execFileSync(
-    'ruby',
-    ['-ryaml', '-rjson', '-e', 'puts JSON.generate(YAML.load_file(ARGV.fetch(0)))', workflowPath],
-    { encoding: 'utf8' },
-  );
-  return JSON.parse(json);
+  return YAML.parse(readWorkflow());
 }
 
 test('daily expense email workflow invokes both protected jobs on IST schedules', () => {
@@ -54,12 +49,14 @@ test('parsed workflow keeps each schedule, manual gate, endpoint, and lock paire
   const reminder = workflow.jobs.reminder;
   assert.match(reminder.if, /github\.event\.schedule == '0 15 \* \* \*'/);
   assert.match(reminder.if, /github\.event\.inputs\.job == 'reminder'/);
+  assert.match(reminder.if, /github\.event\.inputs\.job == 'both'/);
   assert.match(reminder.steps[0].run, /\/api\/internal\/daily-email\/reminder"?$/);
   assert.equal(reminder.concurrency.group, 'daily-expense-email-reminder');
 
   const report = workflow.jobs.report;
   assert.match(report.if, /github\.event\.schedule == '30 15 \* \* \*'/);
   assert.match(report.if, /github\.event\.inputs\.job == 'report'/);
+  assert.match(report.if, /github\.event\.inputs\.job == 'both'/);
   assert.match(report.steps[0].run, /\/api\/internal\/daily-email\/report"?$/);
   assert.equal(report.concurrency.group, 'daily-expense-email-report');
 });
