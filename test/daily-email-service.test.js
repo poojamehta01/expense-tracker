@@ -209,8 +209,9 @@ test('renders the reminder with prior-day date, both recipients prompt, and Add 
   const reminder = renderReminder({ period: renderPeriod, baseUrl: 'https://expense.example' });
   assert.equal(reminder.subject, 'Expense Tracker — Daily Reminder');
   assert.match(reminder.text, /17 September 2026/);
-  assert.match(reminder.text, /both|Pooja.*Kunal|Kunal.*Pooja/i);
+  assert.match(reminder.text, /Pooja and Kunal, please finish adding expenses for 17 September 2026/);
   assert.match(reminder.text, /9:00 p\.m\./i);
+  assert.match(reminder.html, /Pooja and Kunal, please finish adding expenses for/);
   assert.match(reminder.html, /https:\/\/expense\.example\/?\?tab=add/);
 });
 

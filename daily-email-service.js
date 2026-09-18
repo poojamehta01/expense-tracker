@@ -153,13 +153,13 @@ function renderReminder({ period, baseUrl }) {
   const addLink = appLink(baseUrl, 'add');
   const subject = 'Expense Tracker — Daily Reminder';
   const text = [
-    `Please Pooja and Kunal: finish adding expenses for ${date} before the 9:00 p.m. daily report.`,
+    `Pooja and Kunal, please finish adding expenses for ${date} before the 9:00 p.m. daily report.`,
     '',
     `Add expenses: ${addLink}`,
   ].join('\n');
   const html = [
     '<!doctype html><html><body>',
-    `<p>Please Pooja and Kunal: finish adding expenses for <strong>${escapeHtml(date)}</strong> before the 9:00 p.m. daily report.</p>`,
+    `<p>Pooja and Kunal, please finish adding expenses for <strong>${escapeHtml(date)}</strong> before the 9:00 p.m. daily report.</p>`,
     `<p><a href="${escapeHtml(addLink)}">Add expenses</a></p>`,
     '</body></html>',
   ].join('');
