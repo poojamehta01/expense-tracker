@@ -465,7 +465,7 @@ test('treats a legacy successful ledger row without a claim as already sent', as
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_delivery_claims').get().count, 0);
 });
 
-test('leaves a failed SMTP send unrecorded and allows a successful retry', async () => {
+test('leaves an explicitly definite SMTP rejection unrecorded and allows a successful retry', async () => {
   const db = createFixture();
   const messages = [];
   let attempt = 0;
@@ -476,7 +476,11 @@ test('leaves a failed SMTP send unrecorded and allows a successful retry', async
       async sendMail(message) {
         messages.push(message);
         attempt += 1;
-        if (attempt === 1) throw new Error('temporary SMTP failure');
+        if (attempt === 1) {
+          const error = new Error('authentication rejected before sending');
+          error.code = 'EAUTH';
+          throw error;
+        }
         return { messageId: '<report-retry@example>' };
       },
     },
@@ -488,7 +492,7 @@ test('leaves a failed SMTP send unrecorded and allows a successful retry', async
     now: () => new Date('2026-09-18T15:45:00.000Z'),
   });
 
-  await assert.rejects(service.sendReport(), /temporary SMTP failure/);
+  await assert.rejects(service.sendReport(), /authentication rejected before sending/);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_sends').get().count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_threads').get().count, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_delivery_claims').get().count, 0);
@@ -504,6 +508,53 @@ test('leaves a failed SMTP send unrecorded and allows a successful retry', async
     [{ kind: 'report', report_date: '2026-09-17', message_id: '<report-retry@example>' }],
   );
 });
+
+for (const [label, code] of [
+  ['timeout', 'ETIMEDOUT'],
+  ['socket failure', 'ESOCKET'],
+  ['connection failure', 'ECONNECTION'],
+  ['unclassified failure', undefined],
+]) {
+  test(`blocks automatic retry after an ambiguous SMTP ${label}`, async () => {
+    const db = createFixture();
+    const messages = [];
+    const service = createDailyEmailService({
+      db,
+      budgetService: createBudgetService(db, { validCategories: [] }),
+      transport: {
+        async sendMail(message) {
+          messages.push(message);
+          const error = new Error(`ambiguous ${label}`);
+          if (code) error.code = code;
+          throw error;
+        },
+      },
+      config: {
+        sender: 'pooja0111mehta@gmail.com',
+        recipients: ['poojamehta1197@gmail.com', 'kunal.mukte03@gmail.com'],
+        baseUrl: 'https://expense.example',
+      },
+      now: () => new Date('2026-09-18T15:45:00.000Z'),
+    });
+
+    assert.deepEqual(await service.sendReport(), {
+      status: 'delivery_unknown',
+      kind: 'report',
+      reportDate: '2026-09-17',
+    });
+    assert.deepEqual(await service.sendReport(), {
+      status: 'delivery_unknown',
+      kind: 'report',
+      reportDate: '2026-09-17',
+    });
+    assert.equal(messages.length, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM daily_email_sends').get().count, 0);
+    assert.deepEqual(
+      db.prepare('SELECT status, message_id FROM daily_email_delivery_claims').get(),
+      { status: 'delivery_unknown', message_id: null },
+    );
+  });
+}
 
 test('blocks automatic retry when SMTP resolves without a usable message ID', async () => {
   const db = createFixture();

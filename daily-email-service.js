@@ -2,6 +2,14 @@ const nodemailer = require('nodemailer');
 
 const INDIA_TIME_ZONE = 'Asia/Kolkata';
 const DELIVERY_CLAIM_STALE_AFTER_MS = 15 * 60 * 1000;
+const DEFINITE_PRE_SEND_ERROR_CODES = new Set(['EAUTH', 'EDNS', 'EENVELOPE', 'EMESSAGE']);
+
+function isDefinitelyNotAcceptedBySmtp(error) {
+  if (!error || typeof error !== 'object') return false;
+  if (DEFINITE_PRE_SEND_ERROR_CODES.has(error.code)) return true;
+  const responseCode = Number(error.responseCode);
+  return Number.isInteger(responseCode) && responseCode >= 400 && responseCode <= 599;
+}
 
 function createGmailTransport({ user, appPassword }) {
   return nodemailer.createTransport({
@@ -438,8 +446,21 @@ function createDailyEmailService({ db, budgetService, transport, config, now = (
         } : {}),
       });
     } catch (error) {
-      releaseDeliveryClaim({ kind, reportDate: period.reportDate });
-      throw error;
+      if (isDefinitelyNotAcceptedBySmtp(error)) {
+        releaseDeliveryClaim({ kind, reportDate: period.reportDate });
+        throw error;
+      }
+      try {
+        markDeliveryUnknown({
+          kind,
+          reportDate: period.reportDate,
+          messageId: null,
+          updatedAt: claimedAt,
+        });
+      } catch {
+        // The original durable sending claim still blocks automatic retry.
+      }
+      return { status: 'delivery_unknown', kind, reportDate: period.reportDate };
     }
 
     const messageId = typeof info?.messageId === 'string' && info.messageId.trim() !== ''
@@ -485,6 +506,7 @@ function createDailyEmailService({ db, budgetService, transport, config, now = (
 module.exports = {
   createGmailTransport,
   createDailyEmailService,
+  isDefinitelyNotAcceptedBySmtp,
   reportingPeriod,
   renderReminder,
   renderReport,
