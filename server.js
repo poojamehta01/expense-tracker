@@ -8,6 +8,8 @@ const multer = require('multer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('./db');
 const { createBudgetService } = require('./budget-service');
+const { registerDailyEmailRoutes } = require('./daily-email-routes');
+const { createDailyEmailService, createGmailTransport } = require('./daily-email-service');
 const { createMonthlyNotesService } = require('./monthly-notes-service');
 const { normalizeHouseholdPoolTransaction, calculateSettlement } = require('./household-pool');
 
@@ -126,6 +128,38 @@ function requireAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect('/login');
 }
+
+function createDailyEmailServiceFromEnvironment(environment = process.env, {
+  database = db,
+  createBudget = createBudgetService,
+  createTransport = createGmailTransport,
+  createService = createDailyEmailService,
+} = {}) {
+  const sender = typeof environment.REPORT_GMAIL_USER === 'string'
+    ? environment.REPORT_GMAIL_USER.trim()
+    : '';
+  const appPassword = typeof environment.REPORT_GMAIL_APP_PASSWORD === 'string'
+    ? environment.REPORT_GMAIL_APP_PASSWORD
+    : '';
+  const recipients = typeof environment.REPORT_RECIPIENTS === 'string'
+    ? environment.REPORT_RECIPIENTS.split(',').map(value => value.trim()).filter(Boolean)
+    : [];
+  const baseUrl = typeof environment.BASE_URL === 'string' ? environment.BASE_URL.trim() : '';
+  if (!sender || !appPassword.trim() || recipients.length === 0 || !baseUrl) return null;
+
+  const transport = createTransport({ user: sender, appPassword });
+  return createService({
+    db: database,
+    budgetService: createBudget(database),
+    transport,
+    config: { sender, recipients, baseUrl },
+  });
+}
+
+const dailyEmailService = createDailyEmailServiceFromEnvironment();
+registerDailyEmailRoutes(app, dailyEmailService, {
+  schedulerSecret: process.env.REPORT_SCHEDULER_SECRET,
+});
 
 function registerBudgetRoutes(app, service) {
   const sendServiceResult = (res, operation) => {
@@ -1020,7 +1054,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  app,
   registerBudgetRoutes,
+  createDailyEmailServiceFromEnvironment,
   registerMonthlyNotesRoutes,
   canonicalPersonForEmail,
   filterOutgoingTransactions,
