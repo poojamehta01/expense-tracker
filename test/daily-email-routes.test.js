@@ -38,6 +38,119 @@ function createService(overrides = {}) {
   };
 }
 
+function createLogger() {
+  const entries = { info: [], error: [] };
+  return {
+    entries,
+    info(entry) { entries.info.push(entry); },
+    error(entry) { entries.error.push(entry); },
+  };
+}
+
+test('logs structured non-secret fields for every scheduler service result', async () => {
+  const cases = [
+    { status: 'sent', statusCode: 200, level: 'info', manualAttention: false },
+    { status: 'already_sent', statusCode: 200, level: 'info', manualAttention: false },
+    { status: 'in_progress', statusCode: 202, level: 'info', manualAttention: false },
+    { status: 'delivery_unknown', statusCode: 503, level: 'error', manualAttention: true },
+  ];
+
+  for (const expected of cases) {
+    const app = createApp();
+    const logger = createLogger();
+    registerDailyEmailRoutes(app, createService({
+      sendReport: async () => ({
+        status: expected.status,
+        kind: 'report',
+        reportDate: '2026-09-17',
+      }),
+    }), { schedulerSecret: 'scheduler-token', logger });
+
+    const response = createResponse();
+    await route(app, '/api/internal/daily-email/report')(
+      createRequest({ authorization: 'Bearer scheduler-token' }),
+      response,
+    );
+
+    assert.equal(response.statusCode, expected.statusCode);
+    assert.deepEqual(logger.entries[expected.level], [{
+      event: 'daily_email_scheduler',
+      kind: 'report',
+      reportDate: '2026-09-17',
+      outcome: expected.status,
+      manualAttention: expected.manualAttention,
+    }]);
+    const otherLevel = expected.level === 'info' ? 'error' : 'info';
+    assert.deepEqual(logger.entries[otherLevel], []);
+    assert.equal(JSON.stringify(logger.entries).includes('scheduler-token'), false);
+  }
+});
+
+test('logs only safe error classification when a scheduler service throws', async () => {
+  const app = createApp();
+  const logger = createLogger();
+  registerDailyEmailRoutes(app, createService({
+    sendReport: async () => {
+      const error = new TypeError(
+        'Bearer scheduler-token failed with app-password for recipient@example.test',
+      );
+      error.code = 'EAUTH';
+      throw error;
+    },
+  }), { schedulerSecret: 'scheduler-token', logger });
+
+  const response = createResponse();
+  await route(app, '/api/internal/daily-email/report')(
+    createRequest({ authorization: 'Bearer scheduler-token' }),
+    response,
+  );
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(logger.entries.info, []);
+  assert.deepEqual(logger.entries.error, [{
+    event: 'daily_email_scheduler',
+    kind: 'report',
+    reportDate: null,
+    outcome: 'failed',
+    manualAttention: false,
+    errorClass: 'TypeError',
+    errorCode: 'EAUTH',
+  }]);
+  const serialized = JSON.stringify(logger.entries);
+  assert.equal(serialized.includes('scheduler-token'), false);
+  assert.equal(serialized.includes('app-password'), false);
+  assert.equal(serialized.includes('recipient@example.test'), false);
+});
+
+test('redacts unrecognized exception codes from scheduler logs', async () => {
+  const app = createApp();
+  const logger = createLogger();
+  registerDailyEmailRoutes(app, createService({
+    sendReminder: async () => {
+      const error = new Error('transport failed');
+      error.code = 'SECRET_password-value';
+      throw error;
+    },
+  }), { schedulerSecret: 'scheduler-token', logger });
+
+  const response = createResponse();
+  await route(app, '/api/internal/daily-email/reminder')(
+    createRequest({ authorization: 'Bearer scheduler-token' }),
+    response,
+  );
+
+  assert.deepEqual(logger.entries.error[0], {
+    event: 'daily_email_scheduler',
+    kind: 'reminder',
+    reportDate: null,
+    outcome: 'failed',
+    manualAttention: false,
+    errorClass: 'Error',
+    errorCode: 'UNCLASSIFIED',
+  });
+  assert.equal(JSON.stringify(logger.entries).includes('password-value'), false);
+});
+
 test('authorized reminder calls the service and returns its sent result', async () => {
   const app = createApp();
   let serviceCalls = 0;
