@@ -3,7 +3,12 @@ const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 
 const { createBudgetService } = require('../budget-service');
-const { createDailyEmailService, reportingPeriod } = require('../daily-email-service');
+const {
+  createDailyEmailService,
+  reportingPeriod,
+  renderReminder,
+  renderReport,
+} = require('../daily-email-service');
 
 test('uses the previous Asia Kolkata calendar day', () => {
   assert.deepEqual(reportingPeriod(new Date('2026-09-18T15:45:00.000Z')), {
@@ -170,4 +175,95 @@ test('keeps a late personal row from a non-contributing budget owner unmapped', 
   assert.equal(data.budget.usage, 0.01);
   assert.equal(data.budget.unmappedTotal, 0);
   assert.equal(capturedBudget.sections[0].lines[0].actual, 100);
+});
+
+const renderPeriod = {
+  reportDate: '2026-09-17',
+  displayDate: '17 September 2026',
+  month: 'September_2026',
+};
+
+const renderFixture = {
+  period: renderPeriod,
+  dailyExpenses: [
+    { description: 'Groceries', category: 'Food', paid_by: 'Pooja', amount: 1000 },
+    { description: 'Taxi', category: 'Transport', paid_by: 'Kunal', amount: 500 },
+  ],
+  dailyExpenseTotal: 1500,
+  dailyExpenseCount: 2,
+  dailyInvestments: [{ description: 'SIP', category: 'Investment', paid_by: 'Pooja', amount: 3000 }],
+  dailyInvestmentTotal: 3000,
+  monthExpenseTotal: 2200,
+  monthInvestmentTotal: 5000,
+  budget: {
+    configured: true,
+    expenseBudget: 10000,
+    actualSpending: 2200,
+    remaining: 7800,
+    usage: 0.22,
+    unmappedTotal: 250,
+  },
+};
+
+test('renders the reminder with prior-day date, both recipients prompt, and Add Expenses link', () => {
+  const reminder = renderReminder({ period: renderPeriod, baseUrl: 'https://expense.example' });
+  assert.equal(reminder.subject, 'Expense Tracker — Daily Reminder');
+  assert.match(reminder.text, /17 September 2026/);
+  assert.match(reminder.text, /both|Pooja.*Kunal|Kunal.*Pooja/i);
+  assert.match(reminder.text, /9:00 p\.m\./i);
+  assert.match(reminder.html, /https:\/\/expense\.example\/?\?tab=add/);
+});
+
+test('renders a populated report in plain text and safe HTML', () => {
+  const report = renderReport(renderFixture, { baseUrl: 'https://expense.example' });
+  assert.equal(report.subject, 'Expense Tracker — Daily Report');
+  assert.match(report.text, /17 September 2026/);
+  assert.match(report.text, /Yesterday's expenses: ₹1,500/);
+  assert.match(report.text, /Month to date: ₹2,200 of ₹10,000/);
+  assert.match(report.text, /Investments yesterday: ₹3,000/);
+  assert.match(report.text, /Investments month to date: ₹5,000/);
+  assert.match(report.text, /Unmapped expenses: ₹250/);
+  assert.match(report.text, /Groceries.*Food.*Pooja.*₹1,000/);
+  assert.match(report.html, /Unmapped expenses/);
+  assert.match(report.html, /https:\/\/expense\.example\/?\?tab=dashboard/);
+  assert.match(report.html, /https:\/\/expense\.example\/?\?tab=budget/);
+});
+
+test('escapes database-derived labels in HTML output', () => {
+  const report = renderReport({
+    ...renderFixture,
+    dailyExpenses: [{ description: '<script>alert(1)</script>', category: 'A & B', paid_by: 'Pooja', amount: 10 }],
+  }, { baseUrl: 'https://expense.example' });
+  assert.match(report.text, /<script>alert\(1\)<\/script>/);
+  assert.match(report.html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(report.html, /<script>/);
+  assert.match(report.html, /A &amp; B/);
+});
+
+test('renders explicit empty transaction states and no-budget state', () => {
+  const report = renderReport({
+    ...renderFixture,
+    dailyExpenses: [],
+    dailyExpenseCount: 0,
+    dailyExpenseTotal: 0,
+    dailyInvestments: [],
+    dailyInvestmentTotal: 0,
+    budget: { configured: false },
+  }, { baseUrl: 'https://expense.example' });
+  assert.match(report.text, /No expenses recorded for 17 September 2026/);
+  assert.match(report.text, /No investments recorded for 17 September 2026/);
+  assert.match(report.text, /No budget configured/);
+  assert.match(report.html, /No expenses recorded/);
+  assert.match(report.html, /No investments recorded/);
+  assert.match(report.html, /No budget configured/);
+});
+
+test('labels a negative remaining budget as overspent', () => {
+  const report = renderReport({
+    ...renderFixture,
+    budget: { ...renderFixture.budget, actualSpending: 12000, remaining: -2000, usage: 1.2, unmappedTotal: 0 },
+  }, { baseUrl: 'https://expense.example' });
+  assert.match(report.text, /Overspent: ₹2,000/);
+  assert.match(report.text, /120% used/);
+  assert.match(report.html, /Overspent: ₹2,000/);
 });
