@@ -66,9 +66,28 @@ function boundBudgetToReportDate(budgetResult, db, period, monthDates) {
         .find(line => line.kind === 'expense' && line.mappings.includes(row.category))
       : null;
     if (mappedLine) {
-      mappedLine.actual -= amount;
+      let mappedAmount = amount;
+      let unmappedAmount = 0;
+      if (row.paid_by === 'Household Pool') {
+        const contributors = Number(db.prepare(`
+          SELECT COUNT(DISTINCT budget.person) AS count
+          FROM budgets AS budget
+          JOIN budget_category_mappings AS mapping
+            ON mapping.section = budget.section
+           AND mapping.budget_category = budget.category
+           AND mapping.kind = budget.kind
+          WHERE budget.month = ? AND budget.person IN ('Pooja', 'Kunal')
+            AND budget.kind = 'expense' AND mapping.transaction_category = ?
+        `).get(period.month, row.category).count);
+        mappedAmount = amount * 0.5 * contributors;
+        unmappedAmount = amount * 0.5 * (2 - contributors);
+      }
+      mappedLine.actual -= mappedAmount;
       mappedLine.variance = mappedLine.budget - mappedLine.actual;
       mappedLine.usage = budgetUsage(mappedLine.actual, mappedLine.budget);
+      if (unmappedAmount > 0) {
+        lateUnmapped.set(row.category, (lateUnmapped.get(row.category) || 0) + unmappedAmount);
+      }
     } else {
       lateUnmapped.set(row.category, (lateUnmapped.get(row.category) || 0) + amount);
     }

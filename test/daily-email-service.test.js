@@ -103,3 +103,37 @@ test('aggregates previous-day and month-to-date expense and investment data', ()
     assert.equal(data.dailyExpenses.some(row => row.category === excluded), false);
   }
 });
+
+test('bounds a late Household Pool row by contributing budget ownership', () => {
+  const db = createFixture();
+  const month = 'September_2026';
+  const addTransaction = db.prepare(`INSERT INTO transactions
+    (date, amount, description, paid_by, category, month) VALUES (?, ?, ?, ?, ?, ?)`);
+  addTransaction.run('17 September 2026', 100, 'Rent', 'Pooja', 'Rent', month);
+  addTransaction.run('18 September 2026', 400, 'Late shared rent', 'Household Pool', 'Rent', month);
+  db.prepare(`INSERT INTO budgets (month, person, section, category, kind, amount, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(month, 'Pooja', 'Home', 'Rent', 'expense', 10000, 0);
+  db.prepare(`INSERT INTO budget_category_mappings
+    (section, budget_category, transaction_category, kind) VALUES (?, ?, ?, ?)`)
+    .run('Home', 'Rent', 'Rent', 'expense');
+
+  const realBudgetService = createBudgetService(db, { validCategories: ['Rent'] });
+  let capturedBudget;
+  const service = createDailyEmailService({
+    db,
+    budgetService: { getBudget(args) {
+      capturedBudget = realBudgetService.getBudget(args);
+      return capturedBudget;
+    } },
+    transport: {},
+    config: {},
+    now: () => new Date('2026-09-18T15:45:00.000Z'),
+  });
+  const data = service.getReportData();
+
+  assert.equal(data.budget.actualSpending, 100);
+  assert.equal(data.budget.remaining, 9900);
+  assert.equal(data.budget.usage, 0.01);
+  assert.equal(data.budget.unmappedTotal, 0);
+  assert.equal(capturedBudget.sections[0].lines[0].actual, 100);
+});
