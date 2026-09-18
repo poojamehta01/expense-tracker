@@ -61,26 +61,32 @@ function boundBudgetToReportDate(budgetResult, db, period, monthDates) {
   for (const row of lateRows) {
     if (excluded.has(row.category) || row.category === null) continue;
     const amount = Number(row.amount);
-    const mappedLine = ['Pooja', 'Kunal', 'Household Pool'].includes(row.paid_by)
+    let mappedLine = ['Pooja', 'Kunal', 'Household Pool'].includes(row.paid_by)
       ? budgetResult.sections.flatMap(section => section.lines)
         .find(line => line.kind === 'expense' && line.mappings.includes(row.category))
       : null;
+    let contributors = [];
+    if (mappedLine) {
+      contributors = db.prepare(`
+        SELECT DISTINCT budget.person AS person
+        FROM budgets AS budget
+        JOIN budget_category_mappings AS mapping
+          ON mapping.section = budget.section
+         AND mapping.budget_category = budget.category
+         AND mapping.kind = budget.kind
+        WHERE budget.month = ? AND budget.person IN ('Pooja', 'Kunal')
+          AND budget.kind = 'expense' AND mapping.transaction_category = ?
+      `).all(period.month, row.category).map(contributor => contributor.person);
+      if (row.paid_by !== 'Household Pool' && !contributors.includes(row.paid_by)) {
+        mappedLine = null;
+      }
+    }
     if (mappedLine) {
       let mappedAmount = amount;
       let unmappedAmount = 0;
       if (row.paid_by === 'Household Pool') {
-        const contributors = Number(db.prepare(`
-          SELECT COUNT(DISTINCT budget.person) AS count
-          FROM budgets AS budget
-          JOIN budget_category_mappings AS mapping
-            ON mapping.section = budget.section
-           AND mapping.budget_category = budget.category
-           AND mapping.kind = budget.kind
-          WHERE budget.month = ? AND budget.person IN ('Pooja', 'Kunal')
-            AND budget.kind = 'expense' AND mapping.transaction_category = ?
-        `).get(period.month, row.category).count);
-        mappedAmount = amount * 0.5 * contributors;
-        unmappedAmount = amount * 0.5 * (2 - contributors);
+        mappedAmount = amount * 0.5 * contributors.length;
+        unmappedAmount = amount * 0.5 * (2 - contributors.length);
       }
       mappedLine.actual -= mappedAmount;
       mappedLine.variance = mappedLine.budget - mappedLine.actual;
