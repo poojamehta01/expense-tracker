@@ -90,6 +90,21 @@ db.exec(`
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS daily_email_threads (
+    kind            TEXT PRIMARY KEY CHECK(kind IN ('reminder','report')),
+    root_message_id TEXT NOT NULL,
+    last_message_id TEXT NOT NULL,
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS daily_email_sends (
+    kind        TEXT NOT NULL CHECK(kind IN ('reminder','report')),
+    report_date TEXT NOT NULL CHECK(report_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    message_id  TEXT NOT NULL,
+    sent_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY(kind, report_date)
+  );
+
   CREATE TABLE IF NOT EXISTS budgets (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     month      TEXT NOT NULL CHECK(month GLOB '[A-Z]*_[0-9][0-9][0-9][0-9]'),

@@ -43,6 +43,18 @@ test('creates constrained budget tables', () => {
   });
 });
 
+test('creates daily email persistence tables with delivery uniqueness', () => {
+  const threadColumns = db.prepare(`PRAGMA table_info(daily_email_threads)`).all().map(row => row.name);
+  assert.deepEqual(threadColumns, ['kind', 'root_message_id', 'last_message_id', 'updated_at']);
+
+  const sendColumns = db.prepare(`PRAGMA table_info(daily_email_sends)`).all().map(row => row.name);
+  assert.deepEqual(sendColumns, ['kind', 'report_date', 'message_id', 'sent_at']);
+  assert.throws(() => {
+    db.prepare(`INSERT INTO daily_email_sends (kind, report_date, message_id) VALUES ('report','2026-09-17','<two>')`).run();
+    db.prepare(`INSERT INTO daily_email_sends (kind, report_date, message_id) VALUES ('report','2026-09-17','<three>')`).run();
+  }, /UNIQUE constraint failed/);
+});
+
 test('creates constrained mapping table', () => {
   const mappingColumns = db.prepare('PRAGMA table_info(budget_category_mappings)').all().map(row => row.name);
   assert.deepEqual(mappingColumns, [
