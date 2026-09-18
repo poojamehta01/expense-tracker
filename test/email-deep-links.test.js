@@ -25,6 +25,42 @@ function loadDeepLinkHelpers() {
   return context.deepLinkHelpersForTest;
 }
 
+function runStartup(search) {
+  const source = fs.readFileSync(APP_PATH, 'utf8');
+  const start = source.indexOf('// ─── Init');
+  const end = source.indexOf('let currentUserName', start);
+  const listeners = new Map();
+  const switchedTabs = [];
+  const element = {
+    classList: { add() {}, toggle() {} },
+    textContent: '',
+  };
+  const context = vm.createContext({
+    URLSearchParams,
+    window: { location: { search } },
+    localStorage: { getItem() { return null; } },
+    document: {
+      body: { classList: { add() {} } },
+      addEventListener(name, callback) { listeners.set(name, callback); },
+      getElementById() { return element; },
+    },
+    loadSettings() {},
+    setupUpload() {},
+    populateUploadPaymentMethods() {},
+    initUploadMonthPicker() {},
+    switchTab(name) { switchedTabs.push(name); },
+    renderMotdQuote() {},
+    loadUser() { return { finally() {} }; },
+    loadMonths() {},
+  });
+
+  vm.runInContext(source.slice(start, end), context);
+  const domReady = listeners.get('DOMContentLoaded');
+  assert.equal(typeof domReady, 'function', 'startup must register DOMContentLoaded');
+  domReady();
+  return switchedTabs;
+}
+
 test('initialTabFromLocation accepts only public email deep-link tabs', () => {
   const { initialTabFromLocation } = loadDeepLinkHelpers();
 
@@ -36,20 +72,15 @@ test('initialTabFromLocation accepts only public email deep-link tabs', () => {
 });
 
 test('startup applies the Add Expenses email deep link through switchTab', () => {
-  const source = fs.readFileSync(APP_PATH, 'utf8');
-  const initStart = source.indexOf("document.addEventListener('DOMContentLoaded'");
-  const initEnd = source.indexOf('\n});', initStart);
-  const initSource = source.slice(initStart, initEnd);
-
-  assert.match(initSource, /const initialTab = initialTabFromLocation\(window\.location\);/);
-  assert.match(initSource, /if \(initialTab\) switchTab\(initialTab\);/);
+  assert.deepEqual(runStartup('?tab=add'), ['add']);
 });
 
-test('startup falls back to Dashboard when no allowed tab is requested', () => {
-  const source = fs.readFileSync(APP_PATH, 'utf8');
-  const initStart = source.indexOf("document.addEventListener('DOMContentLoaded'");
-  const initEnd = source.indexOf('\n});', initStart);
-  const initSource = source.slice(initStart, initEnd);
+test('startup selects every other public deep-link tab', () => {
+  assert.deepEqual(runStartup('?tab=dashboard'), ['dashboard']);
+  assert.deepEqual(runStartup('?tab=budget'), ['budget']);
+});
 
-  assert.match(initSource, /else switchTab\('dashboard'\);/);
+test('startup falls back to Dashboard when the tab query is absent or invalid', () => {
+  assert.deepEqual(runStartup(''), ['dashboard']);
+  assert.deepEqual(runStartup('?tab=unknown'), ['dashboard']);
 });

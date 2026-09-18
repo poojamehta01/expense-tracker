@@ -7,9 +7,10 @@ Implemented safe startup tab selection for email deep links. `initialTabFromLoca
 ## TDD evidence
 
 - RED: `PATH=/Users/poojamehta/.nvm/versions/node/v22.22.0/bin:$PATH node --test test/email-deep-links.test.js` failed because `initialTabFromLocation` was not defined.
-- GREEN: the same focused deep-link tests passed 3/3 after implementing the allowlist and startup selection.
-- Regression verification: `PATH=/Users/poojamehta/.nvm/versions/node/v22.22.0/bin:$PATH node --test test/email-deep-links.test.js test/navigation-ui.test.js` passed 4/4.
-- Full serial suite: `PATH=/Users/poojamehta/.nvm/versions/node/v22.22.0/bin:$PATH node --test --test-concurrency=1 test/*.test.js` passed 200/200.
+- GREEN: the same focused deep-link tests passed 4/4 after implementing the allowlist and startup selection.
+- Test-quality follow-up: startup coverage now evaluates the production `DOMContentLoaded` listener in a VM harness and observes `switchTab` for add, dashboard, budget, missing, and invalid queries.
+- Regression verification: `PATH=/Users/poojamehta/.nvm/versions/node/v22.22.0/bin:$PATH node --test test/email-deep-links.test.js test/navigation-ui.test.js` passed 5/5.
+- Full serial suite: `PATH=/Users/poojamehta/.nvm/versions/node/v22.22.0/bin:$PATH node --test --test-concurrency=1 test/*.test.js` passed 201/201.
 - `git diff --check` exited 0.
 
 ## Included behavior
