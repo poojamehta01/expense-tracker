@@ -67,7 +67,7 @@ test('partial summaries display known values and coverage for each owner', async
   assert.match(f.elements.investmentRows.innerHTML, /\+₹20\.25/);
   assert.match(f.elements.investmentRows.innerHTML, /Not added/);
   assert.equal(f.elements.investmentTotalCurrent.textContent, '₹120.50');
-  assert.equal(f.elements.investmentTotalGain.textContent, '+₹20.25');
+  assert.equal(f.elements.investmentTotalGain.textContent, '+₹20.25 (+20.20%)');
   assert.equal(f.elements.investmentTotalMissing.textContent, 'Partial totals · 1 of 2 investments valued');
   assert.equal(f.elements.investmentKunalMissing.textContent, '0 of 1 investments valued');
   assert.equal(f.elements.investmentPoojaMissing.textContent, '1 of 1 investments valued');
@@ -86,4 +86,28 @@ test('saving distinguishes a zero current value from a cleared field', async () 
   f.elements.investmentCurrentValue.value = '';
   f.responses.push(ok(data)); await f.context.saveInvestment({ preventDefault() {} });
   assert.equal(JSON.parse(f.requests[2].options.body).currentValue, null);
+});
+
+
+test('gain percentages use the valued cost basis and show signed gains, losses, and zero', async () => {
+  const f = fixture();
+  f.responses.push(ok({ entries: [
+    { id: 1, name: 'Small fund', person: 'Pooja', amount: 100, currentValue: 120, gain: 20 },
+    { id: 2, name: 'Large fund', person: 'Pooja', amount: 900, currentValue: 990, gain: 90 },
+    { id: 3, name: 'Unknown', person: 'Pooja', amount: 9000, currentValue: null, gain: null },
+    { id: 4, name: 'Loss', person: 'Kunal', amount: 100, currentValue: 0, gain: -100 },
+    { id: 5, name: 'Unchanged', person: 'Kunal', amount: 100, currentValue: 100, gain: 0 },
+  ], totals: { Pooja: 10000, Kunal: 200, combined: 10200 }, valuations: {
+    Pooja: { currentValue: 1110, gain: 110, missing: 1 },
+    Kunal: { currentValue: 100, gain: -100, missing: 0 },
+    combined: { currentValue: 1210, gain: 10, missing: 1 },
+  } }));
+  await f.context.loadInvestments();
+  assert.equal(f.elements.investmentPoojaGain.textContent, '+₹110.00 (+11.00%)');
+  assert.equal(f.elements.investmentKunalGain.textContent, '-₹100.00 (-50.00%)');
+  assert.equal(f.elements.investmentTotalGain.textContent, '+₹10.00 (+0.83%)');
+  assert.match(f.elements.investmentRows.innerHTML, /\+20\.00%/);
+  assert.match(f.elements.investmentRows.innerHTML, /-100\.00%/);
+  assert.match(f.elements.investmentRows.innerHTML, /₹0\.00 \(0\.00%\)/);
+  assert.doesNotMatch(f.elements.investmentRows.innerHTML, /NaN|Infinity/);
 });
