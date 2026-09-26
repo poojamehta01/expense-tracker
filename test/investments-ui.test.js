@@ -52,3 +52,35 @@ test('deletion updates totals and an older load cannot overwrite it', async () =
   assert.equal(f.requests[2].options.method, 'DELETE');
   assert.match(f.elements.investmentRows.innerHTML, /No investments yet/);
 });
+
+test('current value and signed gains render while incomplete summaries stay unknown', async () => {
+  const f = fixture();
+  f.responses.push(ok({ ...data, entries: [
+    { ...data.entries[0], currentValue: 120.50, gain: 20.25 },
+    { ...data.entries[1], currentValue: null, gain: null },
+  ], valuations: {
+    Pooja: { currentValue: 120.50, gain: 20.25, missing: 0 },
+    Kunal: { currentValue: null, gain: null, missing: 1 },
+    combined: { currentValue: null, gain: null, missing: 1 },
+  } }));
+  await f.context.loadInvestments();
+  assert.match(f.elements.investmentRows.innerHTML, /\+₹20\.25/);
+  assert.match(f.elements.investmentRows.innerHTML, /Not added/);
+  assert.equal(f.elements.investmentTotalCurrent.textContent, 'Not added');
+  assert.match(f.elements.investmentTotalMissing.textContent, /1 current value missing/);
+  assert.equal(f.elements.investmentPoojaCurrent.textContent, '₹120.50');
+  f.context.editInvestment(1);
+  assert.equal(f.elements.investmentCurrentValue.value, 120.50);
+});
+
+test('saving distinguishes a zero current value from a cleared field', async () => {
+  const f = fixture(); f.responses.push(ok(data)); await f.context.loadInvestments();
+  f.context.editInvestment(1);
+  f.elements.investmentCurrentValue.value = '0';
+  f.responses.push(ok(data)); await f.context.saveInvestment({ preventDefault() {} });
+  assert.equal(JSON.parse(f.requests[1].options.body).currentValue, 0);
+  f.context.editInvestment(1);
+  f.elements.investmentCurrentValue.value = '';
+  f.responses.push(ok(data)); await f.context.saveInvestment({ preventDefault() {} });
+  assert.equal(JSON.parse(f.requests[2].options.body).currentValue, null);
+});

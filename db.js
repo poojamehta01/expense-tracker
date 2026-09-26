@@ -235,6 +235,14 @@ db.transaction(() => {
   db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
 })();
 
+db.transaction(() => {
+  const version = '2026-09-26-investment-current-value-v1';
+  if (db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(version)) return;
+  db.exec(`ALTER TABLE investments ADD COLUMN current_value_paise INTEGER
+    CHECK(current_value_paise IS NULL OR (typeof(current_value_paise) = 'integer' AND current_value_paise >= 0 AND current_value_paise <= 100000000000000))`);
+  db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
+}).immediate();
+
 db.pragma('incremental_vacuum(100)');   // reclaim up to 100 free pages on each startup
 
 module.exports = db;
