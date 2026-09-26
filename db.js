@@ -42,6 +42,14 @@ db.exec(`
     UNIQUE(list_name, value)
   );
 
+  CREATE TABLE IF NOT EXISTS investments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 200),
+    person TEXT NOT NULL CHECK(person IN ('Pooja','Kunal')),
+    amount_paise INTEGER NOT NULL CHECK(amount_paise > 0 AND amount_paise <= 100000000000000),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS salaries (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     person     TEXT NOT NULL,

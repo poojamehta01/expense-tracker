@@ -38,6 +38,7 @@
       <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-btn-dashboard">Dashboard</button>
       <button class="tab-btn" onclick="switchTab('add')" id="tab-btn-add">Add Expenses</button>
       <button class="tab-btn" id="tab-btn-budget" onclick="switchTab('budget')">Budget</button>
+      <button class="tab-btn" onclick="switchTab('investments')" id="tab-btn-investments">Investments</button>
       <button class="tab-btn" onclick="switchTab('salary')" id="tab-btn-salary">Salary</button>
       <button class="tab-btn" onclick="switchTab('trends')" id="tab-btn-trends">Trends</button>
       <button class="tab-btn" onclick="switchTab('ask')" id="tab-btn-ask">Ask AI</button>
@@ -52,6 +53,40 @@
     </nav>
 
     <main class="main">
+
+      <div id="tab-investments" class="hidden">
+        <section class="investments-page" aria-labelledby="investmentsTitle">
+          <div class="investment-heading"><div><h2 id="investmentsTitle">Investments</h2>
+            <p>All-time investments · Manually recorded lump-sum amounts</p></div>
+            <button type="button" class="btn-secondary" id="investmentRefresh" onclick="loadInvestments()">Refresh</button>
+          </div>
+          <div class="investment-totals">
+            <div class="kpi-card investment-total"><div class="kpi-label">Combined invested</div><div class="investment-value" id="investmentTotal">—</div></div>
+            <div class="kpi-card"><div class="kpi-label">Pooja</div><div class="investment-value" id="investmentPooja">—</div></div>
+            <div class="kpi-card"><div class="kpi-label">Kunal</div><div class="investment-value" id="investmentKunal">—</div></div>
+          </div>
+          <form id="investmentForm" class="investment-card" onsubmit="saveInvestment(event)">
+            <h3 id="investmentFormTitle">Add investment</h3>
+            <p>Enter the total amount invested to date for each investment.</p>
+            <fieldset id="investmentFields">
+              <div class="investment-inputs">
+                <label for="investmentName">Investment name<input id="investmentName" name="name" required maxlength="200" placeholder="e.g. Mutual funds, PPF, fixed deposit"></label>
+                <label for="investmentPerson">Owner<select id="investmentPerson" name="person" required><option value="Pooja">Pooja</option><option value="Kunal">Kunal</option></select></label>
+                <label for="investmentAmount">Amount invested (₹)<input id="investmentAmount" name="amount" type="number" min="0.01" max="1000000000000" step="0.01" required placeholder="e.g. 250000" inputmode="decimal"></label>
+              </div>
+              <div class="investment-form-actions"><button type="submit" class="btn-primary" id="investmentSave">Add investment</button>
+              <button type="button" class="btn-secondary" id="investmentCancel" onclick="resetInvestmentForm()" hidden>Cancel edit</button></div>
+            </fieldset>
+          </form>
+          <p id="investmentStatus" class="investment-status" role="status" aria-live="polite"></p>
+          <div class="table-section">
+            <div class="table-header-row"><h3>Saved investments</h3><span id="investmentCount"></span></div>
+            <div class="investment-table-wrap"><table class="investment-table"><thead><tr><th scope="col">Investment</th><th scope="col">Owner</th><th scope="col">Amount invested</th><th scope="col">Actions</th></tr></thead>
+            <tbody id="investmentRows"><tr><td colspan="4" class="investment-empty">Open this tab to load investments.</td></tr></tbody></table></div>
+          </div>
+          <p class="investment-note">Totals always show both owners across all time. Use the person filters above to browse entries. These manually recorded amounts are separate from monthly expense and budget totals.</p>
+        </section>
+      </div>
 
       <!-- ═══════════════════════════════ DASHBOARD TAB ══════════════════════════════ -->
       <div id="tab-dashboard">
@@ -822,5 +857,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="investments.js"></script>
 </body>
 </html>

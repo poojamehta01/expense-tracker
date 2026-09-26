@@ -186,12 +186,13 @@ function initUploadMonthPicker() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  ['dashboard', 'add', 'trends', 'salary', 'budget', 'ask', 'ai-memory'].forEach(t => {
+  ['dashboard', 'add', 'trends', 'salary', 'budget', 'investments', 'ask', 'ai-memory'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('hidden', name !== t);
     document.getElementById('tab-btn-' + t).classList.toggle('active', name === t);
   });
   if (name === 'trends' && !trendsLoaded) loadTrends();
   if (name === 'salary') initSalaryTab();
+  if (name === 'investments') loadInvestments();
   if (name === 'budget') initBudgetTab();
   if (name === 'ai-memory') loadAIMemoryStatus();
 }
@@ -2201,6 +2202,7 @@ function renderTopMerchantsFromList(txList) {
 
 function setGlobalFilter(person) {
   globalPersonFilter = person;
+  if (typeof renderInvestments === 'function') renderInvestments();
   document.querySelectorAll('.global-filter-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.person === person));
   // reset per-chart filter so it doesn't confuse composition

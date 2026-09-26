@@ -11,7 +11,7 @@ test('primary navigation starts on Dashboard and follows the requested workflow 
   const nav = html.slice(html.indexOf('<nav class="tab-nav">'), html.indexOf('</nav>'));
   const tabIds = Array.from(nav.matchAll(/id="tab-btn-([^"]+)"/g), match => match[1]);
 
-  assert.deepEqual(tabIds, ['dashboard', 'add', 'budget', 'salary', 'trends', 'ask', 'ai-memory']);
+  assert.deepEqual(tabIds, ['dashboard', 'add', 'budget', 'investments', 'salary', 'trends', 'ask', 'ai-memory']);
   assert.match(nav, /class="tab-btn active"[^>]*id="tab-btn-dashboard"/);
   assert.doesNotMatch(nav, /class="tab-btn active"[^>]*id="tab-btn-add"/);
   assert.match(app, /DOMContentLoaded[\s\S]*?switchTab\('dashboard'\);/);

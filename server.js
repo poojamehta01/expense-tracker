@@ -257,6 +257,8 @@ function registerMonthlyNotesRoutes(app, service) {
 // ─── App routes (protected) ───────────────────────────────────────────────────
 
 app.use(requireAuth);
+const { createInvestmentService, registerInvestmentRoutes } = require('./investment-service');
+registerInvestmentRoutes(app, createInvestmentService(db));
 app.use(express.static('public', {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {

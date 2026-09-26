@@ -1899,3 +1899,39 @@ body.dark .budget-edit-input { background: var(--bg); }
 body.dark .motd-quote { background: linear-gradient(135deg, #1e3a5f 0%, #14291e 100%); border-left-color: #3b82f6; }
 .motd-text { font-size: 13px; font-style: italic; color: var(--text); line-height: 1.5; }
 .motd-author { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+
+/* All-time investment register */
+.investments-page { max-width: 1200px; margin: 0 auto; }
+.investment-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.investment-heading h2 { margin: 0 0 6px; }
+.investment-heading p, .investment-card p, .investment-note { color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+.investment-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.investment-totals .kpi-card { border-left: 4px solid var(--primary); }
+.investment-totals .investment-total { border-left-color: #7c3aed; }
+.investment-value { font-size: clamp(20px, 2.5vw, 30px); font-weight: 700; margin-top: 14px; overflow-wrap: anywhere; }
+.investment-card { padding: 24px; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); }
+.investment-card h3 { margin: 0 0 6px; }
+.investment-card p { margin: 0 0 20px; }
+.investment-card fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.investment-inputs { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; }
+.investment-inputs label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 600; }
+.investment-inputs input, .investment-inputs select { width: 100%; min-width: 0; padding: 11px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+.investment-form-actions { display: flex; gap: 10px; margin-top: 20px; }
+.investment-status { min-height: 22px; margin: 12px 0; color: var(--text-muted); font-size: 14px; }
+.investment-status.error { color: var(--error); }
+.investment-table-wrap { overflow-x: auto; }
+.investment-table { width: 100%; border-collapse: collapse; }
+.investment-table th, .investment-table td { padding: 14px 20px; text-align: left; border-bottom: 1px solid var(--border); }
+.investment-table th { font-size: 12px; color: var(--text-muted); }
+.investment-table td:first-child { overflow-wrap: anywhere; min-width: 150px; }
+.investment-amount, .investment-actions { white-space: nowrap; }
+.investment-actions button { padding: 6px 10px; margin-right: 4px; }
+.investment-empty { color: var(--text-muted); padding: 32px 20px !important; }
+.investment-note { margin-top: 16px; }
+#investmentCount { color: var(--text-muted); font-size: 13px; }
+@media (max-width: 1100px) { .tab-nav { flex-wrap: wrap; } }
+@media (max-width: 640px) {
+  .investment-totals, .investment-inputs { grid-template-columns: 1fr; }
+  .investment-card { padding: 18px; }
+  .investment-value { font-size: 26px; }
+}
