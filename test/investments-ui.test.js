@@ -53,7 +53,7 @@ test('deletion updates totals and an older load cannot overwrite it', async () =
   assert.match(f.elements.investmentRows.innerHTML, /No investments yet/);
 });
 
-test('current value and signed gains render while incomplete summaries stay unknown', async () => {
+test('partial summaries display known values and coverage for each owner', async () => {
   const f = fixture();
   f.responses.push(ok({ ...data, entries: [
     { ...data.entries[0], currentValue: 120.50, gain: 20.25 },
@@ -61,13 +61,16 @@ test('current value and signed gains render while incomplete summaries stay unkn
   ], valuations: {
     Pooja: { currentValue: 120.50, gain: 20.25, missing: 0 },
     Kunal: { currentValue: null, gain: null, missing: 1 },
-    combined: { currentValue: null, gain: null, missing: 1 },
+    combined: { currentValue: 120.50, gain: 20.25, missing: 1 },
   } }));
   await f.context.loadInvestments();
   assert.match(f.elements.investmentRows.innerHTML, /\+₹20\.25/);
   assert.match(f.elements.investmentRows.innerHTML, /Not added/);
-  assert.equal(f.elements.investmentTotalCurrent.textContent, 'Not added');
-  assert.match(f.elements.investmentTotalMissing.textContent, /1 current value missing/);
+  assert.equal(f.elements.investmentTotalCurrent.textContent, '₹120.50');
+  assert.equal(f.elements.investmentTotalGain.textContent, '+₹20.25');
+  assert.equal(f.elements.investmentTotalMissing.textContent, 'Partial totals · 1 of 2 investments valued');
+  assert.equal(f.elements.investmentKunalMissing.textContent, '0 of 1 investments valued');
+  assert.equal(f.elements.investmentPoojaMissing.textContent, '1 of 1 investments valued');
   assert.equal(f.elements.investmentPoojaCurrent.textContent, '₹120.50');
   f.context.editInvestment(1);
   assert.equal(f.elements.investmentCurrentValue.value, 120.50);

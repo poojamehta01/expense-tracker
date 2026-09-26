@@ -110,3 +110,24 @@ test('simultaneous startup safely applies the current-value migration once', asy
   const results = await Promise.all(Array.from({ length: 8 }, () => promisify(execFile)(process.execPath, ['-e', script], options)));
   for (const result of results) assert.equal(result.stdout.trim(), '1');
 });
+
+test('partial totals compare only valued investments while keeping all contributions', () => {
+  const service = require('../investment-service').createInvestmentService(db);
+  try {
+    const valued = service.add({ name: 'Fund', person: 'Pooja', amount: 100.10, currentValue: 120.25 });
+    service.add({ name: 'Unvalued FD', person: 'Pooja', amount: 1000 });
+    service.add({ name: 'Zero value', person: 'Kunal', amount: 50.05, currentValue: 0 });
+    service.add({ name: 'Unvalued PPF', person: 'Kunal', amount: 2000 });
+    assert.deepEqual(service.list().valuations, {
+      Pooja: { currentValue: 120.25, gain: 20.15, missing: 1 },
+      Kunal: { currentValue: 0, gain: -50.05, missing: 1 },
+      combined: { currentValue: 120.25, gain: -29.90, missing: 2 },
+    });
+    assert.equal(service.list().totals.combined, 3150.15);
+    service.update(valued.id, { name: 'Fund', person: 'Pooja', amount: 100.10, currentValue: null });
+    assert.deepEqual(service.list().valuations.Pooja, { currentValue: null, gain: null, missing: 2 });
+    assert.deepEqual(service.list().valuations.combined, { currentValue: 0, gain: -50.05, missing: 3 });
+  } finally {
+    db.prepare('DELETE FROM investments').run();
+  }
+});

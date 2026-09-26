@@ -29,7 +29,11 @@ function renderInvestments() {
     const gain = investmentElement(id + 'Gain');
     gain.textContent = investmentGain(valuation?.gain);
     gain.className = investmentGainClass(valuation?.gain);
-    investmentElement(id + 'Missing').textContent = valuation?.missing ? `${valuation.missing} current value${valuation.missing === 1 ? '' : 's'} missing` : '';
+    const total = investmentData.entries.filter(item => key === 'combined' || item.person === key).length;
+    const valued = valuation ? total - valuation.missing : 0;
+    const partial = valued > 0 && valued < total;
+    investmentElement(id + 'Missing').textContent = valuation && total > 0
+      ? `${partial ? 'Partial totals · ' : ''}${valued} of ${total} investments valued` : '';
   }
   const person = globalPersonFilter;
   const entries = investmentData.entries.filter(item => person === 'all' || item.person === person);

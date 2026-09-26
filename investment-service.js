@@ -45,9 +45,11 @@ function createInvestmentService(db) {
       for (const person of ['Pooja', 'Kunal', 'combined']) {
         const owned = rows.filter(row => person === 'combined' || row.person === person);
         const missing = owned.filter(row => row.current_value_paise == null).length;
+        const valued = owned.filter(row => row.current_value_paise != null);
+        const noValues = owned.length > 0 && valued.length === 0;
         valuations[person] = {
-          currentValue: missing ? null : owned.reduce((sum, row) => sum + row.current_value_paise, 0) / 100,
-          gain: missing ? null : owned.reduce((sum, row) => sum + row.current_value_paise - row.amount_paise, 0) / 100,
+          currentValue: noValues ? null : valued.reduce((sum, row) => sum + row.current_value_paise, 0) / 100,
+          gain: noValues ? null : valued.reduce((sum, row) => sum + row.current_value_paise - row.amount_paise, 0) / 100,
           missing,
         };
       }
