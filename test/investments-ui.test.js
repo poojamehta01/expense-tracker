@@ -111,3 +111,39 @@ test('gain percentages use the valued cost basis and show signed gains, losses, 
   assert.match(f.elements.investmentRows.innerHTML, /₹0\.00 \(0\.00%\)/);
   assert.doesNotMatch(f.elements.investmentRows.innerHTML, /NaN|Infinity/);
 });
+
+test('investment filters combine owner, case-insensitive name, and valuation status without changing totals', async () => {
+  const f = fixture();
+  f.responses.push(ok({ ...data, entries: [
+    { id: 1, name: 'Gold fund', person: 'Pooja', amount: 100, currentValue: 0, gain: -100 },
+    { id: 2, name: 'Gold FD', person: 'Kunal', amount: 200, currentValue: null, gain: null },
+    { id: 3, name: 'PPF', person: 'Pooja', amount: 300, currentValue: null, gain: null },
+  ] }));
+  await f.context.loadInvestments();
+  f.elements.investmentSearch.value = '  GOLD  ';
+  f.elements.investmentValuationFilter.value = 'valued';
+  f.context.renderInvestments();
+  assert.match(f.elements.investmentRows.innerHTML, /Gold fund/);
+  assert.doesNotMatch(f.elements.investmentRows.innerHTML, /Gold FD|PPF/);
+  f.context.globalPersonFilter = 'Kunal';
+  f.elements.investmentValuationFilter.value = 'missing';
+  f.context.renderInvestments();
+  assert.equal(f.elements.investmentOwnerFilter.value, 'Kunal');
+  assert.match(f.elements.investmentRows.innerHTML, /Gold FD/);
+  assert.doesNotMatch(f.elements.investmentRows.innerHTML, /Gold fund|PPF/);
+  assert.match(f.elements.investmentTotal.textContent, /300\.25/);
+  f.elements.investmentSearch.value = 'Not present';
+  f.context.renderInvestments();
+  assert.match(f.elements.investmentRows.innerHTML, /No investments match these filters/);
+});
+
+test('editing expands the investment form and cancelling collapses it', async () => {
+  const f = fixture(); f.responses.push(ok(data)); await f.context.loadInvestments();
+  f.elements.investmentFormDetails.open = false;
+  f.context.editInvestment(1);
+  assert.equal(f.elements.investmentFormDetails.open, true);
+  assert.equal(f.elements.investmentName.value, '<Fund>');
+  f.context.resetInvestmentForm();
+  assert.equal(f.elements.investmentFormDetails.open, false);
+  assert.equal(f.elements.investmentFormTitle.textContent, 'Add investment');
+});

@@ -74,8 +74,9 @@
               <dl class="investment-metrics"><div><dt>Amount invested</dt><dd id="investmentKunal">—</dd></div><div><dt>Gain/loss</dt><dd id="investmentKunalGain">—</dd></div></dl>
               <p class="investment-missing" id="investmentKunalMissing"></p></div>
           </div>
-          <form id="investmentForm" class="investment-card" onsubmit="saveInvestment(event)">
-            <h3 id="investmentFormTitle">Add investment</h3>
+          <details id="investmentFormDetails" class="investment-card">
+            <summary><span id="investmentFormTitle">Add investment</span></summary>
+            <form id="investmentForm" onsubmit="saveInvestment(event)">
             <p>Enter your total contribution and, optionally, what the investment is worth today.</p>
             <fieldset id="investmentFields">
               <div class="investment-inputs">
@@ -87,14 +88,21 @@
               <div class="investment-form-actions"><button type="submit" class="btn-primary" id="investmentSave">Add investment</button>
               <button type="button" class="btn-secondary" id="investmentCancel" onclick="resetInvestmentForm()" hidden>Cancel edit</button></div>
             </fieldset>
-          </form>
+            </form>
+          </details>
           <p id="investmentStatus" class="investment-status" role="status" aria-live="polite"></p>
           <div class="table-section">
             <div class="table-header-row"><h3>Saved investments</h3><span id="investmentCount"></span></div>
+            <div class="investment-filters" role="group" aria-label="Filter saved investments">
+              <label for="investmentSearch">Investment name<input id="investmentSearch" type="search" placeholder="Search investments…" oninput="renderInvestments()"></label>
+              <label for="investmentOwnerFilter">Owner<select id="investmentOwnerFilter" onchange="setGlobalFilter(this.value)"><option value="all">Everyone</option><option value="Pooja">Pooja</option><option value="Kunal">Kunal</option><option value="Common">Common</option></select></label>
+              <label for="investmentValuationFilter">Current value<select id="investmentValuationFilter" onchange="renderInvestments()"><option value="all">All entries</option><option value="valued">Value added</option><option value="missing">Value missing</option></select></label>
+              <button type="button" class="btn-secondary" onclick="clearInvestmentFilters()">Clear filters</button>
+            </div>
             <div class="investment-table-wrap"><table class="investment-table"><thead><tr><th scope="col">Investment</th><th scope="col">Owner</th><th scope="col">Amount invested</th><th scope="col">Current value</th><th scope="col">Gain/loss</th><th scope="col">Actions</th></tr></thead>
             <tbody id="investmentRows"><tr><td colspan="6" class="investment-empty">Open this tab to load investments.</td></tr></tbody></table></div>
           </div>
-          <p class="investment-note">Current values are manually updated, not live prices. Amount invested includes every entry. Current value and gain/loss totals include only investments with a current value entered. Gain/loss compares those values with the invested amounts for those same entries. Gain/loss % is the gain or loss divided by the invested amount of those valued entries; it is not an annualised return. Partial totals show how many investments are valued. Totals always show both owners across all time. Use the person filters above to browse entries. These manually recorded amounts are separate from monthly expense and budget totals.</p>
+          <p class="investment-note">Current values are manually updated, not live prices. Amount invested includes every entry. Current value and gain/loss totals include only investments with a current value entered. Gain/loss compares those values with the invested amounts for those same entries. Gain/loss % is the gain or loss divided by the invested amount of those valued entries; it is not an annualised return. Partial totals show how many investments are valued. Totals always show both owners across all time. Filters narrow the saved list; summary cards always show portfolio totals. These manually recorded amounts are separate from monthly expense and budget totals.</p>
         </section>
       </div>
 

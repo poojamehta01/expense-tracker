@@ -46,15 +46,27 @@ function renderInvestments() {
       ? `${partial ? 'Partial totals · ' : ''}${valued} of ${total} investments valued` : '';
   }
   const person = globalPersonFilter;
-  const entries = investmentData.entries.filter(item => person === 'all' || item.person === person);
-  investmentElement('investmentCount').textContent = `${entries.length} investment${entries.length === 1 ? '' : 's'} · ${person === 'all' ? 'Everyone' : person}`;
+  investmentElement('investmentOwnerFilter').value = person;
+  const query = investmentElement('investmentSearch').value.trim().toLocaleLowerCase();
+  const valuationFilter = investmentElement('investmentValuationFilter').value || 'all';
+  const entries = investmentData.entries.filter(item =>
+    (person === 'all' || item.person === person) &&
+    item.name.toLocaleLowerCase().includes(query) &&
+    (valuationFilter === 'all' || (valuationFilter === 'valued' ? item.currentValue != null : item.currentValue == null)));
+  const filtering = person !== 'all' || query || valuationFilter !== 'all';
+  investmentElement('investmentCount').textContent = `${entries.length}${filtering ? ` of ${investmentData.entries.length}` : ''} investment${entries.length === 1 ? '' : 's'} · ${person === 'all' ? 'Everyone' : person}`;
   investmentElement('investmentRows').innerHTML = entries.length ? entries.map(item => `
     <tr><td>${esc(item.name)}</td><td>${esc(item.person)}</td><td class="investment-amount">${investmentCurrency(item.amount)}</td>
     <td class="investment-amount">${item.currentValue == null ? 'Not added' : investmentCurrency(item.currentValue)}</td>
     <td class="investment-amount ${investmentGainClass(item.gain)}">${investmentReturn(item.gain, item.amount)}</td>
     <td class="investment-actions"><button type="button" class="btn-secondary" onclick="editInvestment(${item.id})" ${investmentBusy ? 'disabled' : ''} aria-label="Edit ${esc(item.name)}">Edit</button>
     <button type="button" class="btn-secondary" onclick="deleteInvestment(${item.id})" ${investmentBusy ? 'disabled' : ''} aria-label="Delete ${esc(item.name)}">Delete</button></td></tr>`).join('') :
-    `<tr><td colspan="6" class="investment-empty">${person === 'Common' ? 'No common investments. Each investment belongs to Pooja or Kunal.' : person === 'all' ? 'No investments yet. Add your first lump-sum investment above.' : `No investments for ${esc(person)} yet.`}</td></tr>`;
+    `<tr><td colspan="6" class="investment-empty">${query || valuationFilter !== 'all' ? 'No investments match these filters. Try clearing the filters.' : person === 'Common' ? 'No common investments. Each investment belongs to Pooja or Kunal.' : person === 'all' ? 'No investments yet. Add your first lump-sum investment above.' : `No investments for ${esc(person)} yet.`}</td></tr>`;
+}
+function clearInvestmentFilters() {
+  investmentElement('investmentSearch').value = '';
+  investmentElement('investmentValuationFilter').value = 'all';
+  setGlobalFilter('all');
 }
 async function loadInvestments() {
   if (investmentBusy) return;
@@ -74,6 +86,7 @@ function resetInvestmentForm() {
   if (investmentBusy) return;
   investmentEditId = null;
   investmentElement('investmentForm').reset();
+  investmentElement('investmentFormDetails').open = false;
   investmentElement('investmentSave').textContent = 'Add investment';
   investmentElement('investmentFormTitle').textContent = 'Add investment';
   investmentElement('investmentCancel').hidden = true;
@@ -83,6 +96,7 @@ function editInvestment(id) {
   const entry = investmentData?.entries.find(item => item.id === id);
   if (!entry) return;
   investmentEditId = id;
+  investmentElement('investmentFormDetails').open = true;
   investmentElement('investmentName').value = entry.name;
   investmentElement('investmentPerson').value = entry.person;
   investmentElement('investmentAmount').value = entry.amount;
