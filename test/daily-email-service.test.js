@@ -80,7 +80,7 @@ function createFixture() {
     CREATE TABLE budgets (
       id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT NOT NULL, person TEXT NOT NULL,
       section TEXT NOT NULL, category TEXT NOT NULL, kind TEXT NOT NULL, amount REAL NOT NULL,
-      sort_order INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')),
+      sort_order INTEGER NOT NULL, display_name TEXT, created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')), UNIQUE(month, person, section, category)
     );
     CREATE TABLE budget_category_mappings (

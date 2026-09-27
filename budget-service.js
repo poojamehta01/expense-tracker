@@ -60,6 +60,7 @@ function validateKind(kind) {
 function validateLines(lines) {
   if (!Array.isArray(lines)) throw serviceError('validation', 'Lines must be an array');
   const seen = new Set();
+  const names = new Set();
   return lines.map(line => {
     if (!line || typeof line !== 'object') throw serviceError('validation', 'Budget line must be an object');
     const section = nonEmptyString(line.section, 'Section');
@@ -78,7 +79,11 @@ function validateLines(lines) {
     const key = `${section}\u0000${category}`;
     if (seen.has(key)) throw serviceError('validation', 'Duplicate budget line');
     seen.add(key);
-    return { section, category, kind, amount, sort_order: line.sort_order };
+    const display_name = line.display_name == null ? null : nonEmptyString(line.display_name, 'Category name');
+    const nameKey = `${section}\u0000${(display_name || category).toLowerCase()}`;
+    if (names.has(nameKey)) throw serviceError('validation', 'Duplicate category name in section');
+    names.add(nameKey);
+    return { section, category, kind, amount, sort_order: line.sort_order, display_name };
   });
 }
 
@@ -209,8 +214,8 @@ function createBudgetService(db, { validCategories = [] } = {}) {
   const replaceLines = db.transaction(({ month, person, lines }) => {
     db.prepare('DELETE FROM budgets WHERE month = ? AND person = ?').run(month, person);
     const insert = db.prepare(`
-      INSERT INTO budgets (month, person, section, category, kind, amount, sort_order, created_at, updated_at)
-      VALUES (@month, @person, @section, @category, @kind, @amount, @sort_order, datetime('now'), datetime('now'))
+      INSERT INTO budgets (month, person, section, category, kind, amount, sort_order, display_name, created_at, updated_at)
+      VALUES (@month, @person, @section, @category, @kind, @amount, @sort_order, @display_name, datetime('now'), datetime('now'))
     `);
     for (const line of lines) insert.run({ ...line, month, person });
     db.prepare(`
@@ -240,7 +245,7 @@ function createBudgetService(db, { validCategories = [] } = {}) {
 
   function getSingleBudget(month, person) {
     const budgetRows = db.prepare(`
-      SELECT section, category, kind, amount, sort_order
+      SELECT section, category, kind, amount, sort_order, display_name
       FROM budgets WHERE month = ? AND person = ? ORDER BY id
     `).all(month, person);
     const mappingRows = db.prepare(`
@@ -280,6 +285,7 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       return {
         section: row.section,
         category: row.category,
+        ...(row.display_name ? { display_name: row.display_name } : {}),
         kind: row.kind,
         budget,
         actual,
@@ -518,8 +524,8 @@ function createBudgetService(db, { validCategories = [] } = {}) {
           .run(targetMonth, ...sourcePeople);
       }
       const copy = db.prepare(`
-        INSERT INTO budgets (month, person, section, category, kind, amount, sort_order, created_at, updated_at)
-        SELECT ?, person, section, category, kind, amount, sort_order, datetime('now'), datetime('now')
+        INSERT INTO budgets (month, person, section, category, kind, amount, sort_order, display_name, created_at, updated_at)
+        SELECT ?, person, section, category, kind, amount, sort_order, display_name, datetime('now'), datetime('now')
         FROM budgets WHERE month = ? AND person = ?
       `);
       let count = 0;

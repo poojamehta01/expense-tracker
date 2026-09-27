@@ -25,7 +25,7 @@ test('creates constrained budget tables', () => {
   const budgetColumns = db.prepare('PRAGMA table_info(budgets)').all().map(row => row.name);
   assert.deepEqual(budgetColumns, [
     'id', 'month', 'person', 'section', 'category', 'kind', 'amount',
-    'sort_order', 'created_at', 'updated_at'
+    'sort_order', 'created_at', 'updated_at', 'display_name'
   ]);
   assert.throws(() => db.prepare(`
     INSERT INTO budgets (month, person, section, category, kind, amount, sort_order)

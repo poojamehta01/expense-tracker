@@ -150,6 +150,11 @@ db.exec(`
   );
 `);
 
+// Keep the mapping key stable when a monthly budget label is renamed.
+if (!db.prepare('PRAGMA table_info(budgets)').all().some(column => column.name === 'display_name')) {
+  db.exec('ALTER TABLE budgets ADD COLUMN display_name TEXT');
+}
+
 const insertBudgetLine = db.prepare(`
   INSERT OR IGNORE INTO budgets (month, person, section, category, kind, amount, sort_order)
   VALUES (@month, @person, @section, @category, @kind, @amount, @sort_order)

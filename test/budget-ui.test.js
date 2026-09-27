@@ -16,7 +16,7 @@ function loadBudgetHelpers() {
   assert.notEqual(start, -1, 'budget display helpers must exist');
   assert.notEqual(end, -1, 'budget display helpers must have an end marker');
 
-  const context = vm.createContext({});
+  const context = vm.createContext({ crypto: require('node:crypto').webcrypto });
   vm.runInContext(
     `${source.slice(start, end)}\n` +
       'globalThis.helpersForTest = { budgetStatusPresentation, budgetUsagePresentation, buildBudgetSaveLines, smartBudgetMappingSuggestions };',
@@ -241,6 +241,8 @@ function createBudgetWorkflow({
     budgetPersonPicker: element({ value: person }),
     budgetEditBtn: element(),
     budgetCopyBtn: element(),
+    budgetEditPersonModal: element({ hidden: true }),
+    budgetEditPooja: element(),
     budgetLoading: element({ hidden: true }),
     budgetError: element({ hidden: true }),
     budgetEmpty: element({ hidden: true }),
@@ -271,6 +273,7 @@ function createBudgetWorkflow({
   const globalFilterButtons = [element({ id: 'filter-all' }), element({ id: 'filter-pooja' })];
   const responseQueue = [...responses];
   const context = vm.createContext({
+    crypto: require('node:crypto').webcrypto,
     document: {
       addEventListener: (name, listener) => { documentListeners[name] = listener; },
       getElementById: id => elements[id] || null,
@@ -309,9 +312,12 @@ function createBudgetWorkflow({
      ${source.slice(start, end)}
      globalThis.workflowForTest = {
        initBudgetTab, loadBudget, renderBudget, beginBudgetEdit, cancelBudgetEdit,
+       addBudgetCategory: (...args) => addBudgetCategory(...args),
+       deleteBudgetCategory: (...args) => deleteBudgetCategory(...args),
+       updateBudgetDraft: (...args) => updateBudgetDraft(...args),
        saveBudget, openBudgetMapping, saveBudgetMapping, copyBudgetMonth,
        openBudgetTransactions, closeBudgetTransactions,
-       openBudgetCopy, closeBudgetCopy,
+       openBudgetCopy, closeBudgetCopy, chooseBudgetEditPerson,
        setData(data, selectedPerson = data.person) {
          budgetState.month = data.month;
          budgetState.person = selectedPerson;
@@ -441,7 +447,7 @@ test('Future rows request investment transactions for their specific person', as
   assert.equal(elements.budgetTransactionsTitle.textContent, 'Future · Pooja');
 });
 
-test('Combined budgets remain read-only and server labels are escaped in API order', () => {
+test('Combined budgets offer editing while totals remain read-only and labels are escaped', () => {
   const { workflow, elements } = createBudgetWorkflow({ person: 'all' });
   const data = budgetFixture('all');
   data.sections = [
@@ -452,7 +458,7 @@ test('Combined budgets remain read-only and server labels are escaped in API ord
 
   workflow.renderBudget();
 
-  assert.equal(elements.budgetEditBtn.disabled, true);
+  assert.equal(elements.budgetEditBtn.disabled, false);
   assert.doesNotMatch(elements.budgetSections.innerHTML, /budget-amount-input/);
   assert.doesNotMatch(elements.budgetSections.innerHTML, /openBudgetMapping|>Map</);
   assert.doesNotMatch(elements.budgetSections.innerHTML, /<First>|<Rent>/);
@@ -1133,7 +1139,7 @@ test('a missing Combined budget skips empty months and copies the latest populat
 
   await workflow.loadBudget();
 
-  assert.equal(elements.budgetEditBtn.disabled, true);
+  assert.equal(elements.budgetEditBtn.disabled, false);
   assert.equal(elements.budgetCopyBtn.disabled, false);
   assert.equal(elements.budgetCopyBtn.textContent, 'Copy June 2026');
   assert.equal(workflow.getState().copySourceMonth, 'June_2026');
@@ -1275,4 +1281,102 @@ test('Budget status tokens meet WCAG AA contrast in light and dark themes', () =
   }
   assert.match(css, /dashboard-budget-card\[data-state="over"\][^}]*var\(--budget-negative-text\)/s);
   assert.match(css, /dashboard-budget-card\[data-state="error"\][^}]*var\(--budget-negative-text\)/s);
+});
+
+
+test('editing category names, adding and deleting rows stays in a cancelable draft', () => {
+  const { workflow } = createBudgetWorkflow();
+  workflow.setData(budgetFixture());
+  workflow.beginBudgetEdit();
+  workflow.updateBudgetDraft(0, 0, 'display_name', 'House rent');
+  workflow.updateBudgetDraft(0, 0, 'budget', '1200');
+  workflow.addBudgetCategory(0);
+  workflow.updateBudgetDraft(0, 2, 'display_name', 'Internet');
+  workflow.deleteBudgetCategory(0, 1);
+  const draft = workflow.getState().draft;
+  assert.equal(draft.sections[0].lines.length, 2);
+  assert.equal(draft.sections[0].lines[0].display_name, 'House rent');
+  assert.equal(draft.sections[0].lines[0].budget, '1200');
+  assert.equal(draft.sections[0].lines[1].display_name, 'Internet');
+  assert.equal(workflow.getState().data.sections[0].lines[0].category, 'Rent');
+  workflow.cancelBudgetEdit();
+  assert.equal(workflow.getState().draft, null);
+  assert.equal(workflow.getState().data.sections[0].lines.length, 2);
+});
+
+test('save includes renamed and new categories and excludes deleted categories', async () => {
+  const { workflow, requests } = createBudgetWorkflow({ amountValues: ['1200', '300'] });
+  workflow.setData(budgetFixture());
+  workflow.beginBudgetEdit();
+  workflow.updateBudgetDraft(0, 0, 'display_name', 'House rent');
+  workflow.deleteBudgetCategory(0, 1);
+  workflow.addBudgetCategory(0);
+  workflow.updateBudgetDraft(0, 1, 'display_name', 'Internet');
+  await workflow.saveBudget();
+  const lines = JSON.parse(requests.find(r => r.options.method === 'PUT').options.body).lines;
+  assert.equal(lines[0].category, 'Rent');
+  assert.equal(lines[0].display_name, 'House rent');
+  assert.equal(lines[1].category, 'Internet');
+  assert.equal(lines[1].amount, 300);
+  assert.ok(!lines.some(line => line.category === 'Utilities'));
+});
+
+test('Combined edit opens the person picker and loads the chosen budget before editing', async () => {
+  const { workflow, elements, requests } = createBudgetWorkflow({ person: 'all', responses: [{ ok: true, body: budgetFixture('Kunal') }] });
+  workflow.setData(budgetFixture('all'));
+  workflow.beginBudgetEdit();
+  assert.equal(elements.budgetEditPersonModal.classList.contains('hidden'), false);
+  assert.equal(workflow.getState().editing, false);
+  await workflow.chooseBudgetEditPerson('Kunal');
+  assert.match(requests[0].url, /person=Kunal/);
+  assert.equal(workflow.getState().editing, true);
+  assert.equal(workflow.getState().draft.person, 'Kunal');
+});
+
+test('blank or duplicate category names cannot be saved', async () => {
+  const { workflow, requests, elements } = createBudgetWorkflow();
+  workflow.setData(budgetFixture());
+  workflow.beginBudgetEdit();
+  workflow.updateBudgetDraft(0, 0, 'display_name', ' ');
+  await workflow.saveBudget();
+  assert.equal(requests.length, 0);
+  assert.match(elements.budgetError.textContent, /name/);
+  workflow.updateBudgetDraft(0, 0, 'display_name', 'utilities');
+  await workflow.saveBudget();
+  assert.equal(requests.length, 0);
+  assert.match(elements.budgetError.textContent, /unique/);
+});
+
+test('Escape dismisses the budget person chooser and returns focus', () => {
+  const { workflow, elements, documentListeners } = createBudgetWorkflow({ person: 'all' });
+  workflow.setData(budgetFixture('all'));
+  workflow.beginBudgetEdit();
+  documentListeners.keydown({ key: 'Escape', preventDefault() {} });
+  assert.equal(elements.budgetEditPersonModal.classList.contains('hidden'), true);
+  assert.equal(elements.budgetEditBtn.focused, true);
+});
+
+test('renamed labels appear in transaction and mapping dialogs while requests keep mapping keys', async () => {
+  const { workflow, elements, requests } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.sections[0].lines[0].display_name = 'House rent';
+  workflow.setData(data);
+  const target = element({ dataset: { section: 'Home', category: 'Rent', kind: 'expense' } });
+  workflow.openBudgetMapping(target);
+  assert.equal(elements.budgetMappingLabel.textContent, 'Home · House rent');
+  await workflow.openBudgetTransactions(target);
+  assert.equal(elements.budgetTransactionsTitle.textContent, 'Home · House rent');
+  assert.match(requests[0].url, /budgetCategory=Rent/);
+});
+
+test('a new category can reuse the old visible name after a rename without colliding with its mapping key', () => {
+  const { buildBudgetSaveLines } = loadBudgetHelpers();
+  const lines = buildBudgetSaveLines([{ section: 'Home', lines: [
+    { category: 'Rent', display_name: 'House rent', kind: 'expense', budget: 100 },
+    { category: '', display_name: 'Rent', kind: 'expense', budget: 50 },
+  ] }]);
+  assert.equal(lines[0].category, 'Rent');
+  assert.notEqual(lines[1].category, 'Rent');
+  assert.equal(lines[1].display_name, 'Rent');
+  assert.equal(lines[1].amount, 50);
 });

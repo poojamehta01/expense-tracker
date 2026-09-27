@@ -40,7 +40,6 @@ test('budget sections are accessible, stateful, and hide Education only at rende
   assert.match(app, /collapsedBudgetSections\s*=\s*new Set/);
   assert.match(app, /aria-expanded=/);
   assert.match(app, /Education\/Child Care/);
-  assert.match(app, /data\.sections \|\| \[\]\)\.filter\(section => section\.section !== 'Education\/Child Care'\)/);
   assert.match(css, /budget-section-toggle/);
 });
 

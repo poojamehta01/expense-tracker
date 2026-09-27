@@ -604,6 +604,18 @@
           </div>
         </div>
 
+        <div id="budgetEditPersonModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="budgetEditPersonTitle">
+          <div class="modal-card modal-card--sm">
+            <div class="modal-header"><h2 id="budgetEditPersonTitle">Whose budget would you like to edit?</h2></div>
+            <div class="modal-body"><p>Choose a person for the selected month. Combined totals update after saving.</p></div>
+            <div class="modal-footer">
+              <button type="button" class="btn-primary" id="budgetEditPooja" onclick="chooseBudgetEditPerson('Pooja')">Pooja</button>
+              <button type="button" class="btn-primary" onclick="chooseBudgetEditPerson('Kunal')">Kunal</button>
+              <button type="button" class="btn-secondary" onclick="document.getElementById('budgetEditPersonModal').classList.add('hidden'); document.getElementById('budgetEditBtn').focus()">Cancel</button>
+            </div>
+          </div>
+        </div>
+
         <div id="budgetLoading" class="empty-state hidden"><p>Loading budget…</p></div>
         <div id="budgetError" class="error-card hidden"></div>
         <div id="budgetEmpty" class="empty-state hidden"><p>No budget has been set for this month.</p></div>

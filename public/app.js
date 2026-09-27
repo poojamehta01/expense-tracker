@@ -3360,15 +3360,24 @@ function futureStatusPresentation(status) {
 }
 
 function buildBudgetSaveLines(sections) {
-  return (sections || []).flatMap(section =>
-    (section.lines || []).map((line, index) => ({
-      section: section.section,
-      category: line.category,
-      kind: line.kind,
-      amount: Number(line.amount ?? line.budget ?? 0),
-      sort_order: line.sort_order ?? index,
-    }))
-  );
+  return (sections || []).flatMap(section => {
+    const usedKeys = new Set((section.lines || []).map(line => line.category).filter(Boolean));
+    return (section.lines || []).map((line, index) => {
+      let category = line.category || line.display_name?.trim();
+      // A renamed row still owns its original mapping key. New rows may reuse
+      // that visible name, but must not take over the existing mapping.
+      if (!line.category && usedKeys.has(category)) category = `custom:${crypto.randomUUID()}`;
+      usedKeys.add(category);
+      return {
+        section: section.section,
+        category,
+        ...(line.display_name !== undefined ? { display_name: line.display_name.trim() } : {}),
+        kind: line.kind,
+        amount: Number(line.amount ?? line.budget ?? 0),
+        sort_order: line.sort_order ?? index,
+      };
+    });
+  });
 }
 
 const BUDGET_MAPPING_ALIASES = {
@@ -3579,6 +3588,7 @@ const budgetState = {
   editing: false,
   saving: false,
   mappingLine: null,
+  draft: null,
   copySourceMonth: '',
   copySourceStatus: 'idle',
   loadSequence: 0,
@@ -3643,6 +3653,7 @@ async function loadBudget() {
   budgetState.month = month;
   budgetState.person = normalizedPerson;
   budgetState.data = null;
+  budgetState.draft = null;
   budgetState.editing = false;
   budgetState.mappingLine = null;
   budgetState.copySourceMonth = '';
@@ -3714,7 +3725,7 @@ function applyBudgetInteractionLock(editLocked) {
 }
 
 function renderBudget() {
-  const data = budgetState.data;
+  const data = budgetState.draft || budgetState.data;
   const summary = document.getElementById('budgetSummary');
   const sections = document.getElementById('budgetSections');
   const empty = document.getElementById('budgetEmpty');
@@ -3727,7 +3738,7 @@ function renderBudget() {
 
   applyBudgetInteractionLock(editLocked);
 
-  editButton.disabled = readOnly || budgetState.saving || !data?.hasBudget;
+  editButton.disabled = budgetState.saving || !data;
   let canCopy = Boolean(data?.hasBudget);
   let copyLabel = 'Copy month';
   if (data && !data.hasBudget) {
@@ -3751,7 +3762,7 @@ function renderBudget() {
     summary.innerHTML = '';
     sections.innerHTML = '';
     empty.classList.remove('hidden');
-    if (!futurePeople.length) return;
+    if (!futurePeople.length && !budgetState.editing) return;
   } else {
     empty.classList.add('hidden');
   }
@@ -3779,14 +3790,16 @@ function renderBudget() {
   }
 
   let inputIndex = 0;
-  const budgetSectionsHtml = (data.sections || []).filter(section => section.section !== 'Education/Child Care').map(section => {
+  const budgetSectionsHtml = (data.sections || []).map((section, sectionIndex) => {
+    if (section.section === 'Education/Child Care') return '';
     const sectionUsage = budgetUsagePresentation(section);
     const collapsed = collapsedBudgetSections.has(section.section);
-    const rows = (section.lines || []).filter(line => line.section !== 'Education/Child Care' && section.section !== 'Education/Child Care').map(line => {
+    const rows = (section.lines || []).filter(line => line.section !== 'Education/Child Care' && section.section !== 'Education/Child Care').map((line, lineIndex) => {
+      const label = line.display_name ?? line.category;
       const status = budgetStatusPresentation(line.status);
       const usage = budgetUsagePresentation(line);
       const amount = budgetState.editing && !readOnly
-        ? `<input class="budget-amount-input budget-edit-input" type="number" min="0" step="1" value="${esc(line.budget)}" data-budget-input="${inputIndex++}">`
+        ? `<input class="budget-amount-input budget-edit-input" type="number" min="0" step="1" value="${esc(line.budget)}" aria-label="Budget for ${esc(label)}" data-budget-input="${inputIndex++}" oninput="updateBudgetDraft(${sectionIndex}, ${lineIndex}, 'budget', this.value)">`
         : formatCurrency(line.budget);
       const mappings = (line.mappings || []).length
         ? (line.mappings || []).map(label => `<span class="budget-mapping-chip">${esc(label)}</span>`).join('')
@@ -3795,8 +3808,8 @@ function renderBudget() {
         ? '<span class="cell-empty">—</span>'
         : `<button type="button" class="btn-secondary small" ${budgetState.saving ? 'disabled ' : ''}data-budget-map data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">Map</button>`;
       const categoryLabel = budgetState.editing
-        ? `<strong>${esc(line.category)}</strong>`
-        : `<button type="button" class="budget-category-button" data-budget-transactions data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" aria-label="View transactions for ${esc(line.category)}">${esc(line.category)} <span aria-hidden="true">›</span></button>`;
+        ? `<input class="budget-edit-input budget-name-input" aria-label="Category name" placeholder="Category name" value="${esc(label)}" oninput="updateBudgetDraft(${sectionIndex}, ${lineIndex}, 'display_name', this.value)">`
+        : `<button type="button" class="budget-category-button" data-budget-transactions data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}" aria-label="View transactions for ${esc(label)}">${esc(label)} <span aria-hidden="true">›</span></button>`;
       return `
         <tr data-section="${esc(line.section || section.section)}" data-category="${esc(line.category)}" data-kind="${esc(line.kind)}">
           <td class="budget-category-cell" data-label="Category">${categoryLabel}<div class="budget-mapping-row">${mappings}</div></td>
@@ -3808,7 +3821,7 @@ function renderBudget() {
             <div class="budget-progress"><span class="budget-progress__fill" style="width:${usage.width}%"></span></div>
             <span class="cell-empty">${usage.label}</span>
           </td>
-          <td data-label="Mapping">${mappingAction}</td>
+          <td data-label="Mapping">${mappingAction}${budgetState.editing ? ` <button type="button" class="btn-secondary small budget-delete-category" aria-label="Delete ${esc(label || 'category')}" onclick="deleteBudgetCategory(${sectionIndex}, ${lineIndex})">Delete</button>` : ''}</td>
         </tr>`;
     }).join('');
     return `
@@ -3822,6 +3835,7 @@ function renderBudget() {
             <thead><tr><th>Category</th><th>Budget</th><th>Actual</th><th>Remaining</th><th>Status</th><th>Mapping</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
+          ${budgetState.editing ? `<button type="button" class="btn-secondary budget-add-category" onclick="addBudgetCategory(${sectionIndex})">+ Add category to ${esc(section.section)}</button>` : ''}
         </div>
       </section>`;
   }).join('');
@@ -3844,7 +3858,7 @@ function renderBudget() {
         ? `+${formatCurrency(row.difference)} surplus`
         : `${formatCurrency(Math.abs(row.difference))} shortfall`;
     const allocation = budgetState.editing && !readOnly && row.target !== null
-      ? `<input class="budget-future-input budget-edit-input" type="number" min="${esc(row.minimum)}" step="1" value="${esc(row.target)}" data-future-person="${esc(row.person)}">`
+      ? `<input class="budget-future-input budget-edit-input" type="number" min="${esc(row.minimum)}" step="1" value="${esc(row.target)}" data-future-person="${esc(row.person)}" oninput="updateBudgetFuture(this.value)">`
       : row.target === null ? '—' : formatCurrency(row.target);
     const minimumLabel = row.minimum === null ? 'Salary required' : `Minimum ${formatCurrency(row.minimum)}`;
     const goalLabel = budgetState.editing
@@ -3901,7 +3915,11 @@ function renderBudget() {
         </table>
       </div>
     </section>` : '';
-  sections.innerHTML = budgetSectionsHtml + futureSectionHtml + miscellaneousSectionHtml;
+  const editorHelp = budgetState.editing ? `<div class="budget-editor-help"><p>Editing ${esc(budgetState.person)} · ${esc(budgetMonthLabel(budgetState.month))}. Changes apply when you save. Deleting a category keeps its recorded expenses.</p>
+    <label for="budgetAddSection">Add category in</label>
+    <select id="budgetAddSection">${[...new Set(['Household Expenses', 'Personal Expenses', ...(data.sections || []).map(group => group.section)])].filter(name => name !== 'Education/Child Care' && name !== 'Future').map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('')}</select>
+    <button type="button" class="btn-secondary budget-add-category" onclick="addBudgetCategoryToSection()">+ Add category</button></div>` : '';
+  sections.innerHTML = editorHelp + budgetSectionsHtml + futureSectionHtml + miscellaneousSectionHtml;
 }
 
 function toggleBudgetSection(sectionName) {
@@ -3911,8 +3929,14 @@ function toggleBudgetSection(sectionName) {
 }
 
 function beginBudgetEdit() {
-  if (budgetState.person === 'all' || !budgetState.data?.hasBudget || budgetState.saving) return;
+  if (!budgetState.data || budgetState.saving) return;
+  if (budgetState.person === 'all') {
+    document.getElementById('budgetEditPersonModal')?.classList.remove('hidden');
+    document.getElementById('budgetEditPooja')?.focus();
+    return;
+  }
   if (budgetState.editing) return saveBudget();
+  budgetState.draft = JSON.parse(JSON.stringify(budgetState.data));
   budgetState.editing = true;
   showBudgetError('');
   renderBudget();
@@ -3920,16 +3944,66 @@ function beginBudgetEdit() {
 
 function cancelBudgetEdit() {
   if (budgetState.saving) return;
+  budgetState.draft = null;
   budgetState.editing = false;
   showBudgetError('');
   renderBudget();
 }
 
+async function chooseBudgetEditPerson(person) {
+  if (budgetState.saving || !['Pooja', 'Kunal'].includes(person)) return;
+  document.getElementById('budgetEditPersonModal').classList.add('hidden');
+  document.getElementById('budgetPersonPicker').value = person;
+  await loadBudget();
+  if (budgetState.person === person && budgetState.data) beginBudgetEdit();
+}
+
+function updateBudgetDraft(sectionIndex, lineIndex, field, value) {
+  if (!budgetState.editing || budgetState.saving || !budgetState.draft) return;
+  if (!['display_name', 'budget'].includes(field)) return;
+  budgetState.draft.sections[sectionIndex].lines[lineIndex][field] = value;
+}
+
+function updateBudgetFuture(value) {
+  if (!budgetState.editing || budgetState.saving) return;
+  const row = budgetState.draft?.future?.people?.find(row => row.person === budgetState.person);
+  if (row) row.target = value;
+}
+
+function addBudgetCategoryToSection() {
+  if (!budgetState.editing || budgetState.saving || !budgetState.draft) return;
+  const name = document.getElementById('budgetAddSection').value;
+  let index = budgetState.draft.sections.findIndex(group => group.section === name);
+  if (index < 0) {
+    index = budgetState.draft.sections.length;
+    budgetState.draft.sections.push({ section: name, lines: [], budget: 0, actual: 0 });
+  }
+  addBudgetCategory(index);
+}
+
+function addBudgetCategory(sectionIndex) {
+  if (!budgetState.editing || budgetState.saving || !budgetState.draft) return;
+  const section = budgetState.draft.sections[sectionIndex];
+  section.lines.push({ section: section.section, category: '', display_name: '', kind: 'expense', budget: 0,
+    actual: 0, variance: 0, mappings: [], status: 'mapping_needed', sort_order: section.lines.length });
+  collapsedBudgetSections.delete(section.section);
+  renderBudget();
+  const names = document.querySelectorAll('.budget-name-input');
+  const added = Array.from(names).find(input => !input.value);
+  added?.focus();
+}
+
+function deleteBudgetCategory(sectionIndex, lineIndex) {
+  if (!budgetState.editing || budgetState.saving || !budgetState.draft) return;
+  budgetState.draft.sections[sectionIndex].lines.splice(lineIndex, 1);
+  renderBudget();
+}
+
 async function saveBudget() {
-  if (!budgetState.editing || budgetState.person === 'all' || budgetState.saving || !budgetState.data?.hasBudget) return;
+  if (!budgetState.editing || budgetState.person === 'all' || budgetState.saving || !budgetState.data) return;
   const inputs = Array.from(document.querySelectorAll('.budget-amount-input'));
   let offset = 0;
-  const editedSections = (budgetState.data.sections || []).map(section => ({
+  const editedSections = ((budgetState.draft || budgetState.data).sections || []).map(section => ({
     section: section.section,
     lines: (section.lines || []).map(line => {
       if ((line.section || section.section) === 'Education/Child Care') return { ...line, amount: Number(line.budget) };
@@ -3938,6 +4012,16 @@ async function saveBudget() {
     }),
   }));
   const lines = buildBudgetSaveLines(editedSections);
+  const seenNames = new Set();
+  for (const line of lines) {
+    const name = (line.display_name ?? line.category ?? '').trim();
+    const key = `${line.section}\u0000${name.toLowerCase()}`;
+    if (!name || seenNames.has(key)) {
+      showBudgetError(!name ? 'Enter a name for every category.' : 'Category names must be unique within each section.');
+      return;
+    }
+    seenNames.add(key);
+  }
   const futureInput = document.querySelectorAll('.budget-future-input')[0];
   const futurePerson = (budgetState.data.future?.people || []).find(row => row.person === budgetState.person);
   if (futureInput && futurePerson) {
@@ -3962,6 +4046,7 @@ async function saveBudget() {
   }
 
   budgetState.saving = true;
+  document.querySelectorAll('.budget-edit-input, .budget-add-category, .budget-delete-category, #budgetAddSection').forEach(control => { control.disabled = true; });
   showBudgetError('');
   const editButton = document.getElementById('budgetEditBtn');
   editButton.disabled = true;
@@ -3982,7 +4067,8 @@ async function saveBudget() {
   } finally {
     budgetState.saving = false;
     applyBudgetInteractionLock(budgetState.editing);
-    editButton.disabled = budgetState.person === 'all' || !budgetState.data?.hasBudget;
+    document.querySelectorAll('.budget-edit-input, .budget-add-category, .budget-delete-category, #budgetAddSection').forEach(control => { control.disabled = false; });
+    editButton.disabled = !budgetState.data;
     editButton.textContent = budgetState.editing ? 'Save budget' : 'Edit budget';
     document.getElementById('budgetCopyBtn').disabled = budgetState.editing || !budgetState.data?.hasBudget;
   }
@@ -4013,7 +4099,7 @@ function openBudgetMapping(target) {
     kind: selected.kind,
     mappings: [...(selected.mappings || [])],
   };
-  document.getElementById('budgetMappingLabel').textContent = `${selected.section} · ${selected.category}`;
+  document.getElementById('budgetMappingLabel').textContent = `${selected.section} · ${selected.display_name || selected.category}`;
   const suggestions = smartBudgetMappingSuggestions(selected, CATEGORIES, budgetState.data.sections || []);
   const checked = new Set([...(selected.mappings || []), ...suggestions]);
   const newSuggestionCount = suggestions.filter(category => !(selected.mappings || []).includes(category)).length;
@@ -4041,11 +4127,16 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('keydown', event => {
-  const modal = document.getElementById('budgetTransactionsModal');
+  const personModal = document.getElementById('budgetEditPersonModal');
+  const choosingPerson = personModal && !personModal.classList.contains('hidden');
+  const modal = choosingPerson ? personModal : document.getElementById('budgetTransactionsModal');
   if (!modal || modal.classList.contains('hidden')) return;
   if (event.key === 'Escape') {
     event.preventDefault?.();
-    closeBudgetTransactions();
+    if (choosingPerson) {
+      personModal.classList.add('hidden');
+      document.getElementById('budgetEditBtn')?.focus();
+    } else closeBudgetTransactions();
     return;
   }
   if (event.key !== 'Tab' || !modal.querySelectorAll) return;
@@ -4077,7 +4168,8 @@ async function openBudgetTransactions(target) {
   const body = document.getElementById('budgetTransactionsBody');
   const loadSequence = ++budgetState.transactionLoadSequence;
   budgetState.transactionTrigger = target;
-  title.textContent = section === 'Future' ? `Future · ${selectedPerson}` : `${section} · ${category}`;
+  const label = findBudgetLine({ section, category, kind })?.display_name || category;
+  title.textContent = section === 'Future' ? `Future · ${selectedPerson}` : `${section} · ${label}`;
   subtitle.textContent = 'Loading mapped transactions…';
   total.textContent = '';
   body.innerHTML = '<div class="budget-transactions-empty">Loading transactions…</div>';

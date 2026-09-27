@@ -16,7 +16,7 @@ function createFixture() {
     CREATE TABLE budgets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       month TEXT NOT NULL, person TEXT NOT NULL, section TEXT NOT NULL, category TEXT NOT NULL,
-      kind TEXT NOT NULL, amount REAL NOT NULL, sort_order INTEGER NOT NULL,
+      kind TEXT NOT NULL, amount REAL NOT NULL, sort_order INTEGER NOT NULL, display_name TEXT,
       created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(month, person, section, category)
     );
@@ -475,5 +475,25 @@ test('copyBudget copies selected people, handles conflicts, and leaves global ma
     assert.throws(() => service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'October_2026', person: 'Pooja', replace }), /Replace must be a boolean/);
   }
   assert.throws(() => service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'October_2026', person: 'Pooja' }), error => error.code === 'conflict');
+  db.close();
+});
+
+test('budget display names are local to a person and month and preserve mappings and copied names', () => {
+  const db = createFixture();
+  const service = createBudgetService(db);
+  const base = { section: 'Home', category: 'Rent', kind: 'expense', amount: 100, sort_order: 0 };
+  for (const person of ['Pooja', 'Kunal']) insertLine(db, { ...base, month: 'September_2026', person });
+  insertMapping(db, { section: 'Home', budget_category: 'Rent', transaction_category: 'Rent', kind: 'expense' });
+  db.prepare(`INSERT INTO transactions (month, paid_by, category, amount) VALUES ('September_2026', 'Pooja', 'Rent', 25)`).run();
+  service.replaceBudget({ month: 'September_2026', person: 'Pooja', lines: [{ ...base, display_name: 'House rent', amount: 150 }] });
+  const line = service.getBudget({ month: 'September_2026', person: 'Pooja' }).sections[0].lines[0];
+  assert.equal(line.display_name, 'House rent');
+  assert.equal(line.actual, 25);
+  assert.deepEqual(line.mappings, ['Rent']);
+  assert.equal(service.getBudget({ month: 'September_2026', person: 'Kunal' }).sections[0].lines[0].display_name, undefined);
+  service.copyBudget({ sourceMonth: 'September_2026', targetMonth: 'October_2026', person: 'Pooja' });
+  assert.equal(service.getBudget({ month: 'October_2026', person: 'Pooja' }).sections[0].lines[0].display_name, 'House rent');
+  service.replaceBudget({ month: 'September_2026', person: 'Pooja', lines: [] });
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM transactions').get().count, 1);
   db.close();
 });
