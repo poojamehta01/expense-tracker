@@ -3724,29 +3724,47 @@ function applyBudgetInteractionLock(editLocked) {
   });
 }
 
+function salaryAllocationForDisplay() {
+  const data = budgetState.draft || budgetState.data;
+  return (data?.salaryAllocation || []).map(person => {
+    if (!budgetState.draft || person.person !== budgetState.person) return person;
+    const future = data.future?.people?.find(row => row.person === person.person);
+    const budgets = ['Household Expenses', 'Lifestyle', 'LOANS & OTHER DEBTS'].map(name =>
+      (data.sections.find(section => section.section === name)?.lines || [])
+        .reduce((total, line) => total + Number(line.budget || 0), 0));
+    budgets.push(future?.target == null ? (future?.storedAllocation ?? null) : Number(future.target));
+    return { ...person, budgets };
+  });
+}
+
+function refreshSalaryAllocation() {
+  const container = document.getElementById('budgetSalaryAllocation');
+  if (container) container.innerHTML = renderSalaryAllocation(salaryAllocationForDisplay());
+}
+
 function renderSalaryAllocation(people) {
   if (!people?.length) return '';
   const categories = [['Household', 35], ['Lifestyle', 20], ['EMI', 25], ['Future', 20]];
-  const money = value => value === null ? '—' : formatCurrency(value);
+  const money = value => value == null ? '—' : formatCurrency(Math.round(value * 100) / 100);
   const allocated = (person, rate) => person.salary === null ? null : Math.round(person.salary * rate) / 100;
   const rows = categories.map(([label, rate], index) => `<tr>
     <th scope="row">${label}</th><td>${rate}%</td>
     ${people.map(person => {
       const actual = allocated(person, rate);
       const budget = person.budgets[index];
-      const surplus = actual === null ? null : Math.round((actual - budget) * 100) / 100;
-      return `<td>${money(actual)}</td><td>${money(budget)}</td><td class="${surplus < 0 ? 'salary-allocation-negative' : ''}">${money(surplus)}</td>`;
+      const surplus = actual === null || budget === null ? null : Math.round((actual - budget) * 100) / 100;
+      return `<td>${money(actual)}</td><td>${money(budget)}</td><td>${money(person.actuals?.[index])}</td><td class="${surplus < 0 ? 'salary-allocation-negative' : ''}">${money(surplus)}</td>`;
     }).join('')}</tr>`).join('');
   return `<section class="table-section salary-allocation-section">
     <div class="table-header-row"><h2>Salary allocation</h2></div>
-    <p class="salary-allocation-note">Actual = monthly salary × percentage. Surplus = Actual − Budget. Future includes the 20% share plus surplus from Household, Lifestyle and EMI; other budget sections and existing investments are not deducted.</p>
+    <p class="salary-allocation-note">Allocation = monthly salary × percentage. Budget and Actual use the planned amounts and recorded spending/investments from the sections above. Surplus = Allocation − Budget. “Additional for future” is after these four planned budgets; other sections are excluded. Actuals are shown separately and do not change the planned surplus.</p>
     <div class="table-wrapper"><table class="salary-allocation-table">
-      <thead><tr><th colspan="2" scope="colgroup">Monthly plan</th>${people.map(person => `<th colspan="3" scope="colgroup">${esc(person.person)}</th>`).join('')}</tr>
-      <tr><th scope="col">Category</th><th scope="col">%</th>${people.map(() => '<th scope="col">Actual</th><th scope="col">Budget</th><th scope="col">Surplus</th>').join('')}</tr></thead>
-      <tbody><tr class="salary-allocation-total"><th scope="row">Total salary</th><td></td>${people.map(person => `<td>${person.salary === null ? '<span title="Add salary for this month in the Salary tab">Salary not set</span>' : money(person.salary)}</td><td></td><td></td>`).join('')}</tr>${rows}</tbody>
-      <tfoot><tr><th colspan="2" scope="row">Can put in future</th>${people.map(person => {
-        const total = person.salary === null ? null : person.salary - person.budgets.reduce((sum, value) => sum + value, 0);
-        return `<td colspan="2"></td><td class="salary-allocation-highlight ${total < 0 ? 'salary-allocation-negative' : ''}">${money(total)}</td>`;
+      <thead><tr><th colspan="2" scope="colgroup">Monthly plan</th>${people.map(person => `<th colspan="4" scope="colgroup">${esc(person.person)}</th>`).join('')}</tr>
+      <tr><th scope="col">Category</th><th scope="col">%</th>${people.map(() => '<th scope="col">Allocation</th><th scope="col">Budget</th><th scope="col" title="Recorded expenses, or investments for Future">Actual</th><th scope="col">Surplus</th>').join('')}</tr></thead>
+      <tbody><tr class="salary-allocation-total"><th scope="row">Total salary</th><td></td>${people.map(person => `<td>${person.salary === null ? '<span title="Add salary for this month in the Salary tab">Salary not set</span>' : money(person.salary)}</td><td></td><td></td><td></td>`).join('')}</tr>${rows}</tbody>
+      <tfoot><tr><th colspan="2" scope="row">Additional for future</th>${people.map(person => {
+        const total = person.salary === null || person.budgets.some(value => value === null) ? null : person.salary - person.budgets.reduce((sum, value) => sum + value, 0);
+        return `<td colspan="3"></td><td class="salary-allocation-highlight ${total < 0 ? 'salary-allocation-negative' : ''}">${money(total)}</td>`;
       }).join('')}</tr></tfoot>
     </table></div>
   </section>`;
@@ -3791,7 +3809,7 @@ function renderBudget() {
     sections.innerHTML = '';
     empty.classList.remove('hidden');
     if (!futurePeople.length && !budgetState.editing) {
-      sections.innerHTML = renderSalaryAllocation(data?.salaryAllocation);
+      sections.innerHTML = `<div id="budgetSalaryAllocation">${renderSalaryAllocation(salaryAllocationForDisplay())}</div>`;
       return;
     }
   } else {
@@ -3950,7 +3968,7 @@ function renderBudget() {
     <label for="budgetAddSection">Add category in</label>
     <select id="budgetAddSection">${[...new Set(['Household Expenses', 'Personal Expenses', ...(data.sections || []).map(group => group.section)])].filter(name => name !== 'Education/Child Care' && name !== 'Future').map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('')}</select>
     <button type="button" class="btn-secondary budget-add-category" onclick="addBudgetCategoryToSection()">+ Add category</button></div>` : '';
-  sections.innerHTML = editorHelp + budgetSectionsHtml + futureSectionHtml + miscellaneousSectionHtml + renderSalaryAllocation(budgetState.data?.salaryAllocation);
+  sections.innerHTML = editorHelp + budgetSectionsHtml + futureSectionHtml + miscellaneousSectionHtml + `<div id="budgetSalaryAllocation">${renderSalaryAllocation(salaryAllocationForDisplay())}</div>`;
 }
 
 function toggleBudgetSection(sectionName) {
@@ -3993,12 +4011,16 @@ function updateBudgetDraft(sectionIndex, lineIndex, field, value) {
   if (!budgetState.editing || budgetState.saving || !budgetState.draft) return;
   if (!['display_name', 'budget'].includes(field)) return;
   budgetState.draft.sections[sectionIndex].lines[lineIndex][field] = value;
+  if (field === 'budget') refreshSalaryAllocation();
 }
 
 function updateBudgetFuture(value) {
   if (!budgetState.editing || budgetState.saving) return;
   const row = budgetState.draft?.future?.people?.find(row => row.person === budgetState.person);
-  if (row) row.target = value;
+  if (row) {
+    row.target = value;
+    refreshSalaryAllocation();
+  }
 }
 
 function addBudgetCategoryToSection() {

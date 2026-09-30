@@ -511,9 +511,40 @@ test('salary allocation comparison includes both people even with a personal fil
   const comparison = service.getBudget({ month: 'September_2026', person: 'Pooja' }).salaryAllocation;
   assert.equal(comparison[0].person, 'Kunal');
   assert.equal(comparison[0].salary, 168516);
-  assert.deepEqual(comparison[0].budgets, [49600, 32000, 34047, 0]);
+  assert.deepEqual(comparison[0].budgets.map(value => Math.round(value * 100) / 100), [49600, 32000, 34047, 33703.2]);
   assert.equal(comparison[1].salary, 337292);
   const missing = service.getBudget({ month: 'October_2026', person: 'all' }).salaryAllocation;
   assert.equal(missing[0].salary, null);
+  db.close();
+});
+
+
+test('salary comparison follows saved Future plans, salary floors and actual transactions', () => {
+  const db = createFixture();
+  const service = createBudgetService(db);
+  const month = 'September_2026';
+  db.prepare('INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)').run('Kunal', month, 200000);
+  const lines = [
+    { section: 'Household Expenses', category: 'Rent', kind: 'expense', amount: 50000, sort_order: 0 },
+    { section: 'Future', category: 'Investment goal', kind: 'investment', amount: 60000, sort_order: 0 },
+  ];
+  service.replaceBudget({ month, person: 'Kunal', lines });
+  insertMapping(db, { section: 'Household Expenses', budget_category: 'Rent', transaction_category: 'Rent', kind: 'expense' });
+  db.prepare('INSERT INTO transactions (month, paid_by, category, amount) VALUES (?, ?, ?, ?)').run(month, 'Household Pool', 'Rent', 8000);
+  db.prepare('INSERT INTO transactions (month, paid_by, category, amount) VALUES (?, ?, ?, ?)').run(month, 'Kunal', 'Investment', 12000);
+  let data = service.getBudget({ month, person: 'Kunal' });
+  assert.equal(data.salaryAllocation[0].budgets[3], data.future.people[0].target);
+  assert.deepEqual(data.salaryAllocation[0].actuals, [4000, 0, 0, 12000]);
+  db.prepare("UPDATE transactions SET amount = 15000 WHERE category = 'Investment'").run();
+  assert.equal(service.getBudget({ month, person: 'Pooja' }).salaryAllocation[0].actuals[3], 15000);
+  lines[0].amount = 52000;
+  lines[1].amount = 70000;
+  service.replaceBudget({ month, person: 'Kunal', lines });
+  data = service.getBudget({ month, person: 'all' });
+  assert.deepEqual(data.salaryAllocation[0].budgets, [52000, 0, 0, 70000]);
+  db.prepare('UPDATE salaries SET amount = 400000 WHERE person = ?').run('Kunal');
+  assert.equal(service.getBudget({ month, person: 'Pooja' }).salaryAllocation[0].budgets[3], 80000);
+  db.prepare('DELETE FROM salaries').run();
+  assert.equal(service.getBudget({ month, person: 'Kunal' }).salaryAllocation[0].budgets[3], 70000);
   db.close();
 });

@@ -248,6 +248,7 @@ function createBudgetWorkflow({
     budgetEmpty: element({ hidden: true }),
     budgetSummary: element(),
     budgetSections: element(),
+    budgetSalaryAllocation: element(),
     budgetMappingModal: element({ hidden: true }),
     budgetMappingLabel: element(),
     budgetMappingHint: element(),
@@ -311,7 +312,7 @@ function createBudgetWorkflow({
     `let globalPersonFilter = ${JSON.stringify(person)};
      ${source.slice(start, end)}
      globalThis.workflowForTest = {
-       initBudgetTab, loadBudget, renderBudget, beginBudgetEdit, cancelBudgetEdit,
+       initBudgetTab, loadBudget, renderBudget, beginBudgetEdit, cancelBudgetEdit, updateBudgetFuture,
        addBudgetCategory: (...args) => addBudgetCategory(...args),
        deleteBudgetCategory: (...args) => deleteBudgetCategory(...args),
        updateBudgetDraft: (...args) => updateBudgetDraft(...args),
@@ -1402,4 +1403,43 @@ test('salary comparison renders allocations, negative surplus and total availabl
   workflow.renderBudget();
   assert.match(elements.budgetSections.innerHTML, /Salary not set/);
   assert.doesNotMatch(elements.budgetSections.innerHTML, /NaN/);
+});
+
+
+test('salary allocation previews edited budgets and Future plans without changing saved data', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.sections[0].section = 'Household Expenses';
+  data.salaryAllocation = [
+    { person: 'Kunal', salary: 100000, budgets: [10000, 0, 0, 20000], actuals: [0, 0, 0, 0] },
+    { person: 'Pooja', salary: 5000, budgets: [1000, 0, 0, 1000], actuals: [250, 0, 0, 1250] },
+  ];
+  workflow.setData(data);
+  workflow.beginBudgetEdit();
+  workflow.updateBudgetDraft(0, 1, 'budget', '1200');
+  assert.match(elements.budgetSalaryAllocation.innerHTML, /₹1200/);
+  workflow.updateBudgetFuture('1800');
+  assert.match(elements.budgetSalaryAllocation.innerHTML, /₹1800/);
+  assert.match(elements.budgetSalaryAllocation.innerHTML, /₹2000/);
+  assert.match(elements.budgetSalaryAllocation.innerHTML, /₹70000/);
+  assert.equal(data.salaryAllocation[1].budgets[3], 1000);
+  workflow.cancelBudgetEdit();
+  assert.doesNotMatch(elements.budgetSections.innerHTML.split('Salary allocation')[1], /₹1800/);
+});
+
+
+test('salary allocation keeps recorded actuals separate from the salary share and planned surplus', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.salaryAllocation = [{ person: 'Kunal', salary: 100000,
+    budgets: [30000, 15000, 20000, 20000], actuals: [12345, 4321, 9999, 5678] }];
+  workflow.setData(data);
+  workflow.renderBudget();
+  const html = elements.budgetSections.innerHTML.split('Salary allocation')[1];
+  assert.match(html, />Allocation</);
+  assert.match(html, /₹35000/);
+  assert.match(html, /₹12345/);
+  assert.match(html, /₹5678/);
+  assert.match(html, /₹15000/);
+  assert.match(html, /Additional for future/);
 });

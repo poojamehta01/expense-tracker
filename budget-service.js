@@ -334,22 +334,22 @@ function createBudgetService(db, { validCategories = [] } = {}) {
   function getBudget({ month, person }) {
     validateMonth(month);
     validatePerson(person, { allowAll: true });
-    // Keep the comparison independent of the main budget's person filter.
-    const salaryRows = db.prepare('SELECT person, amount FROM salaries WHERE month = ?').all(month);
-    const sectionBudgets = db.prepare(`SELECT person, section, SUM(amount) AS amount
-      FROM budgets WHERE month = ? AND kind = 'expense' GROUP BY person, section`).all(month);
-    const salaryAllocation = ['Kunal', 'Pooja'].map(name => {
-      const salary = salaryRows.find(row => row.person === name);
+    // Use the same calculated plans and transaction totals as the budget sections.
+    const personalBudgets = ['Kunal', 'Pooja'].map(name => getSingleBudget(month, name));
+    const salaryAllocation = personalBudgets.map(response => {
+      const sections = ['Household Expenses', 'Lifestyle', 'LOANS & OTHER DEBTS']
+        .map(name => response.sections.find(section => section.section === name));
+      const future = response.future.people[0];
       return {
-        person: name,
-        salary: salary ? Number(salary.amount) : null,
-        budgets: ['Household Expenses', 'Lifestyle', 'LOANS & OTHER DEBTS'].map(section =>
-          Number(sectionBudgets.find(row => row.person === name && row.section === section)?.amount || 0)
-        ).concat(0),
+        person: response.person,
+        salary: response.hasSalary ? response.summary.salary : null,
+        budgets: sections.map(section => section?.budget || 0)
+          .concat(future.target ?? future.storedAllocation ?? null),
+        actuals: sections.map(section => section?.actual || 0).concat(future.actual),
       };
     });
     if (person === 'all') {
-      const response = combineBudgetResponses(getSingleBudget(month, 'Pooja'), getSingleBudget(month, 'Kunal'));
+      const response = combineBudgetResponses(personalBudgets[1], personalBudgets[0]);
       const excluded = [...EXCLUDED_CATEGORIES, 'Investment'];
       const unassignedCategories = db.prepare(`
         SELECT category, COALESCE(SUM(amount), 0) AS total
@@ -372,7 +372,7 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       response.summary.netMonthlySavings -= unassignedTotal;
       return { ...response, salaryAllocation };
     }
-    return { ...getSingleBudget(month, person), salaryAllocation };
+    return { ...personalBudgets.find(response => response.person === person), salaryAllocation };
   }
 
   function getBudgetTransactions({ month, person, section, budgetCategory, kind }) {

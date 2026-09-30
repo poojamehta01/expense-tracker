@@ -1968,7 +1968,7 @@ body.dark .motd-quote { background: linear-gradient(135deg, #1e3a5f 0%, #14291e 
 
 /* Salary split comparison retains grouped columns on narrow screens. */
 .salary-allocation-note { padding: 0 20px 16px; margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
-.salary-allocation-table { width: 100%; min-width: 850px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.salary-allocation-table { width: 100%; min-width: 1050px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .salary-allocation-table th, .salary-allocation-table td { padding: 13px 12px; border: 1px solid var(--border); text-align: right; white-space: nowrap; }
 .salary-allocation-table th:first-child { text-align: left; }
 .salary-allocation-table thead tr:first-child th { text-align: center; background: var(--bg); }
