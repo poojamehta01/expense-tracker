@@ -346,6 +346,11 @@ function createBudgetService(db, { validCategories = [] } = {}) {
         budgets: sections.map(section => section?.budget || 0)
           .concat(future.target ?? future.storedAllocation ?? null),
         actuals: sections.map(section => section?.actual || 0).concat(future.actual),
+        totalActualExpenses: response.summary.actualSpending,
+        totalActualInvestments: response.summary.actualInvestments,
+        actualBalance: response.hasSalary
+          ? response.summary.salary - response.summary.actualSpending - response.summary.actualInvestments
+          : null,
       };
     });
     if (person === 'all') {

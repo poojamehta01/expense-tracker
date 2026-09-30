@@ -3757,15 +3757,18 @@ function renderSalaryAllocation(people) {
     }).join('')}</tr>`).join('');
   return `<section class="table-section salary-allocation-section">
     <div class="table-header-row"><h2>Salary allocation</h2></div>
-    <p class="salary-allocation-note">Allocation = monthly salary × percentage. Budget and Actual use the planned amounts and recorded spending/investments from the sections above. Surplus = Allocation − Budget. “Additional for future” is after these four planned budgets; other sections are excluded. Actuals are shown separately and do not change the planned surplus.</p>
+    <p class="salary-allocation-note">Allocation = monthly salary × percentage. Planned surplus = Allocation − Budget. Actual balance = salary − all recorded expenses − investments, including other budget sections and unmapped expenses. Each person includes half of Household Pool transactions. A negative balance means recorded outflows exceed salary.</p>
     <div class="table-wrapper"><table class="salary-allocation-table">
       <thead><tr><th colspan="2" scope="colgroup">Monthly plan</th>${people.map(person => `<th colspan="4" scope="colgroup">${esc(person.person)}</th>`).join('')}</tr>
-      <tr><th scope="col">Category</th><th scope="col">%</th>${people.map(() => '<th scope="col">Allocation</th><th scope="col">Budget</th><th scope="col" title="Recorded expenses, or investments for Future">Actual</th><th scope="col">Surplus</th>').join('')}</tr></thead>
+      <tr><th scope="col">Category</th><th scope="col">%</th>${people.map(() => '<th scope="col">Allocation</th><th scope="col">Budget</th><th scope="col" title="Recorded expenses, or investments for Future">Actual</th><th scope="col">Planned surplus</th>').join('')}</tr></thead>
       <tbody><tr class="salary-allocation-total"><th scope="row">Total salary</th><td></td>${people.map(person => `<td>${person.salary === null ? '<span title="Add salary for this month in the Salary tab">Salary not set</span>' : money(person.salary)}</td><td></td><td></td><td></td>`).join('')}</tr>${rows}</tbody>
-      <tfoot><tr><th colspan="2" scope="row">Additional for future</th>${people.map(person => {
+      <tfoot><tr><th colspan="2" scope="row">Planned surplus (four categories)</th>${people.map(person => {
         const total = person.salary === null || person.budgets.some(value => value === null) ? null : person.salary - person.budgets.reduce((sum, value) => sum + value, 0);
-        return `<td colspan="3"></td><td class="salary-allocation-highlight ${total < 0 ? 'salary-allocation-negative' : ''}">${money(total)}</td>`;
-      }).join('')}</tr></tfoot>
+        return `<td colspan="3"></td><td class="${total < 0 ? 'salary-allocation-negative' : ''}">${money(total)}</td>`;
+      }).join('')}</tr>
+      <tr><th colspan="2" scope="row">Total actual expenses</th>${people.map(person => `<td colspan="3"></td><td>${money(person.totalActualExpenses)}</td>`).join('')}</tr>
+      <tr><th colspan="2" scope="row">Total invested</th>${people.map(person => `<td colspan="3"></td><td>${money(person.totalActualInvestments)}</td>`).join('')}</tr>
+      <tr><th colspan="2" scope="row">Actual balance</th>${people.map(person => `<td colspan="3"></td><td class="salary-allocation-highlight ${person.actualBalance < 0 ? 'salary-allocation-negative' : ''}">${money(person.actualBalance)}</td>`).join('')}</tr></tfoot>
     </table></div>
   </section>`;
 }

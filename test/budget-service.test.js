@@ -548,3 +548,30 @@ test('salary comparison follows saved Future plans, salary floors and actual tra
   assert.equal(service.getBudget({ month, person: 'Kunal' }).salaryAllocation[0].budgets[3], 70000);
   db.close();
 });
+
+test('actual salary balance includes other sections and unmapped expenses, splits shared costs and deducts investments once', () => {
+  const db = createFixture();
+  const service = createBudgetService(db);
+  const month = 'September_2026';
+  db.prepare('INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)').run('Kunal', month, 10000);
+  service.replaceBudget({ month, person: 'Kunal', lines: [
+    { section: 'OTT Subscription', category: 'Streaming', kind: 'expense', amount: 500, sort_order: 0 },
+  ] });
+  insertMapping(db, { section: 'OTT Subscription', budget_category: 'Streaming', transaction_category: 'Subscriptions', kind: 'expense' });
+  const insert = db.prepare('INSERT INTO transactions (month, paid_by, category, amount) VALUES (?, ?, ?, ?)');
+  insert.run(month, 'Kunal', 'Subscriptions', 600);
+  insert.run(month, 'Kunal', 'Unmapped trip', 3000);
+  insert.run(month, 'Household Pool', 'Groceries', 2000);
+  insert.run(month, 'Kunal', 'Investment', 7000);
+  insert.run(month, 'Kunal', 'Credit Card Payment', 9000);
+  insert.run('October_2026', 'Kunal', 'Unmapped trip', 9000);
+  const people = service.getBudget({ month, person: 'all' }).salaryAllocation;
+  assert.equal(people[0].totalActualExpenses, 4600);
+  assert.equal(people[0].totalActualInvestments, 7000);
+  assert.equal(people[0].actualBalance, -1600);
+  assert.equal(people[1].totalActualExpenses, 1000);
+  assert.equal(people[1].actualBalance, null);
+  db.prepare("UPDATE transactions SET amount = 2000 WHERE category = 'Investment'").run();
+  assert.equal(service.getBudget({ month, person: 'Pooja' }).salaryAllocation[0].actualBalance, 3400);
+  db.close();
+});

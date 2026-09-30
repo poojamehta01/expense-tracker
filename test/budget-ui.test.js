@@ -1441,5 +1441,21 @@ test('salary allocation keeps recorded actuals separate from the salary share an
   assert.match(html, /₹12345/);
   assert.match(html, /₹5678/);
   assert.match(html, /₹15000/);
-  assert.match(html, /Additional for future/);
+  assert.match(html, /Planned surplus \(four categories\)/);
+});
+
+test('final balance uses all recorded outflows instead of the positive planned surplus', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.salaryAllocation = [{ person: 'Kunal', salary: 10000,
+    budgets: [1000, 1000, 1000, 2000], actuals: [2000, 2000, 2000, 7000],
+    totalActualExpenses: 8000, totalActualInvestments: 7000, actualBalance: -5000 }];
+  workflow.setData(data);
+  workflow.renderBudget();
+  const html = elements.budgetSections.innerHTML.split('Salary allocation')[1];
+  assert.match(html, /Planned surplus/);
+  assert.match(html, /Actual balance/);
+  assert.match(html, /Total actual expenses/);
+  assert.match(html, /₹8000/);
+  assert.match(html, /salary-allocation-negative[^>]*>₹-5000/);
 });
