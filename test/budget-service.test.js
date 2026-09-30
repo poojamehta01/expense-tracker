@@ -497,3 +497,23 @@ test('budget display names are local to a person and month and preserve mappings
   assert.equal(db.prepare('SELECT COUNT(*) count FROM transactions').get().count, 1);
   db.close();
 });
+
+test('salary allocation comparison includes both people even with a personal filter', () => {
+  const db = createFixture();
+  const service = createBudgetService(db);
+  db.prepare('INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)').run('Kunal', 'September_2026', 168516);
+  db.prepare('INSERT INTO salaries (person, month, amount) VALUES (?, ?, ?)').run('Pooja', 'September_2026', 337292);
+  service.replaceBudget({ month: 'September_2026', person: 'Kunal', lines: [
+    { section: 'Household Expenses', category: 'Rent', kind: 'expense', amount: 49600, sort_order: 0 },
+    { section: 'Lifestyle', category: 'Travel', kind: 'expense', amount: 32000, sort_order: 0 },
+    { section: 'LOANS & OTHER DEBTS', category: 'Loan', kind: 'expense', amount: 34047, sort_order: 0 },
+  ] });
+  const comparison = service.getBudget({ month: 'September_2026', person: 'Pooja' }).salaryAllocation;
+  assert.equal(comparison[0].person, 'Kunal');
+  assert.equal(comparison[0].salary, 168516);
+  assert.deepEqual(comparison[0].budgets, [49600, 32000, 34047, 0]);
+  assert.equal(comparison[1].salary, 337292);
+  const missing = service.getBudget({ month: 'October_2026', person: 'all' }).salaryAllocation;
+  assert.equal(missing[0].salary, null);
+  db.close();
+});

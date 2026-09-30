@@ -334,6 +334,20 @@ function createBudgetService(db, { validCategories = [] } = {}) {
   function getBudget({ month, person }) {
     validateMonth(month);
     validatePerson(person, { allowAll: true });
+    // Keep the comparison independent of the main budget's person filter.
+    const salaryRows = db.prepare('SELECT person, amount FROM salaries WHERE month = ?').all(month);
+    const sectionBudgets = db.prepare(`SELECT person, section, SUM(amount) AS amount
+      FROM budgets WHERE month = ? AND kind = 'expense' GROUP BY person, section`).all(month);
+    const salaryAllocation = ['Kunal', 'Pooja'].map(name => {
+      const salary = salaryRows.find(row => row.person === name);
+      return {
+        person: name,
+        salary: salary ? Number(salary.amount) : null,
+        budgets: ['Household Expenses', 'Lifestyle', 'LOANS & OTHER DEBTS'].map(section =>
+          Number(sectionBudgets.find(row => row.person === name && row.section === section)?.amount || 0)
+        ).concat(0),
+      };
+    });
     if (person === 'all') {
       const response = combineBudgetResponses(getSingleBudget(month, 'Pooja'), getSingleBudget(month, 'Kunal'));
       const excluded = [...EXCLUDED_CATEGORIES, 'Investment'];
@@ -356,9 +370,9 @@ function createBudgetService(db, { validCategories = [] } = {}) {
       response.summary.variance -= unassignedTotal;
       response.summary.usage = usage(response.summary.actualSpending, response.summary.expenseBudget);
       response.summary.netMonthlySavings -= unassignedTotal;
-      return response;
+      return { ...response, salaryAllocation };
     }
-    return getSingleBudget(month, person);
+    return { ...getSingleBudget(month, person), salaryAllocation };
   }
 
   function getBudgetTransactions({ month, person, section, budgetCategory, kind }) {

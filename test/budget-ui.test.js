@@ -1380,3 +1380,26 @@ test('a new category can reuse the old visible name after a rename without colli
   assert.equal(lines[1].display_name, 'Rent');
   assert.equal(lines[1].amount, 50);
 });
+
+test('salary comparison renders allocations, negative surplus and total available for future', () => {
+  const { workflow, elements } = createBudgetWorkflow();
+  const data = budgetFixture();
+  data.salaryAllocation = [
+    { person: 'Kunal', salary: 168516, budgets: [49600, 32000, 34047, 0] },
+    { person: 'Pooja', salary: 100000, budgets: [40000, 20000, 25000, 0] },
+  ];
+  workflow.setData(data);
+  workflow.renderBudget();
+  const html = elements.budgetSections.innerHTML;
+  assert.match(html, /Salary allocation/);
+  assert.match(html, /58980.6/);
+  assert.match(html, /52869/);
+  assert.match(html, /-5000/);
+  assert.match(html, /15000/);
+  assert.ok(html.lastIndexOf('Salary allocation') > html.indexOf('Future investment'));
+  data.salaryAllocation[0].salary = null;
+  workflow.setData(data);
+  workflow.renderBudget();
+  assert.match(elements.budgetSections.innerHTML, /Salary not set/);
+  assert.doesNotMatch(elements.budgetSections.innerHTML, /NaN/);
+});
