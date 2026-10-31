@@ -14,7 +14,7 @@ The reviewer set aside live ChatGPT/Claude/Codex linking, real Google authentica
 ## Verification evidence
 
 - Working checkout: `npm test`, 274/274 passed after the review fix, including the user's two pre-existing extra extraction tests.
-- The committed implementation is also tested in an exported clean copy with Node 22, dummy credentials, and temporary databases; no private `.env` is required.
+- Committed implementation: 272/272 tests passed in an exported clean copy with Node 22, dummy credentials, and temporary databases; no private `.env` is required.
 - OAuth/HTTP tests use real SDK/provider protocol handling, replacing only the external Google identity step.
 - `git diff --check` passes. Pre-existing edits in `server.js` and `test/extraction-timeout.test.js` match the saved original patch and are excluded from MCP commits.
 - Compatible Express/body-parser/proxy-addr/qs/path-to-regexp security patches were updated. Existing Nodemailer major-upgrade and development-tool advisories remain documented in setup.
