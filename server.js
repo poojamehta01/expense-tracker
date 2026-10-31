@@ -22,6 +22,9 @@ const EXTRACTION_TIMEOUT_MS = 90_000;
 // Trust Railway's reverse proxy so secure cookies work over HTTPS
 app.set('trust proxy', 1);
 
+const mcpRawRouter = express.Router();
+const mcpBrowserRouter = express.Router();
+app.use(mcpRawRouter);
 app.use(express.json());
 
 // ─── Session ─────────────────────────────────────────────────────────────────
@@ -45,6 +48,7 @@ const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.
 
 passport.use(new GoogleStrategy(
   {
+    state: true,
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: `${process.env.BASE_URL}/auth/google/callback`
@@ -54,7 +58,7 @@ passport.use(new GoogleStrategy(
     if (!email || !ALLOWED_EMAILS.includes(email)) {
       return done(null, false, { message: 'Access denied' });
     }
-    return done(null, { email, name: profile.displayName, photo: profile.photos?.[0]?.value });
+    return done(null, { email, emailVerified: profile.emails?.[0]?.verified === true, name: profile.displayName, photo: profile.photos?.[0]?.value });
   }
 ));
 
@@ -63,6 +67,8 @@ passport.deserializeUser((user, done) => done(null, user));
 
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(mcpBrowserRouter);
+const { completeGoogleLogin } = require('./mcp/interactions');
 
 // ─── Auth routes ──────────────────────────────────────────────────────────────
 
@@ -70,10 +76,13 @@ app.get('/auth/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
 );
 
-app.get('/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login?error=access_denied' }),
-  (req, res) => res.redirect('/')
-);
+app.get('/auth/google/callback', (req, res, next) => {
+  passport.authenticate('google', (error, user) => {
+    if (error) return next(error);
+    if (!user) return res.redirect('/login?error=access_denied');
+    completeGoogleLogin(req, res, user, next);
+  })(req, res, next);
+});
 
 app.get('/auth/logout', (req, res) => {
   req.logout(() => res.redirect('/login'));
@@ -931,15 +940,26 @@ Question: ${question}`;
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-const PORT = process.env.PORT || 3000;
+let mcpInitialization;
+async function startServer(port = process.env.PORT || 3000) {
+  mcpInitialization ||= import('./mcp/index.mjs').then(({ initializeMcp }) => initializeMcp(
+    { rawRouter: mcpRawRouter, browserRouter: mcpBrowserRouter },
+    { db, financeService, lists: { categories: CATEGORIES, expense_types: EXPENSE_TYPES, payment_methods: PAYMENT_METHODS } }
+  ));
+  await mcpInitialization;
+  return app.listen(port, () => console.log('Expense Tracker listening'));
+}
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`\n✅ Expense Tracker running at http://localhost:${PORT}\n`);
+  startServer().catch(error => {
+    console.error(error.message.startsWith('MCP configuration:') ? error.message : 'Expense Tracker startup failed');
+    process.exitCode = 1;
+    db.close();
   });
 }
 
 module.exports = {
   app,
+  startServer,
   registerBudgetRoutes,
   createDailyEmailServiceFromEnvironment,
   registerMonthlyNotesRoutes,
