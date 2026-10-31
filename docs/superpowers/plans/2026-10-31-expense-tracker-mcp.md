@@ -1,6 +1,6 @@
 # Expense Tracker MCP Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Expose authenticated finance reads and transaction add/update tools to ChatGPT, Claude, and Codex through the live tracker.
 
@@ -48,11 +48,11 @@
 
 **Interfaces:** `createFinanceService(db, { afterInsert })` provides `addTransactions(rows)`, `updateTransaction(id, patch)`, `getDashboard(month)`, `getSettlement(month)`. `createMcpFinance({ db, financeService, now })` supplies `context`, `months`, `search`, `transaction`, `summary`, `budget`, `budgetTransactions`, `settlement`, `salary`, and `investments`, each accepting one argument object and returning a JSON object. `now` returns a Date. Errors expose `code` (`validation`, `not_found`, `conflict`, `forbidden`).
 
-- [ ] Write tests asserting pool 100 + personal 40 gives household spending 140 and personal responsibility 90/50; excluded categories do not contribute; settlement ignores pool debt. Add calendar, literal wildcard, limit/offset, missing salary, and partial valuation cases.
-- [ ] Run `node --test test/mcp-finance.test.js`; confirm failures identify missing services.
-- [ ] Extract shared storage/dashboard queries, preserving existing API responses. Implement read methods with validated filters, deterministic ordering, capped breakdowns with complete totals, and existing budget/investment services.
-- [ ] Run finance tests and affected existing budget/household/investment tests against a temporary DB; require all pass.
-- [ ] Commit only the task files after diff review.
+- [x] Write tests asserting pool 100 + personal 40 gives household spending 140 and personal responsibility 90/50; excluded categories do not contribute; settlement ignores pool debt. Add calendar, literal wildcard, limit/offset, missing salary, and partial valuation cases.
+- [x] Run `node --test test/mcp-finance.test.js`; confirm failures identify missing services.
+- [x] Extract shared storage/dashboard queries, preserving existing API responses. Implement read methods with validated filters, deterministic ordering, capped breakdowns with complete totals, and existing budget/investment services.
+- [x] Run finance tests and affected existing budget/household/investment tests against a temporary DB; require all pass.
+- [x] Commit only the task files after diff review.
 
 ### Task 2: Validated transaction writes
 
@@ -60,11 +60,11 @@
 
 **Interfaces:** `initializeMcpStorage(db)` creates bookkeeping tables idempotently. `createMcpFinance` additionally provides `add(input, actor)` and `update(input, actor)`, with actor `{ email, clientId }`. `transaction({ id })` returns an opaque `revision`; update accepts `{ id, revision, idempotencyKey, patch }`; add accepts editable fields plus `idempotencyKey`.
 
-- [ ] Write tests for exact paise/date/enum validation, duplicate date/amount/description, merged patches, normalized household rows, stale revision rejection, and unchanged DB on validation failure.
-- [ ] Add retry tests asserting the same key/request returns deep-equal original results after a subsequent edit, mismatched key reuse conflicts, audit and idempotency are atomic, and expired keys are removed after 30 days.
-- [ ] Run `node --test test/mcp-writes.test.js` and observe intended failures.
-- [ ] Implement strict MCP input validation, revision hashing, and one SQLite transaction wrapping replay checks, mutation, actor audit, and saved result. Keep website restore snapshots and merchant patterns consistent.
-- [ ] Run finance and write tests; require all pass. Commit only relevant files.
+- [x] Write tests for exact paise/date/enum validation, duplicate date/amount/description, merged patches, normalized household rows, stale revision rejection, and unchanged DB on validation failure.
+- [x] Add retry tests asserting the same key/request returns deep-equal original results after a subsequent edit, mismatched key reuse conflicts, audit and idempotency are atomic, and expired keys are removed after 30 days.
+- [x] Run `node --test test/mcp-writes.test.js` and observe intended failures.
+- [x] Implement strict MCP input validation, revision hashing, and one SQLite transaction wrapping replay checks, mutation, actor audit, and saved result. Keep website restore snapshots and merchant patterns consistent.
+- [x] Run finance and write tests; require all pass. Commit only relevant files.
 
 ### Task 3: Durable OAuth provider
 
@@ -72,12 +72,12 @@
 
 **Interfaces:** `createOAuth({ db, config, allowedEmails })` asynchronously returns `{ provider, verifyAccessToken, resourceMetadata, authorizationMetadata }`. `config` contains canonical `baseUrl`, `resourceUrl`, issuer URL, stable cookie keys and provider signing JWKS. `allowedEmails()` yields current normalized allowed emails. `createProviderAdapter(db)` returns the provider's Adapter class.
 
-- [ ] Verify exact published dependency versions, Node requirements, SDK transport imports, provider adapter and resource-indicator APIs. Install compatible maintained packages; record any documentation/registry discrepancy.
-- [ ] Write tests for adapter upsert/find/expiry/consume/destroy/findByUid/findByUserCode/revokeByGrantId, including reopening the database.
-- [ ] Write OAuth flow tests for discovery/DCR/PKCE/token exchange, audience/issuer/scopes, short lifetimes, refresh rotation/replay, revocation, and immediate allowlist removal.
-- [ ] Run `node --test test/mcp-oauth.test.js`; observe missing behavior.
-- [ ] Configure provider with opaque resource tokens, mandatory S256, supported registration methods and strict redirect URI policy, persistent state and stable secrets. Verify tokens through the provider and current grant/account state. Add bounded registration/token rate limits and sanitized errors.
-- [ ] Run OAuth tests to green; commit task files.
+- [x] Verify exact published dependency versions, Node requirements, SDK transport imports, provider adapter and resource-indicator APIs. Install compatible maintained packages; record any documentation/registry discrepancy.
+- [x] Write tests for adapter upsert/find/expiry/consume/destroy/findByUid/findByUserCode/revokeByGrantId, including reopening the database.
+- [x] Write OAuth flow tests for discovery/DCR/PKCE/token exchange, audience/issuer/scopes, short lifetimes, refresh rotation/replay, revocation, and immediate allowlist removal.
+- [x] Run `node --test test/mcp-oauth.test.js`; observe missing behavior.
+- [x] Configure provider with opaque resource tokens, mandatory S256, supported registration methods and strict redirect URI policy, persistent state and stable secrets. Verify tokens through the provider and current grant/account state. Add bounded registration/token rate limits and sanitized errors.
+- [x] Run OAuth tests to green; commit task files.
 
 ### Task 4: Google identity, consent, and connections
 
@@ -85,12 +85,12 @@
 
 **Interfaces:** `registerInteractions(app, { provider, allowedEmails, baseUrl })` mounts `/mcp/interaction/:uid` and `/mcp/connections` before the website catch-all; exposes a login continuation helper limited to validated local interaction UIDs. `initializeMcp(app, dependencies)` mounts provider/discovery/interaction components and returns the remaining MCP mount hook. The exact startup ordering may use separate middleware routers to keep HTTP/OAuth bodies unconsumed.
 
-- [ ] Write tests for anonymous interaction continuation through a mocked Google login with Passport session rotation, consent scope text/CSRF, escaped client names, denied/unverified/disallowed identities, and ordinary login redirect remaining `/`.
-- [ ] Write grant-list/revoke tests for own grants only and immediate loss of token/refresh access.
-- [ ] Run interaction tests and confirm intended failures.
-- [ ] Implement provider interaction helpers with browser-bound cookies, validated Google identity, CSRF tokens, consent and cancellation. Add narrow account connection HTML with existing styling and dark theme support.
-- [ ] Integrate startup without altering existing extraction changes or browser authentication. Require complete configuration when enabled, and leave disabled startup unchanged.
-- [ ] Run interaction/OAuth tests and existing auth-adjacent routes tests; commit relevant files.
+- [x] Write tests for anonymous interaction continuation through a mocked Google login with Passport session rotation, consent scope text/CSRF, escaped client names, denied/unverified/disallowed identities, and ordinary login redirect remaining `/`.
+- [x] Write grant-list/revoke tests for own grants only and immediate loss of token/refresh access.
+- [x] Run interaction tests and confirm intended failures.
+- [x] Implement provider interaction helpers with browser-bound cookies, validated Google identity, CSRF tokens, consent and cancellation. Add narrow account connection HTML with existing styling and dark theme support.
+- [x] Integrate startup without altering existing extraction changes or browser authentication. Require complete configuration when enabled, and leave disabled startup unchanged.
+- [x] Run interaction/OAuth tests and existing auth-adjacent routes tests; commit relevant files.
 
 ### Task 5: MCP HTTP tool interface
 
@@ -98,22 +98,26 @@
 
 **Interfaces:** `createTrackerMcpServer({ finance, actor, scopes })` registers the 12 spec tools. `registerMcpEndpoint(app, { finance, oauth, config })` mounts stateless Streamable HTTP `/mcp`, with protocol/body/Host/Origin/method checks and per-request cleanup.
 
-- [ ] Write SDK-client integration tests that initialize, list exactly the 12 tools, read fixtures, add/update, reject invalid schema/scopes, and assert structured/text output and correct read/write annotations.
-- [ ] Add HTTP tests for missing/expired tokens returning JSON challenges, `403` on missing scopes, malformed bodies, method rejection, hostile Origin/Host, bounded requests, and isolated simultaneous callers.
-- [ ] Run `node --test test/mcp-http.test.js`; observe intended failures.
-- [ ] Implement schemas using the verified SDK/Zod APIs, accurate metadata including OAuth security schemes, bounded tool errors, and authorization inside execution. Bind actor from verified token only.
-- [ ] Run HTTP, finance, write, OAuth and interaction suites together; require all pass. Commit task files.
+- [x] Write SDK-client integration tests that initialize, list exactly the 12 tools, read fixtures, add/update, reject invalid schema/scopes, and assert structured/text output and correct read/write annotations.
+- [x] Add HTTP tests for missing/expired tokens returning JSON challenges, `403` on missing scopes, malformed bodies, method rejection, hostile Origin/Host, bounded requests, and isolated simultaneous callers.
+- [x] Run `node --test test/mcp-http.test.js`; observe intended failures.
+- [x] Implement schemas using the verified SDK/Zod APIs, accurate metadata including OAuth security schemes, bounded tool errors, and authorization inside execution. Bind actor from verified token only.
+- [x] Run HTTP, finance, write, OAuth and interaction suites together; require all pass. Commit task files.
 
 ### Task 6: Operational documentation and whole-feature verification
 
 **Files:** `.env.example`, `docs/mcp-setup.md`, `CLAUDE.md`, `features.md`, `docs/architecture.md`, any tests needed for startup checks.
 
-- [ ] Add setup instructions for generating stable secrets, configuring Fly's existing DB, enabling/disabling MCP, Google login, connection/revocation, and each named client. Explain INR, shared household permissions, idempotency window, exclusions and unknown valuations.
-- [ ] Add startup smoke tests for disabled, incomplete enabled, and correctly configured enabled MCP using temporary databases; never test against live financial data.
-- [ ] Run `npm test` with isolated DB environment and `git diff --check`; inspect every failure and verify required targeted suites remain green.
-- [ ] Request an independent code/security review of the complete diff against this spec and plan; resolve actionable findings and rerun only affected tests.
-- [ ] Commit final changes only after verification. Report local implementation/testing separately from deployment and interactive client linking, which require actual rollout evidence.
+- [x] Add setup instructions for generating stable secrets, configuring Fly's existing DB, enabling/disabling MCP, Google login, connection/revocation, and each named client. Explain INR, shared household permissions, idempotency window, exclusions and unknown valuations.
+- [x] Add startup smoke tests for disabled, incomplete enabled, and correctly configured enabled MCP using temporary databases; never test against live financial data.
+- [x] Run `npm test` with isolated DB environment and `git diff --check`; inspect every failure and verify required targeted suites remain green.
+- [x] Request an independent code/security review of the complete diff against this spec and plan; resolve actionable findings and rerun only affected tests.
+- [x] Commit final changes only after verification. Report local implementation/testing separately from deployment and interactive client linking, which require actual rollout evidence.
 
 ## Self-review
 
 All twelve tools, existing accounting rules, scoped auth, provider persistence, continuation, consent/revocation, bounded transport, write audit/replay/concurrency, documentation, and verification have owning tasks. Tasks 1–2 share finance contracts; Tasks 3–4 share provider contracts; Task 5 joins them. The five review-focus conditions each have an explicit owning test. Execution will be inline in this chat with independent review at the end, following the user's approval to build the design.
+
+## Completion evidence
+
+Implemented on `codex/expense-tracker-mcp`. Full working-checkout suite: 274/274 passed after independent review and the historical-month update fix. See [review and verification record](../reviews/2026-10-31-expense-tracker-mcp-review.md) for decisions, the deferred metadata minor, and deployment acceptance boundaries.

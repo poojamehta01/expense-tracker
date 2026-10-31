@@ -36,6 +36,8 @@ function createFinanceService(db, { afterInsert = () => {} } = {}) {
     db.prepare('INSERT INTO transaction_audit (tx_id,action,snapshot) VALUES (?,?,?)').run(id, 'update', JSON.stringify(before));
     db.prepare("DELETE FROM transaction_audit WHERE changed_at < datetime('now', '-1 day')").run();
     const data = normalize({ ...before, ...patch });
+    // Legacy date strings may not parse; a note/category edit must not move their accounting month.
+    if (!Object.hasOwn(patch, 'date')) data.month = before.month;
     db.prepare(`UPDATE transactions SET ${EDITABLE.map(key => key + '=@' + key).join(',')},month=@month WHERE id=@id`).run({ ...data, id });
     return existing(id);
   });

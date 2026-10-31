@@ -69,3 +69,19 @@ test('retry records expire after the documented 30 day window', () => {
   finance.add({ ...input, description: 'New month', idempotencyKey: 'new-month' }, actor);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM mcp_idempotency').get().n, 1);
 });
+
+test('partial edits retain historical months for malformed and ISO legacy dates', () => {
+  for (const [index, date] of ['bad', '2024-02-29'].entries()) {
+    const id = finance.add({ ...input, description: `Legacy ${index}`, amount: 50, idempotencyKey: `legacy-${index}` }, actor).transaction.id;
+    f.db.prepare('UPDATE transactions SET date=?,month=? WHERE id=?').run(date, 'February_2024', id);
+    const original = finance.transaction({ id }).transaction;
+    const updated = finance.update({ id, revision: original.revision, idempotencyKey: `note-${index}`, patch: { remarks: 'Reviewed' } }, actor);
+    assert.equal(updated.transaction.month, 'February_2024');
+    assert.equal(updated.transaction.originalDate, date);
+    assert.equal(finance.summary({ month: 'February_2024' }).totalSpend, 50);
+    assert.equal(finance.summary({ month: 'October_2026' }).totalSpend, 0);
+    const moved = finance.update({ id, revision: updated.transaction.revision, idempotencyKey: `move-${index}`, patch: { date: '2024-03-01' } }, actor);
+    assert.equal(moved.transaction.month, 'March_2024');
+    assert.equal(finance.summary({ month: 'February_2024' }).totalSpend, 0);
+  }
+});
