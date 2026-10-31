@@ -13,6 +13,8 @@ const { createDailyEmailService, createGmailTransport } = require('./daily-email
 const { createMonthlyNotesService } = require('./monthly-notes-service');
 const { normalizeHouseholdPoolTransaction, calculateSettlement } = require('./household-pool');
 
+const { createFinanceService } = require('./finance-service');
+const financeService = createFinanceService(db, { afterInsert: () => rebuildMerchantPatterns() });
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const EXTRACTION_TIMEOUT_MS = 90_000;
@@ -301,59 +303,9 @@ function monthFromDate(dateStr) {
 // POST /api/transactions — save a batch of reviewed transactions
 app.post('/api/transactions', (req, res) => {
   const { transactions } = req.body;
-  if (!Array.isArray(transactions) || transactions.length === 0) {
-    return res.status(400).json({ error: 'No transactions provided' });
-  }
-
-  const insert = db.prepare(`
-    INSERT INTO transactions
-      (date, amount, description, payment_method, paid_by, expense_type,
-       category, mood, impulse, remarks, month)
-    VALUES
-      (@date, @amount, @description, @payment_method, @paid_by, @expense_type,
-       @category, @mood, @impulse, @remarks, @month)
-  `);
-
-  const checkDupe = db.prepare(
-    `SELECT COUNT(*) as cnt FROM transactions WHERE date=? AND amount=? AND description=?`
-  );
-
-  const insertMany = db.transaction((rows) => {
-    const ids = [];
-    let skipped = 0;
-    for (const input of rows) {
-      const tx = normalizeHouseholdPoolTransaction(input);
-      const date = tx.date || '';
-      const amount = parseFloat(tx.amount) || 0;
-      const description = tx.description || '';
-      const { cnt } = checkDupe.get(date, amount, description);
-      if (cnt > 0) { skipped++; continue; }
-      const info = insert.run({
-        date,
-        amount,
-        description,
-        payment_method: tx.payment_method || '',
-        paid_by: tx.paid_by || '',
-        expense_type: tx.expense_type || '',
-        category: tx.category || '',
-        mood: tx.mood || '',
-        impulse: tx.impulse || '',
-        remarks: tx.remarks || '',
-        month: monthFromDate(date)
-      });
-      ids.push(info.lastInsertRowid);
-    }
-    return { ids, skipped };
-  });
-
-  try {
-    const { ids, skipped } = insertMany(transactions);
-    if (ids.length > 0) rebuildMerchantPatterns();
-    res.json({ saved: ids.length, skipped, ids });
-  } catch (err) {
-    console.error('Insert error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+  if (!Array.isArray(transactions) || transactions.length === 0) return res.status(400).json({ error: 'No transactions provided' });
+  try { res.json(financeService.addTransactions(transactions)); }
+  catch (err) { console.error('Insert error:', err.message); res.status(500).json({ error: err.message }); }
 });
 
 // GET /api/transactions?month=March_2026
@@ -379,35 +331,13 @@ function saveAudit(txId, action, snapshot) {
 
 // PUT /api/transactions/:id
 app.put('/api/transactions/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  // Merge incoming fields over the existing row — never blank out omitted fields
-  const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  saveAudit(id, 'update', existing);
-  const tx = normalizeHouseholdPoolTransaction({ ...existing, ...req.body });
-  const info = db.prepare(`
-    UPDATE transactions SET
-      date=@date, amount=@amount, description=@description,
-      payment_method=@payment_method, paid_by=@paid_by, expense_type=@expense_type,
-      category=@category, mood=@mood, impulse=@impulse, remarks=@remarks,
-      month=@month
-    WHERE id=@id
-  `).run({
-    id,
-    date: tx.date || '',
-    amount: parseFloat(tx.amount) || 0,
-    description: tx.description || '',
-    payment_method: tx.payment_method || '',
-    paid_by: tx.paid_by || '',
-    expense_type: tx.expense_type || '',
-    category: tx.category || '',
-    mood: tx.mood || '',
-    impulse: tx.impulse || '',
-    remarks: tx.remarks || '',
-    month: monthFromDate(tx.date || '')
-  });
-  if (info.changes === 0) return res.status(404).json({ error: 'Not found' });
-  res.json({ updated: true });
+  try {
+    financeService.updateTransaction(parseInt(req.params.id), req.body);
+    res.json({ updated: true });
+  } catch (error) {
+    if (error.code === 'not_found') return res.status(404).json({ error: 'Not found' });
+    throw error;
+  }
 });
 
 // DELETE /api/transactions/:id
@@ -626,55 +556,8 @@ app.get('/api/months', (req, res) => {
 
 // GET /api/dashboard?month=March_2026
 app.get('/api/dashboard', (req, res) => {
-  const { month } = req.query;
-  if (!month) return res.status(400).json({ error: 'month required' });
-
-  const base = 'FROM transactions WHERE month = ?';
-  const expenseBase = `${base}${EXPENSE_EXCLUDE}`;
-
-  const totalRow = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt ${expenseBase}`).get(month);
-  const investmentRow = db.prepare(`SELECT COALESCE(SUM(amount),0) AS total ${base} AND category = 'Investment'`).get(month);
-  const byCategory = db.prepare(`SELECT category, SUM(amount) AS total ${expenseBase} GROUP BY category ORDER BY total DESC LIMIT 10`).all(month);
-  const byPaidByRows = db.prepare(`SELECT paid_by, SUM(amount) AS total ${expenseBase} GROUP BY paid_by`).all(month);
-  const byExpenseType = db.prepare(`SELECT expense_type, SUM(amount) AS total ${expenseBase} GROUP BY expense_type ORDER BY total DESC`).all(month);
-  const byPaymentMethod = db.prepare(`SELECT payment_method, SUM(amount) AS total ${expenseBase} GROUP BY payment_method ORDER BY total DESC`).all(month);
-  const dailySpend = db.prepare(`SELECT date, SUM(amount) AS total ${expenseBase} GROUP BY date ORDER BY date`).all(month);
-  const topMerchants = db.prepare(`SELECT description, SUM(amount) AS total, COUNT(*) AS cnt ${expenseBase} GROUP BY description ORDER BY total DESC LIMIT 10`).all(month);
-
-  const byPaidBy = {};
-  for (const r of byPaidByRows) byPaidBy[r.paid_by || 'Unknown'] = r.total;
-
-  // Actual spend responsibility: Personal + half of Common + paid-for-other
-  const etMap = {};
-  for (const r of byExpenseType) etMap[r.expense_type] = r.total || 0;
-  const commonHalf = (etMap['Common_50_50'] || 0) / 2;
-  const byResponsibility = {
-    Pooja: (etMap['Pooja_Personal'] || 0) + (etMap['Kunal_for_Pooja'] || 0) + commonHalf,
-    Kunal: (etMap['Kunal_Personal'] || 0) + (etMap['Pooja_for_Kunal'] || 0) + commonHalf,
-  };
-
-  // Settlement: net amount Kunal owes Pooja (negative = Pooja owes Kunal)
-  const settlementRows = db.prepare(
-    `SELECT expense_type, paid_by, SUM(amount) AS total ${base}
-     AND expense_type IN ('Common_50_50','Pooja_for_Kunal','Kunal_for_Pooja')
-     GROUP BY expense_type, paid_by`
-  ).all(month);
-
-  const settlement = calculateSettlement(settlementRows);
-
-  res.json({
-    totalSpend: totalRow.total,
-    investments: investmentRow.total,
-    transactionCount: totalRow.cnt,
-    byCategory,
-    byPaidBy,
-    byResponsibility,
-    byExpenseType,
-    byPaymentMethod,
-    dailySpend,
-    topMerchants,
-    settlement
-  });
+  if (!req.query.month) return res.status(400).json({ error: 'month required' });
+  res.json(financeService.getDashboard(req.query.month));
 });
 
 // ─── Lists API (custom categories / expense types / payment methods) ──────────

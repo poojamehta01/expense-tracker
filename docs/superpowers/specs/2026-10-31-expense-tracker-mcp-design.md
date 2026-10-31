@@ -1,7 +1,7 @@
 # Expense Tracker MCP
 
 Date: 2026-10-31
-Status: Proposed design; capability scope accepted, implementation approval pending.
+Status: Approved by the user on 2026-10-31; implementation authorized.
 
 ## Intent and accepted scope
 
