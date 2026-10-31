@@ -23,6 +23,7 @@ async function setup(t, { realInteractions = false } = {}) {
     app.use(session({ secret: 'test-session-secret', resave: false, saveUninitialized: false }));
     app.use(passport.initialize()); app.use(passport.session());
     const { registerInteractions, completeGoogleLogin } = require('../../mcp/interactions');
+    app.use('/mcp', require('../../mcp/http-policy').createHttpPolicy(config));
     registerInteractions(app, { provider: oauth.provider, db: f.db, config, allowedEmails: () => allowed });
     app.get('/auth/google', (req,res,next) => completeGoogleLogin(req,res,user,next));
     app.get('/', (req,res) => res.send('Dashboard'));

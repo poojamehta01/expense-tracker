@@ -12,7 +12,8 @@ function completeGoogleLogin(req, res, user, next) {
 }
 function page(res, title, content, status = 200) {
   res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-  res.setHeader('Cache-Control','no-store'); res.setHeader('Referrer-Policy','no-referrer');
+  // no-referrer makes browser form POSTs send Origin: null, failing our origin check.
+  res.setHeader('Cache-Control','no-store'); res.setHeader('Referrer-Policy','same-origin');
   res.status(status).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} — Expense Tracker</title><style>
   :root{color-scheme:light dark}body{font:16px/1.6 system-ui;margin:0;padding:32px;background:#f5f5f7;color:#202124}.card{max-width:600px;margin:5vh auto;padding:32px;border-radius:16px;background:white;border:1px solid #ddd}h1{font-size:24px;line-height:1.25}button,.button{display:inline-block;font:inherit;padding:10px 16px;margin:8px 8px 8px 0;border-radius:8px;border:1px solid #888;cursor:pointer;background:#2455d6;color:white;text-decoration:none}button.secondary{background:transparent;color:inherit}small{color:#666}li{margin:16px 0}.destination{overflow-wrap:anywhere}@media(prefers-color-scheme:dark){body{background:#14151a;color:#eee}.card{background:#202228;border-color:#45474f}small{color:#aaa}button.secondary{background:transparent;color:#eee}}
   </style></head><body><main class="card"><h1>${escape(title)}</h1>${content}</main></body></html>`);

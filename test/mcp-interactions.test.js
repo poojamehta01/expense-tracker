@@ -11,7 +11,7 @@ async function toConsent(x, client, scopes = 'expenses:read expenses:write') {
     if (res.status === 200) {
       const html = await res.text();
       if (html.includes('Sign in with Google')) { path = /href="([^"]+\/login)"/.exec(html)[1]; continue; }
-      return { html, path: new URL(path, x.config.baseUrl).pathname, status: res.status };
+      return { html, path: new URL(path, x.config.baseUrl).pathname, status: res.status, referrerPolicy: res.headers.get('referrer-policy') };
     }
     if (![302,303].includes(res.status)) return { html: await res.text(), status: res.status };
     path = res.headers.get('location');
@@ -56,6 +56,27 @@ test('unverified or disallowed browser identities cannot approve a grant', async
   const x=await setup(t,{realInteractions:true}); x.setUser({email:'pooja@example.com',emailVerified:false});
   const {body:client}=await register(x);
   const page=await toConsent(x,client); assert.equal(page.status,403);
+});
+
+test('browser consent preserves the same-site form origin without accepting opaque or foreign origins', async t => {
+  const x=await setup(t,{realInteractions:true}); const {body:client}=await register(x);
+  const page=await toConsent(x,client);
+  // Fetch's Origin-header algorithm turns non-CORS form POSTs into Origin: null
+  // under no-referrer. same-origin keeps local forms usable and hides external referrers.
+  assert.equal(page.referrerPolicy,'same-origin');
+  const csrf=/name="csrf" value="([^"]+)"/.exec(page.html)[1];
+  const submit=(origin, token=csrf)=>x.request(page.path,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',origin},body:new URLSearchParams({csrf:token,access:'write'})});
+  for(const origin of ['null','https://evil.example']) {
+    const response=await submit(origin); assert.equal(response.status,403);
+    assert.deepEqual(await response.json(),{error:'forbidden_origin'});
+  }
+  assert.equal((await submit(x.config.baseUrl,'wrong')).status,403);
+  const callback=await finish(x,await submit(x.config.baseUrl));
+  const tokens=await exchange(x,client,callback.searchParams.get('code'));
+  assert.equal(tokens.response.status,200);
+  assert.ok((await x.oauth.verifyAccessToken(tokens.body.access_token)).scopes.includes('expenses:write'));
+  const connections=await x.request('/mcp/connections');
+  assert.equal(connections.headers.get('referrer-policy'),'same-origin');
 });
 
 test('HTTP policy rejects hostile hosts/origins and rate limits without trusting spoofed forwarded hosts', () => {
