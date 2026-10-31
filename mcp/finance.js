@@ -1,4 +1,5 @@
 const { createHash } = require('node:crypto');
+const { initializeMcpStorage } = require('./storage');
 const { createBudgetService, validateMonth } = require('../budget-service');
 const { createInvestmentService } = require('../investment-service');
 const { createFinanceService, MONTHS, EXPENSE_EXCLUDE, EXCLUDED_CATEGORIES, EDITABLE } = require('../finance-service');
@@ -28,6 +29,7 @@ const RESPONSIBILITY = {
   Kunal: "CASE WHEN expense_type IN ('Kunal_Personal','Pooja_for_Kunal') THEN amount WHEN expense_type='Common_50_50' THEN amount/2.0 ELSE 0 END",
 };
 function createMcpFinance({ db, financeService = createFinanceService(db), lists = {}, now = () => new Date() }) {
+  initializeMcpStorage(db);
   db.function('mcp_iso_date', { deterministic: true }, storedDate);
   const budgets = createBudgetService(db, { validCategories: lists.categories || [] });
   const investments = createInvestmentService(db);
@@ -83,6 +85,64 @@ function createMcpFinance({ db, financeService = createFinanceService(db), lists
       responsibilityScope: 'Household responsibility totals always describe the full period; totalSpend and breakdowns use the selected person.',
       truncated: { byCategory: categories.length > 200, dailySpend: daily.length > 200, byPaidBy: paid.length > 200 }, excludedCategories: EXCLUDED_CATEGORIES };
   }
+  function validateFields(input, partial = false) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Expense must be an object');
+    for (const key of Object.keys(input)) if (!EDITABLE.includes(key)) fail(`Unknown expense field: ${key}`);
+    if (!Object.keys(input).length) fail('An edit must change at least one field');
+    const result = { ...input };
+    const required = ['date','amount','description','paid_by','expense_type','payment_method','category'];
+    if (!partial) for (const key of required) if (!(key in input)) fail(`Missing ${key}`);
+    if ('date' in input) result.date = toStoredDate(input.date);
+    if ('amount' in input) {
+      const amount = input.amount;
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || amount > 1000000000000 || amount !== Math.round(amount * 100) / 100) fail('Amount must be positive INR with at most two decimal places (maximum 1 lakh crore)');
+    }
+    for (const key of EDITABLE.filter(key => !['date','amount'].includes(key))) {
+      if (!(key in input)) continue;
+      const max = key === 'remarks' ? 4000 : key === 'description' ? 2000 : 200;
+      if (typeof input[key] !== 'string' || input[key].length > max || (required.includes(key) && !input[key].trim())) fail(`${key} must be a nonempty string of at most ${max} characters`);
+    }
+    for (const [key, listName] of Object.entries({ category: 'categories', expense_type: 'expense_types', payment_method: 'payment_methods' })) {
+      if (key in input && !known(listName).includes(input[key])) fail(`Unknown ${key}; use get_tracker_context for valid values`);
+    }
+    if ('paid_by' in input && !['Pooja','Kunal','Household Pool'].includes(input.paid_by)) fail('Unknown paid_by');
+    return result;
+  }
+  const canonical = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+  function mutate(operation, input, actor) {
+    if (!actor?.email || !actor?.clientId) fail('An authenticated actor is required', 'forbidden');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Input must be an object');
+    const key = input.idempotencyKey;
+    if (typeof key !== 'string' || !key.trim() || key.length > 128) fail('idempotencyKey must contain 1–128 characters');
+    const fingerprint = createHash('sha256').update(canonical(input)).digest('hex');
+    return db.transaction(() => {
+      const time = Math.floor(now().getTime() / 1000);
+      db.prepare('DELETE FROM mcp_idempotency WHERE expires_at <= ?').run(time);
+      const saved = db.prepare('SELECT fingerprint,result FROM mcp_idempotency WHERE actor_email=? AND client_id=? AND operation=? AND key=?').get(actor.email, actor.clientId, operation, key);
+      if (saved) { if (saved.fingerprint !== fingerprint) fail('Idempotency key was already used for another request', 'conflict'); return JSON.parse(saved.result); }
+      let before = null, after, duplicate = false, requested;
+      if (operation === 'add_expense') {
+        const { idempotencyKey, ...fields } = input;
+        requested = validateFields(fields);
+        const existing = db.prepare('SELECT * FROM transactions WHERE date=? AND amount=? AND description=?').get(requested.date, requested.amount, requested.description);
+        if (existing) { duplicate = true; after = existing; }
+        else { const { ids } = financeService.addTransactions([requested]); after = getRow(ids[0]); }
+      } else {
+        if (Object.keys(input).some(key => !['id','revision','idempotencyKey','patch'].includes(key))) fail('Unknown update argument');
+        requested = validateFields(input.patch, true);
+        before = getRow(input.id);
+        if (typeof input.revision !== 'string' || revision(before) !== input.revision) fail('Transaction changed; fetch it again before updating', 'conflict');
+        after = financeService.updateTransaction(input.id, requested);
+      }
+      const result = { currency: 'INR', duplicate, transaction: present(after), normalizedFields: ['paid_by','expense_type'].filter(key => key in requested && requested[key] !== after[key]) };
+      if (!duplicate) db.prepare(`INSERT INTO mcp_write_audit (actor_email,client_id,operation,transaction_id,changed_at,before_snapshot,after_snapshot) VALUES (?,?,?,?,?,?,?)`)
+        .run(actor.email, actor.clientId, operation, after.id, now().toISOString(), before ? JSON.stringify(before) : null, JSON.stringify(after));
+      db.prepare('INSERT INTO mcp_idempotency (actor_email,client_id,operation,key,fingerprint,result,expires_at) VALUES (?,?,?,?,?,?,?)')
+        .run(actor.email, actor.clientId, operation, key, fingerprint, JSON.stringify(result), time + 30 * 86400);
+      return result;
+    }).immediate();
+  }
   return {
     context() { return { currency: 'INR', timezone: 'Asia/Kolkata', today: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now()),
       categories: known('categories'), expenseTypes: known('expense_types'), paymentMethods: known('payment_methods'), paidBy: ['Pooja','Kunal','Household Pool'], people: ['Pooja','Kunal','all'],
@@ -95,6 +155,8 @@ function createMcpFinance({ db, financeService = createFinanceService(db), lists
       return { months: valid.sort((a,b) => order(a)-order(b)) };
     },
     search, summary,
+    add(input, actor) { return mutate('add_expense', input, actor); },
+    update(input, actor) { return mutate('update_expense', input, actor); },
     transaction({ id }) { return { currency: 'INR', transaction: present(getRow(id)) }; },
     budget({ month, person: selected = 'all' }) { return { currency: 'INR', ...budgets.getBudget({ month, person: selected }) }; },
     budgetTransactions(input) { return { currency: 'INR', ...budgets.getBudgetTransactions({ person: 'all', ...input }) }; },
