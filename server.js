@@ -945,7 +945,13 @@ async function startServer(port = process.env.PORT || 3000) {
   mcpInitialization ||= import('./mcp/index.mjs').then(({ initializeMcp }) => initializeMcp(
     { rawRouter: mcpRawRouter, browserRouter: mcpBrowserRouter },
     { db, financeService, lists: { categories: CATEGORIES, expense_types: EXPENSE_TYPES, payment_methods: PAYMENT_METHODS } }
-  ));
+  )).then(async controller => {
+    if (controller) {
+      const { registerMcpEndpoint } = await import('./mcp/server.mjs');
+      controller.mountTools(registerMcpEndpoint);
+    }
+    return controller;
+  });
   await mcpInitialization;
   return app.listen(port, () => console.log('Expense Tracker listening'));
 }
