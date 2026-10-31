@@ -294,3 +294,7 @@ Any create, update, or delete on a transaction is logged in `transaction_audit`.
 - All data stored in SQLite on the Fly.io persistent volume (`/data/expenses.db`)
 - No data shared with third parties except Gemini API (transaction extraction + AI Q&A)
 - Access restricted to `ALLOWED_EMAILS` list via Google OAuth
+
+## AI assistant connections (MCP)
+
+ChatGPT, Claude and Codex can connect to the optional `/mcp` server for transaction searches, spending summaries, budgets, household settlements, salaries and recorded investment values. Google sign-in and per-client consent grant read-only access or also allow adding/editing expenses. Access covers the shared household. Transactions use revisions, retry keys and an actor audit; there are no delete or salary/investment/budget editing tools. Revoke a connection at `/mcp/connections`. See [setup and client instructions](docs/mcp-setup.md).

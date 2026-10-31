@@ -359,3 +359,17 @@ CMD node server.js
 | Derived, read-only Combined budget | Avoids divergent stored household totals; personal budgets are merged at read time |
 | Mapping-based actuals | Preserves adviser-sheet labels while using the tracker's established transaction categories; one mapping per kind prevents duplicates |
 | Separate remaining, savings, and investments | Budget variance, cash-flow savings, and investment activity answer different financial questions and must not be conflated |
+
+## MCP and delegated OAuth
+
+`server.js` initializes optional MCP before listening. `mcp/index.mjs` validates configuration and mounts discovery and the maintained `oidc-provider` on a raw router before `express.json()`; OAuth must read its own bodies. The `/mcp` endpoint is also on this router, so bearer failures return JSON challenges independently of website sessions. Consent and connection management run on a second router after Passport. Google login uses OAuth state and preserves only a validated local MCP interaction continuation through session rotation.
+
+`mcp/oauth.mjs` implements PKCE/resource-scoped opaque tokens and verifies the current grant, account allowlist and audience on every request. `mcp/interactions.js` requires verified Google email, browser-bound interaction cookies and CSRF for consent/revocation. `mcp/server.mjs` creates a stateless official-SDK server per request with strict schemas, tool annotations and per-operation scopes. Host/Origin checks, body limits and rate limits bound public routes.
+
+`finance-service.js` is shared with website transaction routes and dashboard queries. `mcp/finance.js` preserves those rules and the budget/investment services, translates calendar dates, pages details, and returns whole-period totals. Atomic immediate SQLite write transactions check account/client/tool retry records before revisions, then apply a mutation and store before/after actor audit plus replay result. The database additions are:
+
+- `mcp_oauth`: durable provider artifacts indexed by model/ID, grant, UID and expiration.
+- `mcp_idempotency`: canonical request fingerprint/result, scoped by account/client/tool/key, retained 30 days.
+- `mcp_write_audit`: actor email, client ID, operation, transaction, timestamp and snapshots; no automatic retention deletion.
+
+No assistant credentials or financial data are stored in in-memory MCP sessions. The existing single SQLite volume and stable secrets survive application restarts. See [MCP setup](mcp-setup.md) for configuration, client flows and known rollout limitations.

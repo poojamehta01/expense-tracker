@@ -958,8 +958,9 @@ async function startServer(port = process.env.PORT || 3000) {
 if (require.main === module) {
   startServer().catch(error => {
     console.error(error.message.startsWith('MCP configuration:') ? error.message : 'Expense Tracker startup failed');
-    process.exitCode = 1;
     db.close();
+    // The session-store cleanup interval otherwise keeps a failed startup alive.
+    process.exit(1);
   });
 }
 

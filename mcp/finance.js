@@ -21,6 +21,10 @@ function toStoredDate(value) {
   return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year}`;
 }
 function positiveId(value) { if (!Number.isSafeInteger(value) || value < 1) fail('ID must be a positive integer'); return value; }
+function pagination({ limit = 50, offset = 0 } = {}) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0) fail('limit must be 1–200 and offset a nonnegative integer');
+  return { limit, offset };
+}
 function person(value = 'all') { if (!['all', 'Pooja', 'Kunal'].includes(value)) fail('Person must be Pooja, Kunal, or all'); return value; }
 function revision(row) { return createHash('sha256').update(JSON.stringify([row.id, ...EDITABLE.map(key => row[key]), row.month])).digest('hex'); }
 function present(row) { return { ...row, originalDate: row.date, date: storedDate(row.date), revision: revision(row) }; }
@@ -59,8 +63,7 @@ function createMcpFinance({ db, financeService = createFinanceService(db), lists
   }
   function search(input = {}) {
     const { where, values } = filter(input);
-    const { limit = 50, offset = 0 } = input;
-    if (!Number.isInteger(limit) || limit < 1 || limit > 200 || !Number.isSafeInteger(offset) || offset < 0) fail('limit must be 1–200 and offset a nonnegative integer');
+    const { limit, offset } = pagination(input);
     const total = db.prepare(`SELECT COUNT(*) count FROM transactions WHERE ${where}`).get(...values).count;
     const rows = db.prepare(`SELECT * FROM transactions WHERE ${where} ORDER BY mcp_iso_date(date),id LIMIT ? OFFSET ?`).all(...values, limit, offset);
     return { currency: 'INR', filters: input, total, offset, nextOffset: offset + limit < total ? offset + limit : null,
@@ -159,7 +162,13 @@ function createMcpFinance({ db, financeService = createFinanceService(db), lists
     update(input, actor) { return mutate('update_expense', input, actor); },
     transaction({ id }) { return { currency: 'INR', transaction: present(getRow(id)) }; },
     budget({ month, person: selected = 'all' }) { return { currency: 'INR', ...budgets.getBudget({ month, person: selected }) }; },
-    budgetTransactions(input) { return { currency: 'INR', ...budgets.getBudgetTransactions({ person: 'all', ...input }) }; },
+    budgetTransactions(input) {
+      const { limit, offset } = pagination(input);
+      const result = budgets.getBudgetTransactions({ person: 'all', ...input });
+      const transactionCount = result.transactions.length;
+      return { currency: 'INR', ...result, transactionCount, offset, nextOffset: offset + limit < transactionCount ? offset + limit : null,
+        transactions: result.transactions.slice(offset, offset + limit).map(present) };
+    },
     settlement({ month }) { validateMonth(month); const value = financeService.getSettlement(month); return { currency: 'INR', month, ...value, owes: value.net > 0 ? 'Kunal owes Pooja' : value.net < 0 ? 'Pooja owes Kunal' : 'Settled', amount: Math.abs(value.net) }; },
     salary({ month, person: selected = 'all' }) {
       validateMonth(month); person(selected);
@@ -169,10 +178,13 @@ function createMcpFinance({ db, financeService = createFinanceService(db), lists
       }));
       return { currency: 'INR', month, people };
     },
-    investments({ person: selected = 'all' } = {}) {
+    investments({ person: selected = 'all', ...page } = {}) {
+      const { limit, offset } = pagination(page);
       person(selected); const result = investments.list();
       if (selected !== 'all') { result.entries = result.entries.filter(x => x.person === selected); result.totals = { [selected]: result.totals[selected] }; result.valuations = { [selected]: result.valuations[selected] }; }
-      return { currency: 'INR', source: 'Recorded values, not live market prices', ...result };
+      const totalEntries = result.entries.length;
+      return { currency: 'INR', source: 'Recorded values, not live market prices', ...result, totalEntries, offset,
+        nextOffset: offset + limit < totalEntries ? offset + limit : null, entries: result.entries.slice(offset, offset + limit) };
     },
   };
 }

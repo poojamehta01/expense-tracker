@@ -12,7 +12,15 @@ const css = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 
 test('expense analytics use the exact Investment exclusion and expose an investments total', () => {
   assert.match(server, /EXPENSE_EXCLUDE[\s\S]*category != 'Investment'/);
-  assert.match(server, /investments\s*:/);
+  const { fixture, row } = require('./helpers/mcp-fixture');
+  const f = fixture();
+  try {
+    const finance = require('../finance-service').createFinanceService(f.db);
+    finance.addTransactions([row({ category: 'Investment', amount: 200 })]);
+    const dashboard = finance.getDashboard('October_2026');
+    assert.equal(dashboard.totalSpend, 0);
+    assert.equal(dashboard.investments, 200);
+  } finally { f.close(); }
   assert.match(html, /id="kpiInvestments"/);
   assert.match(app, /kpiInvestments/);
 });

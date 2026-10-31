@@ -27,6 +27,8 @@ Invoke the matching skill automatically — user does NOT need to type the slash
 ```
 server.js          Express app, all routes, Gemini extraction + AI Q&A
 db.js              SQLite init, CREATE TABLE, exports db instance
+finance-service.js Shared transaction mutations, dashboard queries and settlement
+mcp/               Optional OAuth + Streamable HTTP tools (docs/mcp-setup.md)
 budget-service.js  Budget validation, attribution, summaries, mappings, and copy operations
 budget-seed.js     Idempotent September 2026 budget lines and initial mappings
 public/
@@ -326,3 +328,11 @@ PORT                  default 3000
 - Budget actuals have a separate explicit exclusion set: `Credit Card Payment`, `Settlement`, and `Refunded`. Do not silently assign unmapped tracker categories or combine investment actuals with expense actuals.
 - Per-chart person filter was removed from Dashboard — global filter (All/Pooja/Kunal/Common) in top nav handles all filtering
 - `_salaryInited` flag prevents redundant re-fetches on tab switch; reset it to `false` after save so history refreshes
+
+## Expense Tracker MCP
+
+Disabled unless `MCP_ENABLED=true` and complete configuration is present. `docs/mcp-setup.md` documents secrets, client connections, scopes and operations. Twelve tools at `/mcp` use the official MCP SDK; `oidc-provider` supplies DCR + PKCE OAuth with SQLite persistence and existing verified Google login. `expenses:read` covers household reads; writes require both `expenses:read` and `expenses:write`. `/mcp/connections` manages revocation.
+
+`mcp/finance.js` wraps existing budget/investment services and `finance-service.js`; do not change accounting independently in an MCP tool. Writes require idempotency and revisions, and atomically retain audit records. `mcp/storage.js` owns `mcp_oauth`, `mcp_idempotency`, and `mcp_write_audit`. Raw OAuth/MCP routes precede body/session middleware; browser consent follows Passport and precedes the website authentication catch-all.
+
+Run `npm test`: its preloader isolates each worker in a temporary SQLite database, so tests never use the real tracker database. OAuth/HTTP tests bind loopback ports.

@@ -8,6 +8,7 @@ const text = z.string().max(200);
 const month = z.string().regex(/^(January|February|March|April|May|June|July|August|September|October|November|December)_\d{4}$/);
 const person = z.enum(['Pooja','Kunal','all']).optional();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const pagination = { limit: z.number().int().min(1).max(200).optional(), offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional() };
 const period = { month: month.optional(), startDate: date.optional(), endDate: date.optional() };
 const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const key = z.string().min(1).max(128);
@@ -18,14 +19,14 @@ const object = shape => z.object(shape).strict();
 const definitions = [
   ['get_tracker_context','context',{},'Get today in Asia/Kolkata, INR units and valid categories, payers, expense types and payment methods. Consult before recording expenses.'],
   ['list_months','months',{},'List months with transaction, salary or budget data in chronological order.'],
-  ['search_transactions','search',{...period,text:text.optional(),category:text.optional(),paidBy:text.optional(),expenseType:text.optional(),paymentMethod:text.optional(),limit:z.number().int().min(1).max(200).optional(),offset:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()},'Search raw transactions, including categories excluded from spending. Dates are inclusive. Results have stable IDs and revision tokens; use offset/nextOffset for further pages.'],
+  ['search_transactions','search',{...period,text:text.optional(),category:text.optional(),paidBy:text.optional(),expenseType:text.optional(),paymentMethod:text.optional(),...pagination},'Search raw transactions, including categories excluded from spending. Dates are inclusive. Results have stable IDs and revision tokens; use offset/nextOffset for further pages.'],
   ['get_transaction','transaction',{id},'Read one transaction and its current revision before editing.'],
   ['summarize_spending','summary',{...period,person},'Summarize all matching expenses for a month or date range, excluding credit card payments, settlements, investments and refunds. Person means spending responsibility, including half of shared expenses.'],
   ['get_budget','budget',{month,person},'Read monthly budget, actual spending, remaining amounts, mappings and Future allocation. Missing salary or mappings remain explicitly unknown.'],
-  ['get_budget_transactions','budgetTransactions',{month,person,section:text.min(1),budgetCategory:text.min(1),kind:z.enum(['expense','investment'])},'Read transactions attributed to a specific budget line returned by get_budget.'],
+  ['get_budget_transactions','budgetTransactions',{month,person,section:text.min(1),budgetCategory:text.min(1),kind:z.enum(['expense','investment']),...pagination},'Read a page of transactions attributed to a budget line from get_budget. total covers every match; follow nextOffset for more rows.'],
   ['get_settlement','settlement',{month},'Read household settlement and who owes whom for one month. Household wallet payments create no settlement debt.'],
   ['get_salary','salary',{month,person},'Read recorded monthly salaries and notes, distinguishing missing entries from recorded zero.'],
-  ['get_investments','investments',{person},'Read recorded contributions and investment valuations. These are stored values, not live prices; missing valuations are unknown.'],
+  ['get_investments','investments',{person,...pagination},'Read a page of recorded contributions and investment valuations. Totals cover all matching entries; follow nextOffset for more rows. These are stored values, not live prices; missing valuations are unknown.'],
   ['add_expense','add',{...fields,idempotencyKey:key},'Add one expense after resolving ambiguous dates, payer, expense type, payment method and category with the user. INR amounts have at most two decimals. Use a new idempotencyKey for a new action and reuse it only for retries of that action within 30 days. SBI debit payments normalize to Household Pool.'],
   ['update_expense','update',{id,revision:z.string().regex(/^[a-f0-9]{64}$/),idempotencyKey:key,patch:object(fields).partial().refine(value=>Object.keys(value).length>0,'Provide a nonempty patch')},'Edit the explicitly selected transaction using its latest revision from get_transaction. Only supplied fields change. Resolve ambiguous targets with the user. Reuse the idempotencyKey for retries; on conflict reread and obtain the intended change before retrying.'],
 ];

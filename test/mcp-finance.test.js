@@ -10,6 +10,27 @@ test.beforeEach(() => {
 });
 test.afterEach(() => f.close());
 
+test('budget details and investments page rows while keeping complete totals', () => {
+  shared.addTransactions(Array.from({ length: 205 }, (_, i) => row({ date: '2 September 2026', category: 'Rent', description: `Rent ${i}` })));
+  const input = { month: 'September_2026', section: 'Household Expenses', budgetCategory: 'House Rent', kind: 'expense' };
+  const budget = finance.budgetTransactions(input);
+  assert.equal(budget.transactions.length, 50);
+  assert.equal(budget.transactionCount, 205);
+  assert.equal(budget.total, 8200);
+  assert.equal(budget.nextOffset, 50);
+  assert.equal(finance.budgetTransactions({ ...input, offset: 200 }).transactions.length, 5);
+  const insert = f.db.prepare('INSERT INTO investments(name,person,amount_paise) VALUES (?, ?, ?)');
+  f.db.transaction(() => { for (let i = 0; i < 205; i++) insert.run(`Fund ${i}`, 'Pooja', 10000); })();
+  const investments = finance.investments({ person: 'Pooja', limit: 200 });
+  assert.equal(investments.entries.length, 200);
+  assert.equal(investments.totalEntries, 205);
+  assert.equal(investments.totals.Pooja, 20500);
+  assert.equal(investments.valuations.Pooja.missing, 205);
+  assert.equal(investments.nextOffset, 200);
+  assert.equal(finance.investments({ offset: 200 }).entries.length, 5);
+  assert.throws(() => finance.investments({ limit: 201 }), /limit/);
+});
+
 test('responsibility and exclusions agree with the dashboard while pool creates no debt', () => {
   shared.addTransactions([row(), row({ amount: 100, description: 'Groceries', payment_method: 'SBI_Debit_Card' }),
     ...['Credit Card Payment', 'Settlement', 'Investment', 'Refunded'].map(category => row({ category, amount: 200, description: category }))]);
