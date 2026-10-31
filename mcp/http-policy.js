@@ -19,4 +19,10 @@ function createHttpPolicy(config, { limit = 120, windowMs = 60000 } = {}) {
     next();
   };
 }
-module.exports = { createHttpPolicy };
+function callbackOrigin(value) {
+  const origin = new URL(value).origin;
+  // URL parsing can decode a hostname into CSP syntax (for example %2A -> *).
+  if (!/^https?:\/\/(?:[a-z0-9.-]+|\[[a-f0-9:]+\])(?::\d+)?$/i.test(origin)) throw new Error('Unsupported callback origin');
+  return origin;
+}
+module.exports = { createHttpPolicy, callbackOrigin };

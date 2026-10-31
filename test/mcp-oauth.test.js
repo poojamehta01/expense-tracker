@@ -78,6 +78,14 @@ test('opaque tokens remain valid after provider restart, then expire and revoke'
   assert.equal(refreshed.status, 400);
 });
 
+test('registration rejects callback hosts that normalize into CSP syntax', async t => {
+  const x=await setup(t);
+  for(const redirect of ['https://%2A/callback','https://%2A.example/callback','https://example.com;sandbox/callback']) {
+    const {response}=await register(x,{redirect_uris:[redirect]});
+    assert.equal(response.status,400,redirect);
+  }
+});
+
 test('loopback clients can register and missing PKCE is rejected', async t => {
   const x = await setup(t);
   const native = await register(x, { redirect_uris: ['http://127.0.0.1:1455/auth/callback'], application_type: 'native' });

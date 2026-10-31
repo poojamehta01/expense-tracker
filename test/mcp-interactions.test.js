@@ -2,16 +2,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createHash } = require('node:crypto');
 const { setup, register, exchange } = require('./helpers/oauth-fixture');
-const { createHttpPolicy } = require('../mcp/http-policy');
+const { createHttpPolicy, callbackOrigin } = require('../mcp/http-policy');
 const challenge = createHash('sha256').update('a'.repeat(64)).digest('base64url');
 async function toConsent(x, client, scopes = 'expenses:read expenses:write') {
-  let path = '/oauth/auth?' + new URLSearchParams({ client_id: client.client_id, redirect_uri: 'https://client.example/callback', response_type: 'code', scope: scopes, resource: x.config.resourceUrl, state: 'state', code_challenge: challenge, code_challenge_method: 'S256' });
+  let path = '/oauth/auth?' + new URLSearchParams({ client_id: client.client_id, redirect_uri: client.redirect_uris[0], response_type: 'code', scope: scopes, resource: x.config.resourceUrl, state: 'state', code_challenge: challenge, code_challenge_method: 'S256' });
   for (let i=0; i<12; i++) {
     const res = await x.request(path);
     if (res.status === 200) {
       const html = await res.text();
       if (html.includes('Sign in with Google')) { path = /href="([^"]+\/login)"/.exec(html)[1]; continue; }
-      return { html, path: new URL(path, x.config.baseUrl).pathname, status: res.status, referrerPolicy: res.headers.get('referrer-policy') };
+      return { html, path: new URL(path, x.config.baseUrl).pathname, status: res.status, referrerPolicy: res.headers.get('referrer-policy'), csp: res.headers.get('content-security-policy') };
     }
     if (![302,303].includes(res.status)) return { html: await res.text(), status: res.status };
     path = res.headers.get('location');
@@ -77,6 +77,28 @@ test('browser consent preserves the same-site form origin without accepting opaq
   assert.ok((await x.oauth.verifyAccessToken(tokens.body.access_token)).scopes.includes('expenses:write'));
   const connections=await x.request('/mcp/connections');
   assert.equal(connections.headers.get('referrer-policy'),'same-origin');
+});
+
+test('consent permits only its registered callback origin through browser form redirects', async t => {
+  const sources=csp=>/form-action ([^;]+)/.exec(csp)[1].trim().split(/\s+/);
+  for(const [redirect,application_type,expected] of [
+    ['https://client.example/callback?value=%3Bform-action%20%2A','web','https://client.example'],
+    ['http://127.0.0.1:1455/callback','native','http://127.0.0.1:1455'],
+  ]) {
+    const x=await setup(t,{realInteractions:true});
+    const {response,body:client}=await register(x,{redirect_uris:[redirect],application_type});
+    assert.equal(response.status,201,JSON.stringify(client));
+    const page=await toConsent(x,client); assert.equal(page.status,200);
+    assert.deepEqual(sources(page.csp),["'self'",expected]);
+    const connections=await x.request('/mcp/connections');
+    assert.deepEqual(sources(connections.headers.get('content-security-policy')),["'self'"]);
+  }
+});
+
+test('CSP callback rendering rejects normalized hostname syntax even for stored clients', () => {
+  for(const uri of ['https://%2A/callback','https://%2A.example/callback','https://example.com;sandbox/callback']) assert.throws(()=>callbackOrigin(uri),/Unsupported callback origin/);
+  assert.equal(callbackOrigin('https://client.example/callback?value=%3Bform-action%20%2A'),'https://client.example');
+  assert.equal(callbackOrigin('http://[::1]:1455/callback'),'http://[::1]:1455');
 });
 
 test('HTTP policy rejects hostile hosts/origins and rate limits without trusting spoofed forwarded hosts', () => {

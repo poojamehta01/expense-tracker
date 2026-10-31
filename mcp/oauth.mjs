@@ -1,11 +1,13 @@
 import { Provider, errors } from 'oidc-provider';
 import { createProviderAdapter } from './storage.js';
+import { callbackOrigin } from './http-policy.js';
 
 export const READ_SCOPE = 'expenses:read';
 export const WRITE_SCOPE = 'expenses:write';
 export function validRedirect(value) {
   try {
     const url = new URL(value);
+    callbackOrigin(value);
     const loopback = ['127.0.0.1','[::1]','localhost'].includes(url.hostname);
     return !url.hash && !url.username && !url.password && !value.includes('*') && (url.protocol === 'https:' || (url.protocol === 'http:' && loopback));
   } catch { return false; }

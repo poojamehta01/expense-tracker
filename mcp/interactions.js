@@ -1,5 +1,6 @@
 const express = require('express');
 const { randomBytes, timingSafeEqual } = require('node:crypto');
+const { callbackOrigin } = require('./http-policy');
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const validReturn = path => typeof path === 'string' && /^\/mcp\/interaction\/[A-Za-z0-9_-]{10,128}$/.test(path);
 function completeGoogleLogin(req, res, user, next) {
@@ -10,8 +11,10 @@ function completeGoogleLogin(req, res, user, next) {
     req.session.save(error => error ? next(error) : res.redirect(returnTo));
   });
 }
-function page(res, title, content, status = 200) {
-  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+function page(res, title, content, status = 200, redirectUri) {
+  // Browsers apply form-action to the OAuth redirect chain after consent too.
+  const callbackSource = redirectUri ? ` ${callbackOrigin(redirectUri)}` : '';
+  res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'${callbackSource}; frame-ancestors 'none'; base-uri 'none'`);
   // no-referrer makes browser form POSTs send Origin: null, failing our origin check.
   res.setHeader('Cache-Control','no-store'); res.setHeader('Referrer-Policy','same-origin');
   res.status(status).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} — Expense Tracker</title><style>
@@ -47,7 +50,7 @@ function registerInteractions(app, { provider, db, config, allowedEmails }) {
     const requested = new Set(String(details.params.scope || '').split(' '));
     if (!requested.has('expenses:read')) return page(res,'Read permission required','<p>Reconnect with the expenses:read permission. Expense editing also requires expenses:write.</p>',400);
     const canWrite=requested.has('expenses:write');
-    page(res,'Connect Expense Tracker',`<p><strong>${escape(client.clientName || 'AI app')}</strong> wants access to your shared household tracker.</p><p>Signed in as ${escape(req.user.email)}. Read access includes both household members’ expenses, budgets, salaries, settlements, and recorded investments.</p>${canWrite?'<p>Write access lets this app <strong>add and edit expenses</strong>. You can choose read access only.</p>':''}<p class="destination"><small>Client callback: ${escape(new URL(details.params.redirect_uri).origin)}</small></p><form method="post" action="/mcp/interaction/${escape(details.uid)}"><input type="hidden" name="csrf" value="${csrf(req)}"><button name="access" value="read">Connect read only</button>${canWrite?'<button name="access" value="write">Connect with expense editing</button>':''}<button class="secondary" name="access" value="deny">Cancel</button></form>`);
+    page(res,'Connect Expense Tracker',`<p><strong>${escape(client.clientName || 'AI app')}</strong> wants access to your shared household tracker.</p><p>Signed in as ${escape(req.user.email)}. Read access includes both household members’ expenses, budgets, salaries, settlements, and recorded investments.</p>${canWrite?'<p>Write access lets this app <strong>add and edit expenses</strong>. You can choose read access only.</p>':''}<p class="destination"><small>Client callback: ${escape(new URL(details.params.redirect_uri).origin)}</small></p><form method="post" action="/mcp/interaction/${escape(details.uid)}"><input type="hidden" name="csrf" value="${csrf(req)}"><button name="access" value="read">Connect read only</button>${canWrite?'<button name="access" value="write">Connect with expense editing</button>':''}<button class="secondary" name="access" value="deny">Cancel</button></form>`,200,details.params.redirect_uri);
   }));
   app.post(route,express.urlencoded({extended:false,limit:'8kb'}),wrap(async (req,res) => {
     const details=await assertDetails(req,res);
