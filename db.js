@@ -50,6 +50,19 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS kunal_owes_pooja_expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    expense_date TEXT NOT NULL CHECK(expense_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    description TEXT NOT NULL CHECK(length(trim(description)) BETWEEN 1 AND 300),
+    amount_paise INTEGER NOT NULL CHECK(typeof(amount_paise) = 'integer' AND amount_paise > 0 AND amount_paise <= 100000000000000),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled')),
+    settled_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_kunal_owes_pooja_status_date
+    ON kunal_owes_pooja_expenses(status, expense_date, id);
+
   CREATE TABLE IF NOT EXISTS salaries (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     person     TEXT NOT NULL,

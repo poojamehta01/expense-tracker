@@ -1947,6 +1947,55 @@ body.dark .motd-quote { background: linear-gradient(135deg, #1e3a5f 0%, #14291e 
 .investment-missing { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
 @media (min-width: 641px) and (max-width: 1000px) { .investment-inputs { grid-template-columns: 1fr 1fr; } }
 
+/* All-time Kunal owes Pooja ledger */
+.debts-page { max-width: 1200px; margin: 0 auto; }
+.debt-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.debt-heading h2 { margin: 0 0 6px; }
+.debt-heading p, .debt-card p, .debt-note { color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+.debt-total-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 28px; margin-bottom: 20px; background: linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%); border: 1px solid #ddd6fe; border-left: 5px solid #7c3aed; border-radius: var(--radius); }
+body.dark .debt-total-card { background: linear-gradient(135deg, #28213f 0%, #1e293b 100%); border-color: #4c3b71; border-left-color: #a78bfa; }
+.debt-total-card .kpi-label { color: var(--text-muted); font-size: 13px; font-weight: 600; }
+.debt-total-value { margin-top: 6px; color: var(--text); font-size: clamp(30px, 4vw, 42px); font-weight: 750; line-height: 1.15; overflow-wrap: anywhere; }
+.debt-total-caption { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; }
+.debt-total-period { align-self: flex-start; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.debt-card { padding: 24px; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); }
+.debt-card h3 { margin: 0 0 6px; }
+.debt-card p { margin: 0 0 20px; }
+.debt-card fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
+.debt-inputs { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(220px, 2fr) minmax(150px, 1fr); gap: 16px; }
+.debt-inputs label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 600; }
+.debt-inputs input { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.debt-form-actions { display: flex; gap: 10px; margin-top: 20px; }
+.debt-status { min-height: 22px; margin: 12px 0; color: var(--text-muted); font-size: 14px; }
+.debt-status.error { color: var(--error); }
+.debt-list-section { margin-top: 4px; }
+.debt-list-header { flex-wrap: wrap; }
+.debt-settled-toggle { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; color: var(--text-muted); font-size: 13px; cursor: pointer; }
+.debt-settled-toggle input { accent-color: var(--primary); }
+.debt-table-wrap { overflow-x: auto; }
+.debt-table { width: 100%; min-width: 760px; border-collapse: collapse; }
+.debt-table th, .debt-table td { padding: 14px 18px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border); }
+.debt-table th { color: var(--text-muted); font-size: 12px; }
+.debt-table td.debt-date, .debt-table td.debt-amount { white-space: nowrap; }
+.debt-table td.debt-description { min-width: 190px; overflow-wrap: anywhere; }
+.debt-table td.debt-amount { font-weight: 650; }
+.debt-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.debt-actions button { padding: 6px 9px; font-size: 12px; }
+.debt-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 650; }
+.debt-pill--settled { background: #dcfce7; color: #166534; }
+body.dark .debt-pill { background: #49391a; color: #fcd34d; }
+body.dark .debt-pill--settled { background: #153c2b; color: #86efac; }
+.debt-empty { padding: 32px 20px !important; color: var(--text-muted); text-align: center !important; }
+.debt-note { margin-top: 16px; }
+@media (max-width: 700px) {
+  .debt-inputs { grid-template-columns: 1fr; }
+  .debt-card { padding: 18px; }
+  .debt-total-card { align-items: flex-start; padding: 20px; }
+  .debt-heading { align-items: flex-start; }
+  .debt-list-header { align-items: center; }
+  .debt-settled-toggle { margin-left: 0; }
+}
+
 /* Investment form disclosure and saved-list filters */
 #investmentFormDetails > summary { cursor: pointer; font-size: 18px; font-weight: 700; }
 #investmentFormDetails > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 6px; }

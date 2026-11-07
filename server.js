@@ -270,6 +270,8 @@ function registerMonthlyNotesRoutes(app, service) {
 app.use(requireAuth);
 const { createInvestmentService, registerInvestmentRoutes } = require('./investment-service');
 registerInvestmentRoutes(app, createInvestmentService(db));
+const { createKunalOwesPoojaService, registerKunalOwesPoojaRoutes } = require('./kunal-owes-pooja-service');
+registerKunalOwesPoojaRoutes(app, createKunalOwesPoojaService(db));
 app.use(express.static('public', {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {

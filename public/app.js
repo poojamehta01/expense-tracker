@@ -186,13 +186,14 @@ function initUploadMonthPicker() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 function switchTab(name) {
-  ['dashboard', 'add', 'trends', 'salary', 'budget', 'investments', 'ask', 'ai-memory'].forEach(t => {
+  ['dashboard', 'add', 'trends', 'salary', 'budget', 'investments', 'kunal-owes-pooja', 'ask', 'ai-memory'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('hidden', name !== t);
     document.getElementById('tab-btn-' + t).classList.toggle('active', name === t);
   });
   if (name === 'trends' && !trendsLoaded) loadTrends();
   if (name === 'salary') initSalaryTab();
   if (name === 'investments') loadInvestments();
+  if (name === 'kunal-owes-pooja') loadKunalOwesPooja();
   if (name === 'budget') initBudgetTab();
   if (name === 'ai-memory') loadAIMemoryStatus();
 }
